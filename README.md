@@ -1,10 +1,33 @@
-# Anthropic Engineering 中文版
+# Anthropic Engineering 文章[中文版]
 
-我将 [Anthropic Engineering](https://www.anthropic.com/engineering/) 的全部文章爬取并翻译为中文，做成了比较美观网页，支持中英对照阅读，如果对你有帮助，非常感谢您给的star🤠。
+我将 [Anthropic Engineering](https://www.anthropic.com/engineering/) 的全部文章爬取并翻译为中文，做成了比较美观网页，支持中英对照阅读，如果对你有帮助，***非常感谢您给的star🤠***。
 
 > **在线阅读** 👉 [GitHub Pages](https://CraigKettleman.github.io/anthropic-engineering-cn/)
 
-## 快速开始（读者）
+
+## 1.文章简介
+
+
+> 如何把大模型从“会聊天”变成“能长期稳定干活的软件工程师”。
+
+
+Anthropic Engineering 收录了 Anthropic 工程团队在构建 Claude、Claude Code 和 AI Agent 过程中的实践经验与技术思考。文章关注如何通过上下文管理、工具使用、记忆机制和工程化设计，让 AI 真正成为能够长期协作、解决复杂问题的伙伴。对于想理解现代 AI 编程工具背后设计理念的人来说，相信这份资料能拨开你内心的谜团。
+
+```bash
+Prompt Engineering
+↓
+Context Engineering
+↓
+Harness Engineering
+↓
+Agent Engineering
+↓
+wait for you!
+
+```
+
+
+## 2.快速开始（读者）
 
 **方式一：在线访问**（推荐）
 
@@ -22,7 +45,7 @@ cd anthropic-engineering-cn/site
 open index.html    # macOS，其他系统用浏览器打开
 ```
 
-## 功能特性
+## 3.功能特性
 
 - **三种阅读模式** — 中文 / English / 中英对照（英文在上、中文在下逐段对照）
 - **暗色模式** — 一键切换，偏好自动保存
@@ -30,7 +53,9 @@ open index.html    # macOS，其他系统用浏览器打开
 - **键盘快捷键** — `Z` 中文、`E` English、`B` 对照
 - **纯静态站点** — 无后端依赖，任何浏览器直接打开
 
-## 自行构建（开发者/维护者）
+
+
+## 4.自行构建（开发者/维护者）
 
 如果你想自己抓取、翻译或修改站点，请按以下步骤操作。
 
@@ -66,7 +91,7 @@ python build_site.py
 3. 运行 `python translate.py` 翻译
 4. 运行 `python build_site.py` 重新构建
 
-## 目录结构
+## 5.目录结构
 
 ```
 ├── scrape_articles.py    # 文章抓取脚本
@@ -79,14 +104,14 @@ python build_site.py
     └── *.html            # 文章页
 ```
 
-## 技术实现
+## 6.技术实现
 
 - **抓取**：`requests` + `BeautifulSoup`，礼貌间隔 1 秒
 - **翻译**：通过 `hermes` CLI 调用 mimo-v2.5-pro，3 并发 worker
 - **构建**：纯 Python f-string 模板生成 HTML，自研 markdown 解析器，无第三方框架
 - **样式**：CSS 内联，暖色系衬线字体设计，CSS 变量驱动明暗主题
   
-##后续
+## 7.后续
 
 未来会翻译更多优质教程和文章，可能会合并到我的个人博客中，敬请期待🐣......
 
