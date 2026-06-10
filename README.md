@@ -1,6 +1,6 @@
-# Anthropic 工程博客 · 中英双语镜像
+# Anthropic Engineering 中文版
 
-将 [Anthropic Engineering](https://www.anthropic.com/engineering/) 的全部文章镜像并翻译为中文，支持中英对照阅读。
+我将 [Anthropic Engineering](https://www.anthropic.com/engineering/) 的全部文章爬取并翻译为中文，做成了比较美观网页，支持中英对照阅读，如果对你有帮助，非常感谢您给的star🤠。
 
 > **在线阅读** 👉 [GitHub Pages](https://CraigKettleman.github.io/anthropic-engineering-cn/)
 
@@ -34,7 +34,7 @@ open index.html    # macOS，其他系统用浏览器打开
 
 如果你想自己抓取、翻译或修改站点，请按以下步骤操作。
 
-### 依赖
+### 开发依赖
 
 - Python 3.10+
 - `requests`、`beautifulsoup4`（抓取用）
@@ -85,6 +85,10 @@ python build_site.py
 - **翻译**：通过 `hermes` CLI 调用 mimo-v2.5-pro，3 并发 worker
 - **构建**：纯 Python f-string 模板生成 HTML，自研 markdown 解析器，无第三方框架
 - **样式**：CSS 内联，暖色系衬线字体设计，CSS 变量驱动明暗主题
+  
+##后续
+
+未来会翻译更多优质教程和文章，可能会合并到我的个人博客中，敬请期待🐣......
 
 ## License
 
