@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code 最佳实践 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">本页内容</a>
+<a class="toc-h2" href="#heading-2">让 Claude 能够验证自己的工作</a>
+<a class="toc-h2" href="#heading-3">先探索，再规划，然后编码</a>
+<a class="toc-h2" href="#heading-4">在提示中提供具体上下文</a>
+<a class="toc-h3" href="#heading-5">提供丰富内容</a>
+<a class="toc-h2" href="#heading-6">配置你的环境</a>
+<a class="toc-h3" href="#heading-7">编写有效的 CLAUDE.md</a>
+<a class="toc-h3" href="#heading-8">配置权限</a>
+<a class="toc-h3" href="#heading-9">使用 CLI 工具</a>
+<a class="toc-h3" href="#heading-10">连接 MCP 服务器</a>
+<a class="toc-h3" href="#heading-11">设置钩子</a>
+<a class="toc-h3" href="#heading-12">创建技能</a>
+<a class="toc-h3" href="#heading-13">创建自定义子智能体</a>
+<a class="toc-h3" href="#heading-14">安装插件</a>
+<a class="toc-h2" href="#heading-15">有效沟通</a>
+<a class="toc-h3" href="#heading-16">提出代码库相关问题</a>
+<a class="toc-h3" href="#heading-17">让 Claude 访谈你</a>
+<a class="toc-h2" href="#heading-18">管理你的会话</a>
+<a class="toc-h3" href="#heading-19">尽早并频繁地修正方向</a>
+<a class="toc-h3" href="#heading-20">积极管理上下文</a>
+<a class="toc-h3" href="#heading-21">使用子智能体进行调查</a>
+<a class="toc-h3" href="#heading-22">通过检查点回退</a>
+<a class="toc-h3" href="#heading-23">恢复会话</a>
+<a class="toc-h2" href="#heading-24">自动化与规模化</a>
+<a class="toc-h3" href="#heading-25">运行非交互模式</a>
+<a class="toc-h3" href="#heading-26">运行多个 Claude 会话</a>
+<a class="toc-h3" href="#heading-27">跨文件扇出执行</a>
+<a class="toc-h3" href="#heading-28">使用自动模式自主运行</a>
+<a class="toc-h3" href="#heading-29">添加对抗性审查步骤</a>
+<a class="toc-h2" href="#heading-30">避免常见的失败模式</a>
+<a class="toc-h2" href="#heading-31">培养你的直觉</a>
+<a class="toc-h2" href="#heading-32">相关资源</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">On this page</a>
+<a class="toc-h2" href="#heading-2">​Give Claude a way to verify its work</a>
+<a class="toc-h2" href="#heading-3">​Explore first, then plan, then code</a>
+<a class="toc-h2" href="#heading-4">​Provide specific context in your prompts</a>
+<a class="toc-h3" href="#heading-5">​Provide rich content</a>
+<a class="toc-h2" href="#heading-6">​Configure your environment</a>
+<a class="toc-h3" href="#heading-7">​Write an effective CLAUDE.md</a>
+<a class="toc-h3" href="#heading-8">​Configure permissions</a>
+<a class="toc-h3" href="#heading-9">​Use CLI tools</a>
+<a class="toc-h3" href="#heading-10">​Connect MCP servers</a>
+<a class="toc-h3" href="#heading-11">​Set up hooks</a>
+<a class="toc-h3" href="#heading-12">​Create skills</a>
+<a class="toc-h3" href="#heading-13">​Create custom subagents</a>
+<a class="toc-h3" href="#heading-14">​Install plugins</a>
+<a class="toc-h2" href="#heading-15">​Communicate effectively</a>
+<a class="toc-h3" href="#heading-16">​Ask codebase questions</a>
+<a class="toc-h3" href="#heading-17">​Let Claude interview you</a>
+<a class="toc-h2" href="#heading-18">​Manage your session</a>
+<a class="toc-h3" href="#heading-19">​Course-correct early and often</a>
+<a class="toc-h3" href="#heading-20">​Manage context aggressively</a>
+<a class="toc-h3" href="#heading-21">​Use subagents for investigation</a>
+<a class="toc-h3" href="#heading-22">​Rewind with checkpoints</a>
+<a class="toc-h3" href="#heading-23">​Resume conversations</a>
+<a class="toc-h2" href="#heading-24">​Automate and scale</a>
+<a class="toc-h3" href="#heading-25">​Run non-interactive mode</a>
+<a class="toc-h3" href="#heading-26">​Run multiple Claude sessions</a>
+<a class="toc-h3" href="#heading-27">​Fan out across files</a>
+<a class="toc-h3" href="#heading-28">​Run autonomously with auto mode</a>
+<a class="toc-h3" href="#heading-29">​Add an adversarial review step</a>
+<a class="toc-h2" href="#heading-30">​Avoid common failure patterns</a>
+<a class="toc-h2" href="#heading-31">​Develop your intuition</a>
+<a class="toc-h2" href="#heading-32">​Related resources</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-04-18</div>
+            <div class="title-block">
+                <h1 class="cn">Claude Code 最佳实践</h1>
+                <h1 class="en">Best practices for Claude Code</h1>
+                <div class="en-title">Best practices for Claude Code</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><h2>On this page</h2></div><div class="lang-cn-block"><h2 id="heading-1">本页内容</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Give Claude a way to verify its work</li><li>Explore first, then plan, then code</li><li>Provide specific context in your promptsProvide rich content</li><li>Provide rich content</li><li>Configure your environmentWrite an effective CLAUDE.mdConfigure permissionsUse CLI toolsConnect MCP serversSet up hooksCreate skillsCreate custom subagentsInstall plugins</li><li>Write an effective CLAUDE.md</li><li>Configure permissions</li><li>Use CLI tools</li><li>Connect MCP servers</li><li>Set up hooks</li><li>Create skills</li><li>Create custom subagents</li><li>Install plugins</li><li>Communicate effectivelyAsk codebase questionsLet Claude interview you</li><li>Ask codebase questions</li><li>Let Claude interview you</li><li>Manage your sessionCourse-correct early and oftenManage context aggressivelyUse subagents for investigationRewind with checkpointsResume conversations</li><li>Course-correct early and often</li><li>Manage context aggressively</li><li>Use subagents for investigation</li><li>Rewind with checkpoints</li><li>Resume conversations</li><li>Automate and scaleRun non-interactive modeRun multiple Claude sessionsFan out across filesRun autonomously with auto modeAdd an adversarial review step</li><li>Run non-interactive mode</li><li>Run multiple Claude sessions</li><li>Fan out across files</li><li>Run autonomously with auto mode</li><li>Add an adversarial review step</li><li>Avoid common failure patterns</li><li>Develop your intuition</li><li>Related resources</li></ul></div><div class="lang-cn-block"><ul><li>让 Claude 能够验证自己的工作</li><li>先探索，再规划，然后编码</li><li>在提示中提供具体上下文提供丰富内容</li><li>提供丰富内容</li><li>配置你的环境编写有效的 CLAUDE.md配置权限使用 CLI 工具连接 MCP 服务器设置钩子创建技能创建自定义子智能体安装插件</li><li>编写有效的 CLAUDE.md</li><li>配置权限</li><li>使用 CLI 工具</li><li>连接 MCP 服务器</li><li>设置钩子</li><li>创建技能</li><li>创建自定义子智能体</li><li>安装插件</li><li>有效沟通提出代码库相关问题让 Claude 访谈你</li><li>提出代码库相关问题</li><li>让 Claude 访谈你</li><li>管理你的会话尽早并频繁地修正方向积极管理上下文使用子智能体进行调查通过检查点回退恢复会话</li><li>尽早并频繁地修正方向</li><li>积极管理上下文</li><li>使用子智能体进行调查</li><li>通过检查点回退</li><li>恢复会话</li><li>自动化与规模化运行非交互模式运行多个 Claude 会话跨文件扇出执行使用自动模式自主运行添加对抗性审查步骤</li><li>运行非交互模式</li><li>运行多个 Claude 会话</li><li>跨文件扇出执行</li><li>使用自动模式自主运行</li><li>添加对抗性审查步骤</li><li>避免常见的失败模式</li><li>培养你的直觉</li><li>相关资源</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Best practices for Claude Code</h1></div><div class="lang-cn-block"><h1>Claude Code 最佳实践</h1></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Tips and patterns for getting the most out of Claude Code, from configuring your environment to scaling across parallel sessions.</p></div><div class="lang-cn-block"><p>充分利用 Claude Code 的技巧和模式，从配置环境到跨并行会话进行规模化。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Give Claude a way to verify its work</h2></div><div class="lang-cn-block"><h2 id="heading-2">让 Claude 能够验证自己的工作</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>In one prompt: ask Claude to run the check and iterate in the same message, as in the table above.</li><li>Across a session: set the check as a/goalcondition. A separate evaluator re-checks it after every turn and Claude keeps working until it holds.</li></ul></div><div class="lang-cn-block"><ul><li>在单个提示中：要求 Claude 在同一条消息中运行检查并进行迭代，如上表所示。</li><li>跨会话：将检查设置为 /goal 条件。一个独立的评估器会在每轮对话后重新检查，Claude 会持续工作直到条件满足。</li><li>作为确定性门控：一个 Stop 钩子（Hook）将你的检查作为脚本运行，并阻止当前轮次结束直到检查通过。Claude Code 在连续 8 次阻止后会覆盖该钩子并结束轮次。</li><li>通过第二意见：一个验证子智能体（Subagent）或动态工作流来检查自身的发现，让一个全新的模型尝试反驳结果，这样执行工作的智能体不是评分的那个。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/goal</p></div><div class="lang-cn-block"><h2 id="heading-3">先探索，再规划，然后编码</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>As a deterministic gate: aStop hookruns your check as a script and blocks the turn from ending until it passes. Claude Code overrides the hook and ends the turn after 8 consecutive blocks.</li><li>By a second opinion: averification subagentor adynamic workflowthat checks its own findings has a fresh model try to refute the result, so the agent doing the work isn’t the one grading it.</li></ul></div><div class="lang-cn-block"><p>探索</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/goal</p></div><div class="lang-cn-block"><pre><code class="language-">read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Explore first, then plan, then code</h2></div><div class="lang-cn-block"><p>规划</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Explore</p></div><div class="lang-cn-block"><pre><code class="language-">I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.
+Plan</p></div><div class="lang-cn-block"><pre><code class="language-">implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.
+Ctrl+G
+Implement</p></div><div class="lang-cn-block"><pre><code class="language-">commit with a descriptive message and open a PR</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.
+Commit</p></div><div class="lang-cn-block"><p>&quot;你会对这个文件做哪些改进？&quot;</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">commit with a descriptive message and open a PR</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>commit with a descriptive message and open a PR</p></div><div class="lang-cn-block"><ul><li>使用 @ 引用文件，而不是描述代码的位置。Claude 会在响应之前读取该文件。</li><li>直接粘贴图片。将图片复制/粘贴或拖放到提示中。</li><li>提供文档和 API 参考的 URL。使用 /permissions 将常用域名加入允许列表。</li><li>通过运行 cat error.log | claude 管道传入数据，直接发送文件内容。</li><li>让 Claude 获取所需内容。告诉 Claude 使用 Bash 命令、MCP 工具或读取文件来自行拉取上下文。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Provide specific context in your prompts</h2></div><div class="lang-cn-block"><h2 id="heading-6">配置你的环境</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;what would you improve in this file?&quot;</p></div><div class="lang-cn-block"><h3 id="heading-7">编写有效的 CLAUDE.md</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Provide rich content</h3></div><div class="lang-cn-block"><p>/init</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>@</p></div><div class="lang-cn-block"><pre><code class="language-"># Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Reference files with@instead of describing where code lives. Claude reads the file before responding.</li></ul></div><div class="lang-cn-block"><p>@path/to/import</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>@</p></div><div class="lang-cn-block"><pre><code class="language-">See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Paste images directly. Copy/paste or drag and drop images into the prompt.</li><li>Give URLsfor documentation and API references. Use/permissionsto allowlist frequently-used domains.</li></ul></div><div class="lang-cn-block"><ul><li>主文件夹（~/.claude/CLAUDE.md）：适用于所有 Claude 会话</li><li>项目根目录（./CLAUDE.md）：提交到 git 以便与团队共享</li><li>项目根目录（./CLAUDE.local.md）：个人的项目专用笔记；将此文件添加到 .gitignore 中，避免与团队共享</li><li>父目录：适用于 monorepo，root/CLAUDE.md 和 root/foo/CLAUDE.md 都会被自动加载</li><li>子目录：当 Claude 读取子目录中的文件时，会按需加载子目录的 CLAUDE.md 文件</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/permissions</p></div><div class="lang-cn-block"><h3 id="heading-8">配置权限</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Pipe in databy runningcat error.log | claudeto send file contents directly.</li></ul></div><div class="lang-cn-block"><p>/permissions</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>cat error.log | claude</p></div><div class="lang-cn-block"><ul><li>自动模式：一个独立的分类器模型审查命令，仅阻止看起来有风险的操作：权限范围升级、未知基础设施或恶意内容驱动的操作。当你信任任务的大致方向但不想逐步点击确认时，这是最佳选择</li><li>权限允许列表：允许你已知安全的特定工具，如 npm run lint 或 git commit</li><li>沙箱化：启用操作系统级别的隔离来限制文件系统和网络访问，允许 Claude 在定义的边界内更自由地工作</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Let Claude fetch what it needs. Tell Claude to pull context itself using Bash commands, MCP tools, or by reading files.</li></ul></div><div class="lang-cn-block"><h3 id="heading-9">使用 CLI 工具</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Configure your environment</h2></div><div class="lang-cn-block"><p>gh、aws、gcloud、sentry-cli 等工具都经过了优化。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Write an effective CLAUDE.md</h3></div><div class="lang-cn-block"><p>使用 &#x27;foo-cli-tool --help&#x27; 来了解 foo 工具，然后用它来解决 A、B、C 问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/init
+/init</p></div><div class="lang-cn-block"><h3 id="heading-10">连接 MCP 服务器</h3></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-"># Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</h1></div><div class="lang-cn-block"><h3 id="heading-11">设置钩子</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>@path/to/import</p></div><div class="lang-cn-block"><p>在 .claude/settings.json 中配置 /hooks。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</p></div><div class="lang-cn-block"><p>技能（Skill）以 SKILL.md 文件的形式存在于 .claude/skills/ 目录中，可以通过 /skill-name 来调用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Home folder (~/.claude/CLAUDE.md): applies to all Claude sessions</li></ul></div><div class="lang-cn-block"><pre><code class="language-">---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>~/.claude/CLAUDE.md</p></div><div class="lang-cn-block"><pre><code class="language-">---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use`gh issue view`to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Project root (./CLAUDE.md): check into git to share with your team</li></ul></div><div class="lang-cn-block"><p>你可以使用 /fix-issue 1234 来调用此技能。设置 disable-model-invocation: true 可以跳过模型调用，直接执行技能中的步骤。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>./CLAUDE.md</p></div><div class="lang-cn-block"><h3 id="heading-13">创建自定义子智能体</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Project root (./CLAUDE.local.md): personal project-specific notes; add this file to your.gitignoreso it isn’t shared with your team</li></ul></div><div class="lang-cn-block"><p>子智能体（Subagent）定义在 .claude/agents/ 目录中。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>./CLAUDE.local.md
+.gitignore</p></div><div class="lang-cn-block"><pre><code class="language-">---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Parent directories: useful for monorepos where bothroot/CLAUDE.mdandroot/foo/CLAUDE.mdare pulled in automatically</li></ul></div><div class="lang-cn-block"><h3 id="heading-14">安装插件</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>root/CLAUDE.md
+root/foo/CLAUDE.md</p></div><div class="lang-cn-block"><p>使用 /plugin 来安装和管理插件。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Child directories: Claude pulls in child CLAUDE.md files on demand when it reads a file in those directories</li></ul></div><div class="lang-cn-block"><h2 id="heading-15">有效沟通</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Configure permissions</h3></div><div class="lang-cn-block"><h3 id="heading-16">提出代码库相关问题</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/permissions
+/sandbox</p></div><div class="lang-cn-block"><ul><li>日志系统是如何工作的？</li><li>如何创建一个新的 API 端点？</li><li>foo.rs 第 134 行的 async move { ... } 是做什么的？</li><li>CustomerOnboardingFlowImpl 处理了哪些边缘情况？</li><li>为什么这段代码在第 333 行调用 foo() 而不是 bar()？</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Auto mode: a separate classifier model reviews commands and blocks only what looks risky: scope escalation, unknown infrastructure, or hostile-content-driven actions. Best when you trust the general direction of a task but don’t want to click through every step</li><li>Permission allowlists: permit specific tools you know are safe, likenpm run lintorgit commit</li></ul></div><div class="lang-cn-block"><h3 id="heading-17">让 Claude 访谈你</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>npm run lint
+git commit</p></div><div class="lang-cn-block"><p>使用 AskUserQuestion 工具来让 Claude 对你进行深入访谈。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Sandboxing: enable OS-level isolation that restricts filesystem and network access, allowing Claude to work more freely within defined boundaries</li></ul></div><div class="lang-cn-block"><pre><code class="language-">I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Use CLI tools</h3></div><div class="lang-cn-block"><h2 id="heading-18">管理你的会话</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>gh
+aws
+gcloud
+sentry-cli
+gh
+gh
+Use &#x27;foo-cli-tool --help&#x27; to learn about foo tool, then use it to solve A, B, C.</p></div><div class="lang-cn-block"><h3 id="heading-19">尽早并频繁地修正方向</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Connect MCP servers</h3></div><div class="lang-cn-block"><ul><li>Esc：在 Claude 执行过程中按 Esc 键停止。上下文会被保留，因此你可以重新引导方向。</li><li>Esc + Esc 或 /rewind：按两次 Esc 或运行 /rewind 来打开回退菜单，恢复之前的对话和代码状态，或从选定消息开始总结。</li><li>&quot;撤销那个操作&quot;：让 Claude 回退其更改。</li><li>/clear：在不相关的任务之间重置上下文。包含不相关上下文的长会话可能会降低性能。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>claude mcp add</p></div><div class="lang-cn-block"><h3 id="heading-20">积极管理上下文</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Set up hooks</h3></div><div class="lang-cn-block"><ul><li>在任务之间频繁使用 /clear 来完全重置上下文窗口</li><li>当自动压缩触发时，Claude 会总结最重要的内容，包括代码模式、文件状态和关键决策</li><li>如需更多控制，运行 /compact &lt;instructions&gt;，例如 /compact Focus on the API changes</li><li>要仅压缩对话的一部分，使用 Esc + Esc 或 /rewind，选择一个消息检查点，然后选择&quot;从此处总结&quot;或&quot;总结到此处&quot;。前者压缩从该点之后的消息同时保留早期上下文不变；后者压缩早期消息同时完整保留最近的消息。请参阅&quot;恢复与总结&quot;。</li><li>在 CLAUDE.md 中自定义压缩行为，例如添加指令&quot;压缩时，始终保留完整的已修改文件列表和所有测试命令&quot;，以确保关键上下文在总结过程中得以保留</li><li>对于不需要保留在上下文中的快速问题，使用 /btw。答案会显示在可关闭的叠加层中，并且永远不会进入对话历史，因此你可以在不增加上下文的情况下查看细节。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>.claude/settings.json
+/hooks</p></div><div class="lang-cn-block"><h3 id="heading-21">使用子智能体进行调查</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Create skills</h3></div><div class="lang-cn-block"><p>使用子智能体（Subagent）来调查问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>SKILL.md
+.claude/skills/
+/skill-name
+SKILL.md
+.claude/skills/</p></div><div class="lang-cn-block"><pre><code class="language-">Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</p></div><div class="lang-cn-block"><h3 id="heading-22">通过检查点回退</h3></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use`gh issue view`to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use<code class="inline">gh issue view</code>to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR
+/fix-issue 1234
+disable-model-invocation: true</p></div><div class="lang-cn-block"><h3 id="heading-23">恢复会话</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Create custom subagents</h3></div><div class="lang-cn-block"><p>使用 /rename 为会话命名，使用 claude --continue 继续最近的会话，使用 claude --resume 恢复特定会话（例如 claude --resume oauth-migration）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>.claude/agents/</p></div><div class="lang-cn-block"><h2 id="heading-24">自动化与规模化</h2></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</p></div><div class="lang-cn-block"><p>使用 claude -p &quot;prompt&quot; 来运行非交互模式。可以配合 --output-format stream-json --verbose 使用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Install plugins</h3></div><div class="lang-cn-block"><pre><code class="language-"># One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/plugin</p></div><div class="lang-cn-block"><h3 id="heading-26">运行多个 Claude 会话</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Communicate effectively</h2></div><div class="lang-cn-block"><ul><li>工作树（Worktree）：在隔离的 git 检出中运行独立的 CLI 会话，避免编辑冲突</li><li>桌面应用：可视化管理多个本地会话，每个会话在自己的工作树中</li><li>Web 版 Claude Code：在 Anthropic 管理的云基础设施上的隔离虚拟机中运行会话</li><li>智能体团队（Agent Team）：多个会话的自动化协调，具有共享任务、消息传递和团队负责人</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Ask codebase questions</h3></div><div class="lang-cn-block"><p>实现流程示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>How does logging work?</li><li>How do I make a new API endpoint?</li><li>What doesasync move { ... }do on line 134 offoo.rs?</li></ul></div><div class="lang-cn-block"><ol><li>智能体 A：为我们的 API 端点实现一个速率限制器</li><li>智能体 B：审查 @src/middleware/rateLimiter.ts 中的速率限制器实现。查找边缘情况、竞态条件以及与现有中间件模式的一致性</li><li>智能体 A：以下是审查反馈：[会话 B 输出]。解决这些问题</li></ol></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>async move { ... }
+foo.rs</p></div><div class="lang-cn-block"><h3 id="heading-27">跨文件扇出执行</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>What edge cases doesCustomerOnboardingFlowImplhandle?</li></ul></div><div class="lang-cn-block"><p>使用 claude -p 配合 --allowedTools 来跨多个文件扇出执行任务。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>CustomerOnboardingFlowImpl</p></div><div class="lang-cn-block"><p>步骤：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Why does this code callfoo()instead ofbar()on line 333?</li></ul></div><div class="lang-cn-block"><ol><li>生成任务列表：列出所有需要迁移的 2,000 个 Python 文件</li><li>编写脚本来循环处理列表</li></ol></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>foo()
+bar()</p></div><div class="lang-cn-block"><pre><code class="language-">forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Let Claude interview you</h3></div><div class="lang-cn-block"><p>先在几个文件上测试，然后大规模运行。使用 --allowedTools 来限制可用工具。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>AskUserQuestion</p></div><div class="lang-cn-block"><pre><code class="language-">claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</p></div><div class="lang-cn-block"><h3 id="heading-28">使用自动模式自主运行</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>​Manage your session</h2></div><div class="lang-cn-block"><pre><code class="language-">claude--permission-modeauto-p&quot;fix all lint errors&quot;</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Course-correct early and often</h3></div><div class="lang-cn-block"><p>使用 -p 标志来指定提示。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Esc: stop Claude mid-action with theEsckey. Context is preserved, so you can redirect.</li></ul></div><div class="lang-cn-block"><h3 id="heading-29">添加对抗性审查步骤</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Esc
+Esc</p></div><div class="lang-cn-block"><p>使用 /code-review 或子智能体来添加对抗性审查。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Esc + Escor/rewind: pressEsctwice or run/rewindto open the rewind menu and restore previous conversation and code state, or summarize from a selected message.</li></ul></div><div class="lang-cn-block"><pre><code class="language-">Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Esc + Esc
+/rewind
+Esc
+/rewind</p></div><div class="lang-cn-block"><h2 id="heading-30">避免常见的失败模式</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>&quot;Undo that&quot;: have Claude revert its changes.</li></ul></div><div class="lang-cn-block"><ul><li>大杂烩会话。你从一个任务开始，然后问 Claude 一些不相关的事情，再回到第一个任务。上下文中充满了不相关的信息。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;Undo that&quot;</p></div><div class="lang-cn-block"><blockquote><p>修复方法：在不相关的任务之间使用 /clear。</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>/clear: reset context between unrelated tasks. Long sessions with irrelevant context can reduce performance.</li></ul></div><div class="lang-cn-block"><ul><li>反复纠正。Claude 做错了某事，你纠正它，它仍然做错，你再次纠正。上下文被失败的方法污染了。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/clear
+/clear</p></div><div class="lang-cn-block"><blockquote><p>修复方法：在两次失败的纠正后，使用 /clear 并根据你学到的经验编写一个更好的初始提示。</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>​Manage context aggressively</h3></div><div class="lang-cn-block"><ul><li>过度指定的 CLAUDE.md。如果你的 CLAUDE.md 太长，Claude 会忽略其中一半，因为重要的规则在噪音中丢失了。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/clear</p></div><div class="lang-cn-block"><blockquote><p>修复方法：果断精简。如果 Claude 在没有指令的情况下已经正确执行了某项操作，就删除它或将其转换为钩子。</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Use/clearfrequently between tasks to reset the context window entirely</li></ul></div><div class="lang-cn-block"><ul><li>信任后验证的差距。Claude 生成了一个看似合理的实现，但没有处理边缘情况。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/clear</p></div><div class="lang-cn-block"><blockquote><p>修复方法：始终提供验证（测试、脚本、截图）。如果你无法验证它，就不要发布它。</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>When auto compaction triggers, Claude summarizes what matters most, including code patterns, file states, and key decisions</li><li>For more control, run/compact &lt;instructions&gt;, like/compact Focus on the API changes</li></ul></div><div class="lang-cn-block"><ul><li>无限探索。你让 Claude &quot;调查&quot;某事但没有限定范围。Claude 读取了数百个文件，填满了上下文。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/compact &lt;instructions&gt;
+/compact Focus on the API changes</p></div><div class="lang-cn-block"><blockquote><p>修复方法：将调查范围缩小或使用子智能体，这样探索不会消耗你的主上下文。</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>To compact only part of the conversation, useEsc + Escor/rewind, select a message checkpoint, and chooseSummarize from hereorSummarize up to here. The first condenses messages from that point forward while keeping earlier context intact; the second condenses earlier messages while keeping recent ones in full. SeeRestore vs. summarize.</li></ul></div><div class="lang-cn-block"><h2 id="heading-31">培养你的直觉</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Esc + Esc
+/rewind</p></div><div class="lang-cn-block"><h2 id="heading-32">相关资源</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Customize compaction behavior in CLAUDE.md with instructions like&quot;When compacting, always preserve the full list of modified files and any test commands&quot;to ensure critical context survives summarization</li></ul></div><div class="lang-cn-block"><ul><li>Claude Code 的工作原理：智能体循环、工具和上下文管理</li><li>扩展 Claude Code：技能、钩子、MCP、子智能体和插件</li><li>常见工作流：调试、测试、PR 等的分步指南</li><li>CLAUDE.md：存储项目约定和持久化上下文</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;When compacting, always preserve the full list of modified files and any test commands&quot;</p></div><div class="lang-cn-block"><p>本页是否对你有帮助？</p></div></div>
+<div class="lang-en-block"><ul><li>For quick questions that don’t need to stay in context, use/btw. The answer appears in a dismissible overlay and never enters conversation history, so you can check a detail without growing context.</li></ul></div>
+<div class="lang-en-block"><p>/btw</p></div>
+<div class="lang-en-block"><h3>​Use subagents for investigation</h3></div>
+<div class="lang-en-block"><p>&quot;use subagents to investigate X&quot;</p></div>
+<div class="lang-en-block"><pre><code class="language-">Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</code></pre></div>
+<div class="lang-en-block"><p>Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</p></div>
+<div class="lang-en-block"><pre><code class="language-">use a subagent to review this code for edge cases</code></pre></div>
+<div class="lang-en-block"><p>use a subagent to review this code for edge cases</p></div>
+<div class="lang-en-block"><h3>​Rewind with checkpoints</h3></div>
+<div class="lang-en-block"><p>Escape
+/rewind</p></div>
+<div class="lang-en-block"><h3>​Resume conversations</h3></div>
+<div class="lang-en-block"><p>/rename
+claude --continue
+claude --resume
+oauth-migration</p></div>
+<div class="lang-en-block"><h2>​Automate and scale</h2></div>
+<div class="lang-en-block"><h3>​Run non-interactive mode</h3></div>
+<div class="lang-en-block"><p>claude -p &quot;prompt&quot;
+--output-format stream-json --verbose
+claude -p &quot;your prompt&quot;</p></div>
+<div class="lang-en-block"><pre><code class="language-"># One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</code></pre></div>
+<div class="lang-en-block"><h1>One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</h1></div>
+<div class="lang-en-block"><h3>​Run multiple Claude sessions</h3></div>
+<div class="lang-en-block"><ul><li>Worktrees: run separate CLI sessions in isolated git checkouts so edits don’t collide</li></ul></div>
+<div class="lang-en-block"><ul><li>Desktop app: manage multiple local sessions visually, each in its own worktree</li></ul></div>
+<div class="lang-en-block"><ul><li>Claude Code on the web: run sessions on Anthropic-managed cloud infrastructure in isolated VMs</li></ul></div>
+<div class="lang-en-block"><ul><li>Agent teams: automated coordination of multiple sessions with shared tasks, messaging, and a team lead</li></ul></div>
+<div class="lang-en-block"><p>Implement a rate limiter for our API endpoints
+Review the rate limiter implementation in @src/middleware/rateLimiter.ts. Look for edge cases, race conditions, and consistency with our existing middleware patterns.
+Here&#x27;s the review feedback: [Session B output]. Address these issues.</p></div>
+<div class="lang-en-block"><h3>​Fan out across files</h3></div>
+<div class="lang-en-block"><p>claude -p
+--allowedTools
+Generate a task list
+list all 2,000 Python files that need migrating
+Write a script to loop through the list</p></div>
+<div class="lang-en-block"><pre><code class="language-">forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done</code></pre></div>
+<div class="lang-en-block"><p>forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done
+Test on a few files, then run at scale
+--allowedTools</p></div>
+<div class="lang-en-block"><pre><code class="language-">claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command</code></pre></div>
+<div class="lang-en-block"><p>claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command
+--verbose</p></div>
+<div class="lang-en-block"><h3>​Run autonomously with auto mode</h3></div>
+<div class="lang-en-block"><pre><code class="language-">claude--permission-modeauto-p&quot;fix all lint errors&quot;</code></pre></div>
+<div class="lang-en-block"><p>claude--permission-modeauto-p&quot;fix all lint errors&quot;
+-p</p></div>
+<div class="lang-en-block"><h3>​Add an adversarial review step</h3></div>
+<div class="lang-en-block"><p>/code-review</p></div>
+<div class="lang-en-block"><pre><code class="language-">Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</code></pre></div>
+<div class="lang-en-block"><p>Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</p></div>
+<div class="lang-en-block"><h2>​Avoid common failure patterns</h2></div>
+<div class="lang-en-block"><ul><li>The kitchen sink session.You start with one task, then ask Claude something unrelated, then go back to the first task. Context is full of irrelevant information.Fix:/clearbetween unrelated tasks.</li></ul></div>
+<div class="lang-en-block"><p>Fix:/clearbetween unrelated tasks.</p></div>
+<div class="lang-en-block"><p>/clear</p></div>
+<div class="lang-en-block"><ul><li>Correcting over and over.Claude does something wrong, you correct it, it’s still wrong, you correct again. Context is polluted with failed approaches.Fix: After two failed corrections,/clearand write a better initial prompt incorporating what you learned.</li></ul></div>
+<div class="lang-en-block"><p>Fix: After two failed corrections,/clearand write a better initial prompt incorporating what you learned.</p></div>
+<div class="lang-en-block"><p>/clear</p></div>
+<div class="lang-en-block"><ul><li>The over-specified CLAUDE.md.If your CLAUDE.md is too long, Claude ignores half of it because important rules get lost in the noise.Fix: Ruthlessly prune. If Claude already does something correctly without the instruction, delete it or convert it to a hook.</li></ul></div>
+<div class="lang-en-block"><p>Fix: Ruthlessly prune. If Claude already does something correctly without the instruction, delete it or convert it to a hook.</p></div>
+<div class="lang-en-block"><ul><li>The trust-then-verify gap.Claude produces a plausible-looking implementation that doesn’t handle edge cases.Fix: Always provide verification (tests, scripts, screenshots). If you can’t verify it, don’t ship it.</li></ul></div>
+<div class="lang-en-block"><p>Fix: Always provide verification (tests, scripts, screenshots). If you can’t verify it, don’t ship it.</p></div>
+<div class="lang-en-block"><ul><li>The infinite exploration.You ask Claude to “investigate” something without scoping it. Claude reads hundreds of files, filling the context.Fix: Scope investigations narrowly or use subagents so the exploration doesn’t consume your main context.</li></ul></div>
+<div class="lang-en-block"><p>Fix: Scope investigations narrowly or use subagents so the exploration doesn’t consume your main context.</p></div>
+<div class="lang-en-block"><h2>​Develop your intuition</h2></div>
+<div class="lang-en-block"><h2>​Related resources</h2></div>
+<div class="lang-en-block"><ul><li>How Claude Code works: the agentic loop, tools, and context management</li></ul></div>
+<div class="lang-en-block"><ul><li>Extend Claude Code: skills, hooks, MCP, subagents, and plugins</li></ul></div>
+<div class="lang-en-block"><ul><li>Common workflows: step-by-step recipes for debugging, testing, PRs, and more</li></ul></div>
+<div class="lang-en-block"><ul><li>CLAUDE.md: store project conventions and persistent context</li></ul></div>
+<div class="lang-en-block"><p>Was this page helpful?</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><h2>本页内容</h2>
+<ul>
+<li>让 Claude 能够验证自己的工作</li>
+<li>先探索，再规划，然后编码</li>
+<li>在提示中提供具体上下文提供丰富内容</li>
+<li>提供丰富内容</li>
+<li>配置你的环境编写有效的 CLAUDE.md配置权限使用 CLI 工具连接 MCP 服务器设置钩子创建技能创建自定义子智能体安装插件</li>
+<li>编写有效的 CLAUDE.md</li>
+<li>配置权限</li>
+<li>使用 CLI 工具</li>
+<li>连接 MCP 服务器</li>
+<li>设置钩子</li>
+<li>创建技能</li>
+<li>创建自定义子智能体</li>
+<li>安装插件</li>
+<li>有效沟通提出代码库相关问题让 Claude 访谈你</li>
+<li>提出代码库相关问题</li>
+<li>让 Claude 访谈你</li>
+<li>管理你的会话尽早并频繁地修正方向积极管理上下文使用子智能体进行调查通过检查点回退恢复会话</li>
+<li>尽早并频繁地修正方向</li>
+<li>积极管理上下文</li>
+<li>使用子智能体进行调查</li>
+<li>通过检查点回退</li>
+<li>恢复会话</li>
+<li>自动化与规模化运行非交互模式运行多个 Claude 会话跨文件扇出执行使用自动模式自主运行添加对抗性审查步骤</li>
+<li>运行非交互模式</li>
+<li>运行多个 Claude 会话</li>
+<li>跨文件扇出执行</li>
+<li>使用自动模式自主运行</li>
+<li>添加对抗性审查步骤</li>
+<li>避免常见的失败模式</li>
+<li>培养你的直觉</li>
+<li>相关资源</li>
+</ul>
+<h1>Claude Code 最佳实践</h1>
+<p>充分利用 Claude Code 的技巧和模式，从配置环境到跨并行会话进行规模化。</p>
+<h2>让 Claude 能够验证自己的工作</h2>
+<ul>
+<li>在单个提示中：要求 Claude 在同一条消息中运行检查并进行迭代，如上表所示。</li>
+<li>跨会话：将检查设置为 /goal 条件。一个独立的评估器会在每轮对话后重新检查，Claude 会持续工作直到条件满足。</li>
+<li>作为确定性门控：一个 Stop 钩子（Hook）将你的检查作为脚本运行，并阻止当前轮次结束直到检查通过。Claude Code 在连续 8 次阻止后会覆盖该钩子并结束轮次。</li>
+<li>通过第二意见：一个验证子智能体（Subagent）或动态工作流来检查自身的发现，让一个全新的模型尝试反驳结果，这样执行工作的智能体不是评分的那个。</li>
+</ul>
+<h2>先探索，再规划，然后编码</h2>
+<p>探索</p>
+<pre><code class="language-">read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.</code></pre>
+<p>规划</p>
+<pre><code class="language-">I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.</code></pre>
+<p>Ctrl+G
+实现</p>
+<pre><code class="language-">implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.</code></pre>
+<p>提交</p>
+<pre><code class="language-">commit with a descriptive message and open a PR</code></pre>
+<h2>在提示中提供具体上下文</h2>
+<p>&quot;你会对这个文件做哪些改进？&quot;</p>
+<h3>提供丰富内容</h3>
+<ul>
+<li>使用 @ 引用文件，而不是描述代码的位置。Claude 会在响应之前读取该文件。</li>
+<li>直接粘贴图片。将图片复制/粘贴或拖放到提示中。</li>
+<li>提供文档和 API 参考的 URL。使用 /permissions 将常用域名加入允许列表。</li>
+<li>通过运行 cat error.log | claude 管道传入数据，直接发送文件内容。</li>
+<li>让 Claude 获取所需内容。告诉 Claude 使用 Bash 命令、MCP 工具或读取文件来自行拉取上下文。</li>
+</ul>
+<h2>配置你的环境</h2>
+<h3>编写有效的 CLAUDE.md</h3>
+<p>/init</p>
+<pre><code class="language-"># Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</code></pre>
+<p>@path/to/import</p>
+<pre><code class="language-">See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</code></pre>
+<ul>
+<li>主文件夹（~/.claude/CLAUDE.md）：适用于所有 Claude 会话</li>
+<li>项目根目录（./CLAUDE.md）：提交到 git 以便与团队共享</li>
+<li>项目根目录（./CLAUDE.local.md）：个人的项目专用笔记；将此文件添加到 .gitignore 中，避免与团队共享</li>
+<li>父目录：适用于 monorepo，root/CLAUDE.md 和 root/foo/CLAUDE.md 都会被自动加载</li>
+<li>子目录：当 Claude 读取子目录中的文件时，会按需加载子目录的 CLAUDE.md 文件</li>
+</ul>
+<h3>配置权限</h3>
+<p>/permissions</p>
+<ul>
+<li>自动模式：一个独立的分类器模型审查命令，仅阻止看起来有风险的操作：权限范围升级、未知基础设施或恶意内容驱动的操作。当你信任任务的大致方向但不想逐步点击确认时，这是最佳选择</li>
+<li>权限允许列表：允许你已知安全的特定工具，如 npm run lint 或 git commit</li>
+<li>沙箱化：启用操作系统级别的隔离来限制文件系统和网络访问，允许 Claude 在定义的边界内更自由地工作</li>
+</ul>
+<h3>使用 CLI 工具</h3>
+<p>gh、aws、gcloud、sentry-cli 等工具都经过了优化。</p>
+<p>使用 &#x27;foo-cli-tool --help&#x27; 来了解 foo 工具，然后用它来解决 A、B、C 问题。</p>
+<h3>连接 MCP 服务器</h3>
+<p>使用 claude mcp add 来连接 MCP 服务器。</p>
+<h3>设置钩子</h3>
+<p>在 .claude/settings.json 中配置 /hooks。</p>
+<h3>创建技能</h3>
+<p>技能（Skill）以 SKILL.md 文件的形式存在于 .claude/skills/ 目录中，可以通过 /skill-name 来调用。</p>
+<pre><code class="language-">---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</code></pre>
+<pre><code class="language-">---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use`gh issue view`to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR</code></pre>
+<p>你可以使用 /fix-issue 1234 来调用此技能。设置 disable-model-invocation: true 可以跳过模型调用，直接执行技能中的步骤。</p>
+<h3>创建自定义子智能体</h3>
+<p>子智能体（Subagent）定义在 .claude/agents/ 目录中。</p>
+<pre><code class="language-">---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</code></pre>
+<h3>安装插件</h3>
+<p>使用 /plugin 来安装和管理插件。</p>
+<h2>有效沟通</h2>
+<h3>提出代码库相关问题</h3>
+<ul>
+<li>日志系统是如何工作的？</li>
+<li>如何创建一个新的 API 端点？</li>
+<li>foo.rs 第 134 行的 async move { ... } 是做什么的？</li>
+<li>CustomerOnboardingFlowImpl 处理了哪些边缘情况？</li>
+<li>为什么这段代码在第 333 行调用 foo() 而不是 bar()？</li>
+</ul>
+<h3>让 Claude 访谈你</h3>
+<p>使用 AskUserQuestion 工具来让 Claude 对你进行深入访谈。</p>
+<pre><code class="language-">I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</code></pre>
+<h2>管理你的会话</h2>
+<h3>尽早并频繁地修正方向</h3>
+<ul>
+<li>Esc：在 Claude 执行过程中按 Esc 键停止。上下文会被保留，因此你可以重新引导方向。</li>
+<li>Esc + Esc 或 /rewind：按两次 Esc 或运行 /rewind 来打开回退菜单，恢复之前的对话和代码状态，或从选定消息开始总结。</li>
+<li>&quot;撤销那个操作&quot;：让 Claude 回退其更改。</li>
+<li>/clear：在不相关的任务之间重置上下文。包含不相关上下文的长会话可能会降低性能。</li>
+</ul>
+<h3>积极管理上下文</h3>
+<ul>
+<li>在任务之间频繁使用 /clear 来完全重置上下文窗口</li>
+<li>当自动压缩触发时，Claude 会总结最重要的内容，包括代码模式、文件状态和关键决策</li>
+<li>如需更多控制，运行 /compact &lt;instructions&gt;，例如 /compact Focus on the API changes</li>
+<li>要仅压缩对话的一部分，使用 Esc + Esc 或 /rewind，选择一个消息检查点，然后选择&quot;从此处总结&quot;或&quot;总结到此处&quot;。前者压缩从该点之后的消息同时保留早期上下文不变；后者压缩早期消息同时完整保留最近的消息。请参阅&quot;恢复与总结&quot;。</li>
+<li>在 CLAUDE.md 中自定义压缩行为，例如添加指令&quot;压缩时，始终保留完整的已修改文件列表和所有测试命令&quot;，以确保关键上下文在总结过程中得以保留</li>
+<li>对于不需要保留在上下文中的快速问题，使用 /btw。答案会显示在可关闭的叠加层中，并且永远不会进入对话历史，因此你可以在不增加上下文的情况下查看细节。</li>
+</ul>
+<h3>使用子智能体进行调查</h3>
+<p>使用子智能体（Subagent）来调查问题。</p>
+<pre><code class="language-">Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</code></pre>
+<pre><code class="language-">use a subagent to review this code for edge cases</code></pre>
+<h3>通过检查点回退</h3>
+<p>按 Escape 键或使用 /rewind 命令来回退到之前的检查点。</p>
+<h3>恢复会话</h3>
+<p>使用 /rename 为会话命名，使用 claude --continue 继续最近的会话，使用 claude --resume 恢复特定会话（例如 claude --resume oauth-migration）。</p>
+<h2>自动化与规模化</h2>
+<h3>运行非交互模式</h3>
+<p>使用 claude -p &quot;prompt&quot; 来运行非交互模式。可以配合 --output-format stream-json --verbose 使用。</p>
+<pre><code class="language-"># One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</code></pre>
+<h3>运行多个 Claude 会话</h3>
+<ul>
+<li>工作树（Worktree）：在隔离的 git 检出中运行独立的 CLI 会话，避免编辑冲突</li>
+<li>桌面应用：可视化管理多个本地会话，每个会话在自己的工作树中</li>
+<li>Web 版 Claude Code：在 Anthropic 管理的云基础设施上的隔离虚拟机中运行会话</li>
+<li>智能体团队（Agent Team）：多个会话的自动化协调，具有共享任务、消息传递和团队负责人</li>
+</ul>
+<p>实现流程示例：</p>
+<ol>
+<li>智能体 A：为我们的 API 端点实现一个速率限制器</li>
+<li>智能体 B：审查 @src/middleware/rateLimiter.ts 中的速率限制器实现。查找边缘情况、竞态条件以及与现有中间件模式的一致性</li>
+<li>智能体 A：以下是审查反馈：[会话 B 输出]。解决这些问题</li>
+</ol>
+<h3>跨文件扇出执行</h3>
+<p>使用 claude -p 配合 --allowedTools 来跨多个文件扇出执行任务。</p>
+<p>步骤：</p>
+<ol>
+<li>生成任务列表：列出所有需要迁移的 2,000 个 Python 文件</li>
+<li>编写脚本来循环处理列表</li>
+</ol>
+<pre><code class="language-">forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done</code></pre>
+<p>先在几个文件上测试，然后大规模运行。使用 --allowedTools 来限制可用工具。</p>
+<pre><code class="language-">claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command</code></pre>
+<p>使用 --verbose 获取详细输出。</p>
+<h3>使用自动模式自主运行</h3>
+<pre><code class="language-">claude--permission-modeauto-p&quot;fix all lint errors&quot;</code></pre>
+<p>使用 -p 标志来指定提示。</p>
+<h3>添加对抗性审查步骤</h3>
+<p>使用 /code-review 或子智能体来添加对抗性审查。</p>
+<pre><code class="language-">Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</code></pre>
+<h2>避免常见的失败模式</h2>
+<ul>
+<li>大杂烩会话。你从一个任务开始，然后问 Claude 一些不相关的事情，再回到第一个任务。上下文中充满了不相关的信息。</li>
+</ul>
+<blockquote><p>修复方法：在不相关的任务之间使用 /clear。</p></blockquote>
+<ul>
+<li>反复纠正。Claude 做错了某事，你纠正它，它仍然做错，你再次纠正。上下文被失败的方法污染了。</li>
+</ul>
+<blockquote><p>修复方法：在两次失败的纠正后，使用 /clear 并根据你学到的经验编写一个更好的初始提示。</p></blockquote>
+<ul>
+<li>过度指定的 CLAUDE.md。如果你的 CLAUDE.md 太长，Claude 会忽略其中一半，因为重要的规则在噪音中丢失了。</li>
+</ul>
+<blockquote><p>修复方法：果断精简。如果 Claude 在没有指令的情况下已经正确执行了某项操作，就删除它或将其转换为钩子。</p></blockquote>
+<ul>
+<li>信任后验证的差距。Claude 生成了一个看似合理的实现，但没有处理边缘情况。</li>
+</ul>
+<blockquote><p>修复方法：始终提供验证（测试、脚本、截图）。如果你无法验证它，就不要发布它。</p></blockquote>
+<ul>
+<li>无限探索。你让 Claude &quot;调查&quot;某事但没有限定范围。Claude 读取了数百个文件，填满了上下文。</li>
+</ul>
+<blockquote><p>修复方法：将调查范围缩小或使用子智能体，这样探索不会消耗你的主上下文。</p></blockquote>
+<h2>培养你的直觉</h2>
+<h2>相关资源</h2>
+<ul>
+<li>Claude Code 的工作原理：智能体循环、工具和上下文管理</li>
+<li>扩展 Claude Code：技能、钩子、MCP、子智能体和插件</li>
+<li>常见工作流：调试、测试、PR 等的分步指南</li>
+<li>CLAUDE.md：存储项目约定和持久化上下文</li>
+</ul>
+<p>本页是否对你有帮助？</p></div>
+                <div class="lang-en"><h2>On this page</h2>
+<ul>
+<li>Give Claude a way to verify its work</li>
+<li>Explore first, then plan, then code</li>
+<li>Provide specific context in your promptsProvide rich content</li>
+<li>Provide rich content</li>
+<li>Configure your environmentWrite an effective CLAUDE.mdConfigure permissionsUse CLI toolsConnect MCP serversSet up hooksCreate skillsCreate custom subagentsInstall plugins</li>
+<li>Write an effective CLAUDE.md</li>
+<li>Configure permissions</li>
+<li>Use CLI tools</li>
+<li>Connect MCP servers</li>
+<li>Set up hooks</li>
+<li>Create skills</li>
+<li>Create custom subagents</li>
+<li>Install plugins</li>
+<li>Communicate effectivelyAsk codebase questionsLet Claude interview you</li>
+<li>Ask codebase questions</li>
+<li>Let Claude interview you</li>
+<li>Manage your sessionCourse-correct early and oftenManage context aggressivelyUse subagents for investigationRewind with checkpointsResume conversations</li>
+<li>Course-correct early and often</li>
+<li>Manage context aggressively</li>
+<li>Use subagents for investigation</li>
+<li>Rewind with checkpoints</li>
+<li>Resume conversations</li>
+<li>Automate and scaleRun non-interactive modeRun multiple Claude sessionsFan out across filesRun autonomously with auto modeAdd an adversarial review step</li>
+<li>Run non-interactive mode</li>
+<li>Run multiple Claude sessions</li>
+<li>Fan out across files</li>
+<li>Run autonomously with auto mode</li>
+<li>Add an adversarial review step</li>
+<li>Avoid common failure patterns</li>
+<li>Develop your intuition</li>
+<li>Related resources</li>
+</ul>
+<h1>Best practices for Claude Code</h1>
+<p>Tips and patterns for getting the most out of Claude Code, from configuring your environment to scaling across parallel sessions.</p>
+<h2>​Give Claude a way to verify its work</h2>
+<ul>
+<li>In one prompt: ask Claude to run the check and iterate in the same message, as in the table above.</li>
+<li>Across a session: set the check as a/goalcondition. A separate evaluator re-checks it after every turn and Claude keeps working until it holds.</li>
+</ul>
+<p>/goal</p>
+<ul>
+<li>As a deterministic gate: aStop hookruns your check as a script and blocks the turn from ending until it passes. Claude Code overrides the hook and ends the turn after 8 consecutive blocks.</li>
+<li>By a second opinion: averification subagentor adynamic workflowthat checks its own findings has a fresh model try to refute the result, so the agent doing the work isn’t the one grading it.</li>
+</ul>
+<p>/goal</p>
+<h2>​Explore first, then plan, then code</h2>
+<p>Explore</p>
+<pre><code class="language-">read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.</code></pre>
+<p>read /src/auth and understand how we handle sessions and login.also look at how we manage environment variables for secrets.
+Plan</p>
+<pre><code class="language-">I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.</code></pre>
+<p>I want to add Google OAuth. What files need to change?What&#x27;s the session flow? Create a plan.
+Ctrl+G
+Implement</p>
+<pre><code class="language-">implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.</code></pre>
+<p>implement the OAuth flow from your plan. write tests for thecallback handler, run the test suite and fix any failures.
+Commit</p>
+<pre><code class="language-">commit with a descriptive message and open a PR</code></pre>
+<p>commit with a descriptive message and open a PR</p>
+<h2>​Provide specific context in your prompts</h2>
+<p>&quot;what would you improve in this file?&quot;</p>
+<h3>​Provide rich content</h3>
+<p>@</p>
+<ul>
+<li>Reference files with@instead of describing where code lives. Claude reads the file before responding.</li>
+</ul>
+<p>@</p>
+<ul>
+<li>Paste images directly. Copy/paste or drag and drop images into the prompt.</li>
+<li>Give URLsfor documentation and API references. Use/permissionsto allowlist frequently-used domains.</li>
+</ul>
+<p>/permissions</p>
+<ul>
+<li>Pipe in databy runningcat error.log | claudeto send file contents directly.</li>
+</ul>
+<p>cat error.log | claude</p>
+<ul>
+<li>Let Claude fetch what it needs. Tell Claude to pull context itself using Bash commands, MCP tools, or by reading files.</li>
+</ul>
+<h2>​Configure your environment</h2>
+<h3>​Write an effective CLAUDE.md</h3>
+<p>/init
+/init</p>
+<pre><code class="language-"># Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</code></pre>
+<h1>Code style-Use ES modules (import/export) syntax, not CommonJS (require)-Destructure imports when possible (eg. import { foo } from &#x27;bar&#x27;)# Workflow-Be sure to typecheck when you&#x27;re done making a series of code changes-Prefer running single tests, and not the whole test suite, for performance</h1>
+<p>@path/to/import</p>
+<pre><code class="language-">See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</code></pre>
+<p>See @README.md for project overview and @package.json for available npm commands.# Additional Instructions-Git workflow: @docs/git-instructions.md-Personal overrides: @~/.claude/my-project-instructions.md</p>
+<ul>
+<li>Home folder (~/.claude/CLAUDE.md): applies to all Claude sessions</li>
+</ul>
+<p>~/.claude/CLAUDE.md</p>
+<ul>
+<li>Project root (./CLAUDE.md): check into git to share with your team</li>
+</ul>
+<p>./CLAUDE.md</p>
+<ul>
+<li>Project root (./CLAUDE.local.md): personal project-specific notes; add this file to your.gitignoreso it isn’t shared with your team</li>
+</ul>
+<p>./CLAUDE.local.md
+.gitignore</p>
+<ul>
+<li>Parent directories: useful for monorepos where bothroot/CLAUDE.mdandroot/foo/CLAUDE.mdare pulled in automatically</li>
+</ul>
+<p>root/CLAUDE.md
+root/foo/CLAUDE.md</p>
+<ul>
+<li>Child directories: Claude pulls in child CLAUDE.md files on demand when it reads a file in those directories</li>
+</ul>
+<h3>​Configure permissions</h3>
+<p>/permissions
+/sandbox</p>
+<ul>
+<li>Auto mode: a separate classifier model reviews commands and blocks only what looks risky: scope escalation, unknown infrastructure, or hostile-content-driven actions. Best when you trust the general direction of a task but don’t want to click through every step</li>
+<li>Permission allowlists: permit specific tools you know are safe, likenpm run lintorgit commit</li>
+</ul>
+<p>npm run lint
+git commit</p>
+<ul>
+<li>Sandboxing: enable OS-level isolation that restricts filesystem and network access, allowing Claude to work more freely within defined boundaries</li>
+</ul>
+<h3>​Use CLI tools</h3>
+<p>gh
+aws
+gcloud
+sentry-cli
+gh
+gh
+Use &#x27;foo-cli-tool --help&#x27; to learn about foo tool, then use it to solve A, B, C.</p>
+<h3>​Connect MCP servers</h3>
+<p>claude mcp add</p>
+<h3>​Set up hooks</h3>
+<p>.claude/settings.json
+/hooks</p>
+<h3>​Create skills</h3>
+<p>SKILL.md
+.claude/skills/
+/skill-name
+SKILL.md
+.claude/skills/</p>
+<pre><code class="language-">---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</code></pre>
+<p>---name:api-conventionsdescription:REST API design conventions for our services---# API Conventions-Use kebab-case for URL paths-Use camelCase for JSON properties-Always include pagination for list endpoints-Version APIs in the URL path (/v1/, /v2/)</p>
+<pre><code class="language-">---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use`gh issue view`to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR</code></pre>
+<p>---name:fix-issuedescription:Fix a GitHub issuedisable-model-invocation:true---Analyze and fix the GitHub issue: $ARGUMENTS.1.Use<code class="inline">gh issue view</code>to get the issue details2.Understand the problem described in the issue3.Search the codebase for relevant files4.Implement the necessary changes to fix the issue5.Write and run tests to verify the fix6.Ensure code passes linting and type checking7.Create a descriptive commit message8.Push and create a PR
+/fix-issue 1234
+disable-model-invocation: true</p>
+<h3>​Create custom subagents</h3>
+<p>.claude/agents/</p>
+<pre><code class="language-">---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</code></pre>
+<p>---name:security-reviewerdescription:Reviews code for security vulnerabilitiestools:Read, Grep, Glob, Bashmodel:opus---You are a senior security engineer. Review code for:-Injection vulnerabilities (SQL, XSS, command injection)-Authentication and authorization flaws-Secrets or credentials in code-Insecure data handlingProvide specific line references and suggested fixes.</p>
+<h3>​Install plugins</h3>
+<p>/plugin</p>
+<h2>​Communicate effectively</h2>
+<h3>​Ask codebase questions</h3>
+<ul>
+<li>How does logging work?</li>
+<li>How do I make a new API endpoint?</li>
+<li>What doesasync move { ... }do on line 134 offoo.rs?</li>
+</ul>
+<p>async move { ... }
+foo.rs</p>
+<ul>
+<li>What edge cases doesCustomerOnboardingFlowImplhandle?</li>
+</ul>
+<p>CustomerOnboardingFlowImpl</p>
+<ul>
+<li>Why does this code callfoo()instead ofbar()on line 333?</li>
+</ul>
+<p>foo()
+bar()</p>
+<h3>​Let Claude interview you</h3>
+<p>AskUserQuestion</p>
+<pre><code class="language-">I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</code></pre>
+<p>I want to build [brief description]. Interview me in detail using the AskUserQuestion tool.Ask about technical implementation, UI/UX, edge cases, concerns, and tradeoffs. Don&#x27;t ask obvious questions, dig into the hard parts I might not have considered.Keep interviewing until we&#x27;ve covered everything, then write a complete spec to SPEC.md.</p>
+<h2>​Manage your session</h2>
+<h3>​Course-correct early and often</h3>
+<ul>
+<li>Esc: stop Claude mid-action with theEsckey. Context is preserved, so you can redirect.</li>
+</ul>
+<p>Esc
+Esc</p>
+<ul>
+<li>Esc + Escor/rewind: pressEsctwice or run/rewindto open the rewind menu and restore previous conversation and code state, or summarize from a selected message.</li>
+</ul>
+<p>Esc + Esc
+/rewind
+Esc
+/rewind</p>
+<ul>
+<li>&quot;Undo that&quot;: have Claude revert its changes.</li>
+</ul>
+<p>&quot;Undo that&quot;</p>
+<ul>
+<li>/clear: reset context between unrelated tasks. Long sessions with irrelevant context can reduce performance.</li>
+</ul>
+<p>/clear
+/clear</p>
+<h3>​Manage context aggressively</h3>
+<p>/clear</p>
+<ul>
+<li>Use/clearfrequently between tasks to reset the context window entirely</li>
+</ul>
+<p>/clear</p>
+<ul>
+<li>When auto compaction triggers, Claude summarizes what matters most, including code patterns, file states, and key decisions</li>
+<li>For more control, run/compact &lt;instructions&gt;, like/compact Focus on the API changes</li>
+</ul>
+<p>/compact &lt;instructions&gt;
+/compact Focus on the API changes</p>
+<ul>
+<li>To compact only part of the conversation, useEsc + Escor/rewind, select a message checkpoint, and chooseSummarize from hereorSummarize up to here. The first condenses messages from that point forward while keeping earlier context intact; the second condenses earlier messages while keeping recent ones in full. SeeRestore vs. summarize.</li>
+</ul>
+<p>Esc + Esc
+/rewind</p>
+<ul>
+<li>Customize compaction behavior in CLAUDE.md with instructions like&quot;When compacting, always preserve the full list of modified files and any test commands&quot;to ensure critical context survives summarization</li>
+</ul>
+<p>&quot;When compacting, always preserve the full list of modified files and any test commands&quot;</p>
+<ul>
+<li>For quick questions that don’t need to stay in context, use/btw. The answer appears in a dismissible overlay and never enters conversation history, so you can check a detail without growing context.</li>
+</ul>
+<p>/btw</p>
+<h3>​Use subagents for investigation</h3>
+<p>&quot;use subagents to investigate X&quot;</p>
+<pre><code class="language-">Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</code></pre>
+<p>Use subagents to investigate how our authentication system handles tokenrefresh, and whether we have any existing OAuth utilities I should reuse.</p>
+<pre><code class="language-">use a subagent to review this code for edge cases</code></pre>
+<p>use a subagent to review this code for edge cases</p>
+<h3>​Rewind with checkpoints</h3>
+<p>Escape
+/rewind</p>
+<h3>​Resume conversations</h3>
+<p>/rename
+claude --continue
+claude --resume
+oauth-migration</p>
+<h2>​Automate and scale</h2>
+<h3>​Run non-interactive mode</h3>
+<p>claude -p &quot;prompt&quot;
+--output-format stream-json --verbose
+claude -p &quot;your prompt&quot;</p>
+<pre><code class="language-"># One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</code></pre>
+<h1>One-off queriesclaude-p&quot;Explain what this project does&quot;# Structured output for scriptsclaude-p&quot;List all API endpoints&quot;--output-formatjson# Streaming for real-time processingclaude-p&quot;Analyze this log file&quot;--output-formatstream-json--verbose</h1>
+<h3>​Run multiple Claude sessions</h3>
+<ul>
+<li>Worktrees: run separate CLI sessions in isolated git checkouts so edits don’t collide</li>
+<li>Desktop app: manage multiple local sessions visually, each in its own worktree</li>
+<li>Claude Code on the web: run sessions on Anthropic-managed cloud infrastructure in isolated VMs</li>
+<li>Agent teams: automated coordination of multiple sessions with shared tasks, messaging, and a team lead</li>
+</ul>
+<p>Implement a rate limiter for our API endpoints
+Review the rate limiter implementation in @src/middleware/rateLimiter.ts. Look for edge cases, race conditions, and consistency with our existing middleware patterns.
+Here&#x27;s the review feedback: [Session B output]. Address these issues.</p>
+<h3>​Fan out across files</h3>
+<p>claude -p
+--allowedTools
+Generate a task list
+list all 2,000 Python files that need migrating
+Write a script to loop through the list</p>
+<pre><code class="language-">forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done</code></pre>
+<p>forfilein$(catfiles.txt);doclaude-p&quot;Migrate$filefrom React to Vue. Return OK or FAIL.&quot;\--allowedTools&quot;Edit,Bash(git commit *)&quot;done
+Test on a few files, then run at scale
+--allowedTools</p>
+<pre><code class="language-">claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command</code></pre>
+<p>claude-p&quot;&lt;your prompt&gt;&quot;--output-formatjson|your_command
+--verbose</p>
+<h3>​Run autonomously with auto mode</h3>
+<pre><code class="language-">claude--permission-modeauto-p&quot;fix all lint errors&quot;</code></pre>
+<p>claude--permission-modeauto-p&quot;fix all lint errors&quot;
+-p</p>
+<h3>​Add an adversarial review step</h3>
+<p>/code-review</p>
+<pre><code class="language-">Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</code></pre>
+<p>Use a subagent to review the rate limiter diff against PLAN.md. Check thatevery requirement is implemented, the listed edge cases have tests, andnothing outside the task&#x27;s scope changed. Report gaps, not style preferences.</p>
+<h2>​Avoid common failure patterns</h2>
+<ul>
+<li>The kitchen sink session.You start with one task, then ask Claude something unrelated, then go back to the first task. Context is full of irrelevant information.Fix:/clearbetween unrelated tasks.</li>
+</ul>
+<blockquote><p>Fix:/clearbetween unrelated tasks.</p></blockquote>
+<p>/clear</p>
+<ul>
+<li>Correcting over and over.Claude does something wrong, you correct it, it’s still wrong, you correct again. Context is polluted with failed approaches.Fix: After two failed corrections,/clearand write a better initial prompt incorporating what you learned.</li>
+</ul>
+<blockquote><p>Fix: After two failed corrections,/clearand write a better initial prompt incorporating what you learned.</p></blockquote>
+<p>/clear</p>
+<ul>
+<li>The over-specified CLAUDE.md.If your CLAUDE.md is too long, Claude ignores half of it because important rules get lost in the noise.Fix: Ruthlessly prune. If Claude already does something correctly without the instruction, delete it or convert it to a hook.</li>
+</ul>
+<blockquote><p>Fix: Ruthlessly prune. If Claude already does something correctly without the instruction, delete it or convert it to a hook.</p></blockquote>
+<ul>
+<li>The trust-then-verify gap.Claude produces a plausible-looking implementation that doesn’t handle edge cases.Fix: Always provide verification (tests, scripts, screenshots). If you can’t verify it, don’t ship it.</li>
+</ul>
+<blockquote><p>Fix: Always provide verification (tests, scripts, screenshots). If you can’t verify it, don’t ship it.</p></blockquote>
+<ul>
+<li>The infinite exploration.You ask Claude to “investigate” something without scoping it. Claude reads hundreds of files, filling the context.Fix: Scope investigations narrowly or use subagents so the exploration doesn’t consume your main context.</li>
+</ul>
+<blockquote><p>Fix: Scope investigations narrowly or use subagents so the exploration doesn’t consume your main context.</p></blockquote>
+<h2>​Develop your intuition</h2>
+<h2>​Related resources</h2>
+<ul>
+<li>How Claude Code works: the agentic loop, tools, and context management</li>
+<li>Extend Claude Code: skills, hooks, MCP, subagents, and plugins</li>
+<li>Common workflows: step-by-step recipes for debugging, testing, PRs, and more</li>
+<li>CLAUDE.md: store project conventions and persistent context</li>
+</ul>
+<p>Was this page helpful?</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/claude-code-best-practices" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

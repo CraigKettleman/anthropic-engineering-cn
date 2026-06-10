@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>通过智能体技能（Agent Skills）赋能智能体应对真实世界 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">技能的结构解析</a>
+<a class="toc-h3" href="#heading-2">技能与上下文窗口</a>
+<a class="toc-h3" href="#heading-3">技能与代码执行</a>
+<a class="toc-h2" href="#heading-4">开发和评估技能</a>
+<a class="toc-h3" href="#heading-5">使用技能时的安全注意事项</a>
+<a class="toc-h2" href="#heading-6">技能的未来</a>
+<a class="toc-h2" href="#heading-7">致谢</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">The anatomy of a skill</a>
+<a class="toc-h3" href="#heading-2">Skills and the context window</a>
+<a class="toc-h3" href="#heading-3">Skills and code execution</a>
+<a class="toc-h2" href="#heading-4">Developing and evaluating skills</a>
+<a class="toc-h3" href="#heading-5">Security considerations when using Skills</a>
+<a class="toc-h2" href="#heading-6">The future of Skills</a>
+<a class="toc-h2" href="#heading-7">Acknowledgements</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-10-16</div>
+            <div class="title-block">
+                <h1 class="cn">通过智能体技能（Agent Skills）赋能智能体应对真实世界</h1>
+                <h1 class="en">Equipping agents for the real world with Agent Skills</h1>
+                <div class="en-title">Equipping agents for the real world with Agent Skills</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Update: We&#x27;ve publishedAgent Skillsas an open standard for cross-platform portability. (December 18, 2025)
+As model capabilities improve, we can now build general-purpose agents that interact with full-fledged computing environments.Claude Code, for example, can accomplish complex tasks across domains using local code execution and filesystems. But as these agents become more powerful, we need more composable, scalable, and portable ways to equip them with domain-specific expertise.
+This led us to createAgent Skills: organized folders of instructions, scripts, and resources that agents can discover and load dynamically to perform better at specific tasks.Skills extend Claude’s capabilities by packaging your expertise into composable resources for Claude, transforming general-purpose agents into specialized agents that fit your needs.
+Building a skill for an agent is like putting together an onboarding guide for a new hire. Instead of building fragmented, custom-designed agents for each use case, anyone can now specialize their agents with composable capabilities by capturing and sharing their procedural knowledge. In this article, we explain what Skills are, show how they work, and share best practices for building your own.</p></div><div class="lang-cn-block"><p>更新：我们已将智能体技能（Agent Skills）作为跨平台可移植性的开放标准发布。（2025年12月18日）</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The anatomy of a skill</h2></div><div class="lang-cn-block"><p>随着模型能力的提升，我们现在可以构建与完整计算环境交互的通用智能体（Agent）。例如，Claude Code 可以利用本地代码执行和文件系统完成跨领域的复杂任务。但随着这些智能体变得越来越强大，我们需要更具可组合性、可扩展性和可移植性的方式来为它们配备领域专业知识。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>To see Skills in action, let’s walk through a real example: one of the skills that powersClaude’s recently launched document editing abilities. Claude already knows a lot about understanding PDFs, but is limited in its ability to manipulate them directly (e.g. to fill out a form). ThisPDF skilllets us give Claude these new abilities.
+At its simplest, a skill is a directory that contains aSKILL.md file. This file must start with YAML frontmatter that contains some required metadata:nameanddescription. At startup, the agent pre-loads thenameanddescriptionof every installed skill into its system prompt.
+SKILL.md file
+name
+description
+name
+description
+This metadata is thefirst levelofprogressive disclosure: it provides just enough information for Claude to know when each skill should be used without loading all of it into context. The actual body of this file is thesecond levelof detail. If Claude thinks the skill is relevant to the current task, it will load the skill by reading its fullSKILL.mdinto context.
+SKILL.md
+As skills grow in complexity, they may contain too much context to fit into a singleSKILL.md, or context that’s relevant only in specific scenarios. In these cases, skills can bundle additional files within the skill directory and reference them by name fromSKILL.md. These additional linked files are thethird level(and beyond) of detail, which Claude can choose to navigate and discover only as needed.
+SKILL.md
+SKILL.md
+In the PDF skill shown below, theSKILL.mdrefers to two additional files (reference.mdandforms.md) that the skill author chooses to bundle alongside the coreSKILL.md. By moving the form-filling instructions to a separate file (forms.md), the skill author is able to keep the core of the skill lean, trusting that Claude will readforms.mdonly when filling out a form.
+SKILL.md
+reference.md
+forms.md
+SKILL.md
+forms.md
+forms.md
+Progressive disclosure is the core design principle that makes Agent Skills flexible and scalable. Like a well-organized manual that starts with a table of contents, then specific chapters, and finally a detailed appendix, skills let Claude load information only as needed:
+Agents with a filesystem and code execution tools don’t need to read the entirety of a skill into their context window when working on a particular task. This means that the amount of context that can be bundled into a skill is effectively unbounded.</p></div><div class="lang-cn-block"><p>这促使我们创建了智能体技能（Agent Skills）：一种由指令、脚本和资源组成的有组织的文件夹，智能体可以动态发现和加载它们，从而在特定任务上表现得更好。技能通过将您的专业知识打包成可组合的资源来扩展 Claude 的能力，将通用智能体转化为符合您需求的专业化智能体。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Skills and the context window</h3></div><div class="lang-cn-block"><p>为智能体构建技能就像为新员工编写入职指南一样。与其为每个用例构建零散的、定制设计的智能体现在任何人都可以通过捕获和共享他们的程序性知识，用可组合的能力来专业化他们的智能体。在本文中，我们将解释什么是技能，展示它们的工作原理，并分享构建自己技能的最佳实践。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The following diagram shows how the context window changes when a skill is triggered by a user’s message.
+The sequence of operations shown:</p></div><div class="lang-cn-block"><h2 id="heading-1">技能的结构解析</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>To start, the context window has the core system prompt and the metadata for each of the installed skills, along with the user’s initial message;</li><li>Claude triggers the PDF skill by invoking a Bash tool to read the contents ofpdf/SKILL.md;</li></ul></div><div class="lang-cn-block"><p>为了直观了解技能的工作方式，让我们通过一个真实案例来说明：驱动 Claude 最新推出的文档编辑功能的技能之一。Claude 已经对理解 PDF 了解很多，但在直接操作 PDF 方面（例如填写表单）的能力有限。这个 PDF 技能让我们能够赋予 Claude 这些新能力。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>pdf/SKILL.md</p></div><div class="lang-cn-block"><p>最简单的技能是一个包含 SKILL.md 文件的目录。该文件必须以 YAML 前置元数据（frontmatter）开头，其中包含一些必需的元数据：<code class="inline">name</code> 和 <code class="inline">description</code>。在启动时，智能体会将每个已安装技能的 <code class="inline">name</code> 和 <code class="inline">description</code> 预加载到其系统提示词中。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Claude chooses to read theforms.mdfile bundled with the skill;</li></ul></div><div class="lang-cn-block"><p>这些元数据是<strong>渐进式披露</strong>（progressive disclosure）的<strong>第一层</strong>：它仅提供足够的信息，让 Claude 知道何时应该使用某个技能，而无需将全部内容加载到上下文中。该文件的实际正文是<strong>第二层</strong>细节。如果 Claude 认为该技能与当前任务相关，它会通过将完整的 SKILL.md 读入上下文来加载该技能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>forms.md</p></div><div class="lang-cn-block"><p>随着技能复杂度的增长，它们可能包含过多的上下文而无法放入单个 SKILL.md 中，或者某些上下文仅在特定场景下才相关。在这些情况下，技能可以在技能目录中捆绑额外的文件，并从 SKILL.md 中按名称引用它们。这些额外的链接文件是<strong>第三层</strong>（及更深层）的细节，Claude 可以选择仅在需要时才导航和发现它们。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Finally, Claude proceeds with the user’s task now that it has loaded relevant instructions from the PDF skill.</li></ul></div><div class="lang-cn-block"><p>在下面展示的 PDF 技能中，SKILL.md 引用了两个额外的文件（reference.md 和 forms.md），技能作者选择将它们与核心 SKILL.md 一起捆绑。通过将表单填写指令移至单独的文件（forms.md），技能作者能够保持技能核心的精简，信任 Claude 仅在填写表单时才会读取 forms.md。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Skills and code execution</h3></div><div class="lang-cn-block"><p>渐进式披露是使智能体技能灵活且可扩展的核心设计原则。就像一本组织良好的手册，从目录开始，然后是具体章节，最后是详细的附录一样，技能让 Claude 仅在需要时才加载信息：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Skills can also include code for Claude to execute as tools at its discretion.
+Large language models excel at many tasks, but certain operations are better suited for traditional code execution. For example, sorting a list via token generation is far more expensive than simply running a sorting algorithm. Beyond efficiency concerns, many applications require the deterministic reliability that only code can provide.
+In our example, the PDF skill includes a pre-written Python script that reads a PDF and extracts all form fields. Claude can run this script without loading either the script or the PDF into context. And because code is deterministic, this workflow is consistent and repeatable.</p></div><div class="lang-cn-block"><p>拥有文件系统和代码执行工具的智能体在处理特定任务时，不需要将技能的全部内容读入其上下文窗口。这意味着可以捆绑到技能中的上下文量实际上是无限制的。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Developing and evaluating skills</h2></div><div class="lang-cn-block"><h3 id="heading-2">技能与上下文窗口</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Here are some helpful guidelines for getting started with authoring and testing skills:</p></div><div class="lang-cn-block"><p>下图展示了当用户的某条消息触发技能时，上下文窗口的变化情况。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Start with evaluation:Identify specific gaps in your agents’ capabilities by running them on representative tasks and observing where they struggle or require additional context. Then build skills incrementally to address these shortcomings.</li><li>Structure for scale:When theSKILL.mdfile becomes unwieldy, split its content into separate files and reference them. If certain contexts are mutually exclusive or rarely used together, keeping the paths separate will reduce the token usage. Finally, code can serve as both executable tools and as documentation. It should be clear whether Claude should run scripts directly or read them into context as reference.</li></ul></div><div class="lang-cn-block"><p>图中展示的操作序列如下：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>SKILL.md</p></div><div class="lang-cn-block"><ul><li>首先，上下文窗口包含核心系统提示词和每个已安装技能的元数据，以及用户的初始消息；</li><li>Claude 通过调用 Bash 工具读取 pdf/SKILL.md 的内容来触发 PDF 技能；</li><li>Claude 选择读取与该技能捆绑的 forms.md 文件；</li><li>最后，Claude 在从 PDF 技能加载了相关指令后，继续执行用户的任务。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Think from Claude’s perspective:Monitor how Claude uses your skill in real scenarios and iterate based on observations: watch for unexpected trajectories or overreliance on certain contexts. Pay special attention to thenameanddescriptionof your skill. Claude will use these when deciding whether to trigger the skill in response to its current task.</li></ul></div><div class="lang-cn-block"><h3 id="heading-3">技能与代码执行</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>name
+description</p></div><div class="lang-cn-block"><p>技能还可以包含供 Claude 自行决定作为工具执行的代码。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Iterate with Claude:As you work on a task with Claude, ask Claude to capture its successful approaches and common mistakes into reusable context and code within a skill. If it goes off track when using a skill to complete a task, ask it to self-reflect on what went wrong. This process will help you discover what context Claude actually needs, instead of trying to anticipate it upfront.</li></ul></div><div class="lang-cn-block"><p>大语言模型（LLM）在许多任务上表现出色，但某些操作更适合传统的代码执行。例如，通过 token 生成来排序一个列表远比直接运行排序算法昂贵得多。除了效率方面的考虑，许多应用还需要只有代码才能提供的确定性可靠性。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Security considerations when using Skills</h3></div><div class="lang-cn-block"><p>在我们的示例中，PDF 技能包含一个预编写的 Python 脚本，用于读取 PDF 并提取所有表单字段。Claude 可以运行此脚本，而无需将脚本或 PDF 加载到上下文中。而且由于代码是确定性的，这个工作流具有一致性和可重复性。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Skills provide Claude with new capabilities through instructions and code. While this makes them powerful, it also means that malicious skills may introduce vulnerabilities in the environment where they’re used or direct Claude to exfiltrate data and take unintended actions.
+We recommend installing skills only from trusted sources. When installing a skill from a less-trusted source, thoroughly audit it before use. Start by reading the contents of the files bundled in the skill to understand what it does, paying particular attention to code dependencies and bundled resources like images or scripts. Similarly, pay attention to instructions or code within the skill that instruct Claude to connect to potentially untrusted external network sources.</p></div><div class="lang-cn-block"><h2 id="heading-4">开发和评估技能</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The future of Skills</h2></div><div class="lang-cn-block"><p>以下是一些有助于开始编写和测试技能的指导原则：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Agent Skills aresupported todayacrossClaude.ai, Claude Code, the Claude Agent SDK, and the Claude Developer Platform.
+In the coming weeks, we’ll continue to add features that support the full lifecycle of creating, editing, discovering, sharing, and using Skills. We’re especially excited about the opportunity for Skills to help organizations and individuals share their context and workflows with Claude. We’ll also explore how Skills can complementModel Context Protocol(MCP) servers by teaching agents more complex workflows that involve external tools and software.
+Looking further ahead, we hope to enable agents to create, edit, and evaluate Skills on their own, letting them codify their own patterns of behavior into reusable capabilities.
+Skills are a simple concept with a correspondingly simple format. This simplicity makes it easier for organizations, developers, and end users to build customized agents and give them new capabilities.
+We’re excited to see what people build with Skills. Get started today by checking out our Skillsdocsandcookbook.</p></div><div class="lang-cn-block"><ul><li><strong>从评估开始：</strong> 通过让智能体在代表性任务上运行并观察它们在哪里遇到困难或需要额外上下文，来识别智能体能力的具体不足。然后逐步构建技能来弥补这些不足。</li><li><strong>为扩展而组织结构：</strong> 当 SKILL.md 文件变得难以管理时，将其内容拆分为单独的文件并引用它们。如果某些上下文是互斥的或很少一起使用，将路径分开可以减少 token 使用量。最后，代码既可以作为可执行工具，也可以作为文档。应该明确 Claude 是应该直接运行脚本还是将其作为参考读入上下文。</li><li><strong>从 Claude 的视角思考：</strong> 监控 Claude 在实际场景中如何使用您的技能，并根据观察进行迭代：留意意外的行为路径或对某些上下文的过度依赖。特别注意技能的 <code class="inline">name</code> 和 <code class="inline">description</code>。Claude 在决定是否针对当前任务触发该技能时会使用这些信息。</li><li><strong>与 Claude 一起迭代：</strong> 当您与 Claude 一起完成任务时，请 Claude 将其成功的做法和常见错误捕获为技能中可复用的上下文和代码。如果它在使用技能完成任务时偏离了方向，请让它自我反思出了什么问题。这个过程将帮助您发现 Claude 实际需要什么上下文，而不是试图提前预判。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Acknowledgements</h2></div><div class="lang-cn-block"><h3 id="heading-5">使用技能时的安全注意事项</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Barry Zhang, Keith Lazuka, and Mahesh Murag, who all really like folders. Special thanks to the many others across Anthropic who championed, supported, and built Skills.</p></div><div class="lang-cn-block"><p>技能通过指令和代码为 Claude 提供新能力。虽然这使它们功能强大，但也意味着恶意技能可能会在使用环境中引入漏洞，或引导 Claude 泄露数据并执行非预期的操作。</p></div></div>
+<div class="lang-cn-block"><p>我们建议仅从受信任的来源安装技能。当从不太受信任的来源安装技能时，请在使用前对其进行彻底审计。首先阅读技能中捆绑的文件内容以了解其功能，特别注意代码依赖项和捆绑的资源（如图像或脚本）。同样，注意技能中指示 Claude 连接到潜在不受信任的外部网络来源的指令或代码。</p></div>
+<div class="lang-cn-block"><h2 id="heading-6">技能的未来</h2></div>
+<div class="lang-cn-block"><p>智能体技能目前已在 Claude.ai、Claude Code、Claude Agent SDK 和 Claude 开发者平台上得到支持。</p></div>
+<div class="lang-cn-block"><p>在未来几周内，我们将继续添加功能，以支持创建、编辑、发现、共享和使用技能的完整生命周期。我们对技能帮助组织和个人将其上下文和工作流与 Claude 共享的机会感到特别兴奋。我们还将探索技能如何通过教会智能体涉及外部工具和软件的更复杂工作流来补充模型上下文协议（Model Context Protocol, MCP）服务器。</p></div>
+<div class="lang-cn-block"><p>展望更远的未来，我们希望使智能体能够自行创建、编辑和评估技能，让它们将自己的行为模式编码为可复用的能力。</p></div>
+<div class="lang-cn-block"><p>技能是一个简单的概念，其格式也同样简洁。这种简洁性使组织、开发者和终端用户更容易构建定制化的智能体并赋予它们新能力。</p></div>
+<div class="lang-cn-block"><p>我们期待看到人们利用技能构建出什么。请通过查阅我们的技能文档和实战指南来开始使用吧。</p></div>
+<div class="lang-cn-block"><h2 id="heading-7">致谢</h2></div>
+<div class="lang-cn-block"><p>由 Barry Zhang、Keith Lazuka 和 Mahesh Murag 撰写，他们都非常喜欢文件夹。特别感谢 Anthropic 内部许多支持、推动和构建技能的同事。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>更新：我们已将智能体技能（Agent Skills）作为跨平台可移植性的开放标准发布。（2025年12月18日）</p>
+<p>随着模型能力的提升，我们现在可以构建与完整计算环境交互的通用智能体（Agent）。例如，Claude Code 可以利用本地代码执行和文件系统完成跨领域的复杂任务。但随着这些智能体变得越来越强大，我们需要更具可组合性、可扩展性和可移植性的方式来为它们配备领域专业知识。</p>
+<p>这促使我们创建了智能体技能（Agent Skills）：一种由指令、脚本和资源组成的有组织的文件夹，智能体可以动态发现和加载它们，从而在特定任务上表现得更好。技能通过将您的专业知识打包成可组合的资源来扩展 Claude 的能力，将通用智能体转化为符合您需求的专业化智能体。</p>
+<p>为智能体构建技能就像为新员工编写入职指南一样。与其为每个用例构建零散的、定制设计的智能体现在任何人都可以通过捕获和共享他们的程序性知识，用可组合的能力来专业化他们的智能体。在本文中，我们将解释什么是技能，展示它们的工作原理，并分享构建自己技能的最佳实践。</p>
+<h2>技能的结构解析</h2>
+<p>为了直观了解技能的工作方式，让我们通过一个真实案例来说明：驱动 Claude 最新推出的文档编辑功能的技能之一。Claude 已经对理解 PDF 了解很多，但在直接操作 PDF 方面（例如填写表单）的能力有限。这个 PDF 技能让我们能够赋予 Claude 这些新能力。</p>
+<p>最简单的技能是一个包含 SKILL.md 文件的目录。该文件必须以 YAML 前置元数据（frontmatter）开头，其中包含一些必需的元数据：<code class="inline">name</code> 和 <code class="inline">description</code>。在启动时，智能体会将每个已安装技能的 <code class="inline">name</code> 和 <code class="inline">description</code> 预加载到其系统提示词中。</p>
+<p>这些元数据是<strong>渐进式披露</strong>（progressive disclosure）的<strong>第一层</strong>：它仅提供足够的信息，让 Claude 知道何时应该使用某个技能，而无需将全部内容加载到上下文中。该文件的实际正文是<strong>第二层</strong>细节。如果 Claude 认为该技能与当前任务相关，它会通过将完整的 SKILL.md 读入上下文来加载该技能。</p>
+<p>随着技能复杂度的增长，它们可能包含过多的上下文而无法放入单个 SKILL.md 中，或者某些上下文仅在特定场景下才相关。在这些情况下，技能可以在技能目录中捆绑额外的文件，并从 SKILL.md 中按名称引用它们。这些额外的链接文件是<strong>第三层</strong>（及更深层）的细节，Claude 可以选择仅在需要时才导航和发现它们。</p>
+<p>在下面展示的 PDF 技能中，SKILL.md 引用了两个额外的文件（reference.md 和 forms.md），技能作者选择将它们与核心 SKILL.md 一起捆绑。通过将表单填写指令移至单独的文件（forms.md），技能作者能够保持技能核心的精简，信任 Claude 仅在填写表单时才会读取 forms.md。</p>
+<p>渐进式披露是使智能体技能灵活且可扩展的核心设计原则。就像一本组织良好的手册，从目录开始，然后是具体章节，最后是详细的附录一样，技能让 Claude 仅在需要时才加载信息：</p>
+<p>拥有文件系统和代码执行工具的智能体在处理特定任务时，不需要将技能的全部内容读入其上下文窗口。这意味着可以捆绑到技能中的上下文量实际上是无限制的。</p>
+<h3>技能与上下文窗口</h3>
+<p>下图展示了当用户的某条消息触发技能时，上下文窗口的变化情况。</p>
+<p>图中展示的操作序列如下：</p>
+<ul>
+<li>首先，上下文窗口包含核心系统提示词和每个已安装技能的元数据，以及用户的初始消息；</li>
+<li>Claude 通过调用 Bash 工具读取 pdf/SKILL.md 的内容来触发 PDF 技能；</li>
+<li>Claude 选择读取与该技能捆绑的 forms.md 文件；</li>
+<li>最后，Claude 在从 PDF 技能加载了相关指令后，继续执行用户的任务。</li>
+</ul>
+<h3>技能与代码执行</h3>
+<p>技能还可以包含供 Claude 自行决定作为工具执行的代码。</p>
+<p>大语言模型（LLM）在许多任务上表现出色，但某些操作更适合传统的代码执行。例如，通过 token 生成来排序一个列表远比直接运行排序算法昂贵得多。除了效率方面的考虑，许多应用还需要只有代码才能提供的确定性可靠性。</p>
+<p>在我们的示例中，PDF 技能包含一个预编写的 Python 脚本，用于读取 PDF 并提取所有表单字段。Claude 可以运行此脚本，而无需将脚本或 PDF 加载到上下文中。而且由于代码是确定性的，这个工作流具有一致性和可重复性。</p>
+<h2>开发和评估技能</h2>
+<p>以下是一些有助于开始编写和测试技能的指导原则：</p>
+<ul>
+<li><strong>从评估开始：</strong> 通过让智能体在代表性任务上运行并观察它们在哪里遇到困难或需要额外上下文，来识别智能体能力的具体不足。然后逐步构建技能来弥补这些不足。</li>
+<li><strong>为扩展而组织结构：</strong> 当 SKILL.md 文件变得难以管理时，将其内容拆分为单独的文件并引用它们。如果某些上下文是互斥的或很少一起使用，将路径分开可以减少 token 使用量。最后，代码既可以作为可执行工具，也可以作为文档。应该明确 Claude 是应该直接运行脚本还是将其作为参考读入上下文。</li>
+<li><strong>从 Claude 的视角思考：</strong> 监控 Claude 在实际场景中如何使用您的技能，并根据观察进行迭代：留意意外的行为路径或对某些上下文的过度依赖。特别注意技能的 <code class="inline">name</code> 和 <code class="inline">description</code>。Claude 在决定是否针对当前任务触发该技能时会使用这些信息。</li>
+<li><strong>与 Claude 一起迭代：</strong> 当您与 Claude 一起完成任务时，请 Claude 将其成功的做法和常见错误捕获为技能中可复用的上下文和代码。如果它在使用技能完成任务时偏离了方向，请让它自我反思出了什么问题。这个过程将帮助您发现 Claude 实际需要什么上下文，而不是试图提前预判。</li>
+</ul>
+<h3>使用技能时的安全注意事项</h3>
+<p>技能通过指令和代码为 Claude 提供新能力。虽然这使它们功能强大，但也意味着恶意技能可能会在使用环境中引入漏洞，或引导 Claude 泄露数据并执行非预期的操作。</p>
+<p>我们建议仅从受信任的来源安装技能。当从不太受信任的来源安装技能时，请在使用前对其进行彻底审计。首先阅读技能中捆绑的文件内容以了解其功能，特别注意代码依赖项和捆绑的资源（如图像或脚本）。同样，注意技能中指示 Claude 连接到潜在不受信任的外部网络来源的指令或代码。</p>
+<h2>技能的未来</h2>
+<p>智能体技能目前已在 Claude.ai、Claude Code、Claude Agent SDK 和 Claude 开发者平台上得到支持。</p>
+<p>在未来几周内，我们将继续添加功能，以支持创建、编辑、发现、共享和使用技能的完整生命周期。我们对技能帮助组织和个人将其上下文和工作流与 Claude 共享的机会感到特别兴奋。我们还将探索技能如何通过教会智能体涉及外部工具和软件的更复杂工作流来补充模型上下文协议（Model Context Protocol, MCP）服务器。</p>
+<p>展望更远的未来，我们希望使智能体能够自行创建、编辑和评估技能，让它们将自己的行为模式编码为可复用的能力。</p>
+<p>技能是一个简单的概念，其格式也同样简洁。这种简洁性使组织、开发者和终端用户更容易构建定制化的智能体并赋予它们新能力。</p>
+<p>我们期待看到人们利用技能构建出什么。请通过查阅我们的技能文档和实战指南来开始使用吧。</p>
+<h2>致谢</h2>
+<p>由 Barry Zhang、Keith Lazuka 和 Mahesh Murag 撰写，他们都非常喜欢文件夹。特别感谢 Anthropic 内部许多支持、推动和构建技能的同事。</p></div>
+                <div class="lang-en"><p>Update: We&#x27;ve publishedAgent Skillsas an open standard for cross-platform portability. (December 18, 2025)
+As model capabilities improve, we can now build general-purpose agents that interact with full-fledged computing environments.Claude Code, for example, can accomplish complex tasks across domains using local code execution and filesystems. But as these agents become more powerful, we need more composable, scalable, and portable ways to equip them with domain-specific expertise.
+This led us to createAgent Skills: organized folders of instructions, scripts, and resources that agents can discover and load dynamically to perform better at specific tasks.Skills extend Claude’s capabilities by packaging your expertise into composable resources for Claude, transforming general-purpose agents into specialized agents that fit your needs.
+Building a skill for an agent is like putting together an onboarding guide for a new hire. Instead of building fragmented, custom-designed agents for each use case, anyone can now specialize their agents with composable capabilities by capturing and sharing their procedural knowledge. In this article, we explain what Skills are, show how they work, and share best practices for building your own.</p>
+<h2>The anatomy of a skill</h2>
+<p>To see Skills in action, let’s walk through a real example: one of the skills that powersClaude’s recently launched document editing abilities. Claude already knows a lot about understanding PDFs, but is limited in its ability to manipulate them directly (e.g. to fill out a form). ThisPDF skilllets us give Claude these new abilities.
+At its simplest, a skill is a directory that contains aSKILL.md file. This file must start with YAML frontmatter that contains some required metadata:nameanddescription. At startup, the agent pre-loads thenameanddescriptionof every installed skill into its system prompt.
+SKILL.md file
+name
+description
+name
+description
+This metadata is thefirst levelofprogressive disclosure: it provides just enough information for Claude to know when each skill should be used without loading all of it into context. The actual body of this file is thesecond levelof detail. If Claude thinks the skill is relevant to the current task, it will load the skill by reading its fullSKILL.mdinto context.
+SKILL.md
+As skills grow in complexity, they may contain too much context to fit into a singleSKILL.md, or context that’s relevant only in specific scenarios. In these cases, skills can bundle additional files within the skill directory and reference them by name fromSKILL.md. These additional linked files are thethird level(and beyond) of detail, which Claude can choose to navigate and discover only as needed.
+SKILL.md
+SKILL.md
+In the PDF skill shown below, theSKILL.mdrefers to two additional files (reference.mdandforms.md) that the skill author chooses to bundle alongside the coreSKILL.md. By moving the form-filling instructions to a separate file (forms.md), the skill author is able to keep the core of the skill lean, trusting that Claude will readforms.mdonly when filling out a form.
+SKILL.md
+reference.md
+forms.md
+SKILL.md
+forms.md
+forms.md
+Progressive disclosure is the core design principle that makes Agent Skills flexible and scalable. Like a well-organized manual that starts with a table of contents, then specific chapters, and finally a detailed appendix, skills let Claude load information only as needed:
+Agents with a filesystem and code execution tools don’t need to read the entirety of a skill into their context window when working on a particular task. This means that the amount of context that can be bundled into a skill is effectively unbounded.</p>
+<h3>Skills and the context window</h3>
+<p>The following diagram shows how the context window changes when a skill is triggered by a user’s message.
+The sequence of operations shown:</p>
+<ul>
+<li>To start, the context window has the core system prompt and the metadata for each of the installed skills, along with the user’s initial message;</li>
+<li>Claude triggers the PDF skill by invoking a Bash tool to read the contents ofpdf/SKILL.md;</li>
+</ul>
+<p>pdf/SKILL.md</p>
+<ul>
+<li>Claude chooses to read theforms.mdfile bundled with the skill;</li>
+</ul>
+<p>forms.md</p>
+<ul>
+<li>Finally, Claude proceeds with the user’s task now that it has loaded relevant instructions from the PDF skill.</li>
+</ul>
+<h3>Skills and code execution</h3>
+<p>Skills can also include code for Claude to execute as tools at its discretion.
+Large language models excel at many tasks, but certain operations are better suited for traditional code execution. For example, sorting a list via token generation is far more expensive than simply running a sorting algorithm. Beyond efficiency concerns, many applications require the deterministic reliability that only code can provide.
+In our example, the PDF skill includes a pre-written Python script that reads a PDF and extracts all form fields. Claude can run this script without loading either the script or the PDF into context. And because code is deterministic, this workflow is consistent and repeatable.</p>
+<h2>Developing and evaluating skills</h2>
+<p>Here are some helpful guidelines for getting started with authoring and testing skills:</p>
+<ul>
+<li>Start with evaluation:Identify specific gaps in your agents’ capabilities by running them on representative tasks and observing where they struggle or require additional context. Then build skills incrementally to address these shortcomings.</li>
+<li>Structure for scale:When theSKILL.mdfile becomes unwieldy, split its content into separate files and reference them. If certain contexts are mutually exclusive or rarely used together, keeping the paths separate will reduce the token usage. Finally, code can serve as both executable tools and as documentation. It should be clear whether Claude should run scripts directly or read them into context as reference.</li>
+</ul>
+<p>SKILL.md</p>
+<ul>
+<li>Think from Claude’s perspective:Monitor how Claude uses your skill in real scenarios and iterate based on observations: watch for unexpected trajectories or overreliance on certain contexts. Pay special attention to thenameanddescriptionof your skill. Claude will use these when deciding whether to trigger the skill in response to its current task.</li>
+</ul>
+<p>name
+description</p>
+<ul>
+<li>Iterate with Claude:As you work on a task with Claude, ask Claude to capture its successful approaches and common mistakes into reusable context and code within a skill. If it goes off track when using a skill to complete a task, ask it to self-reflect on what went wrong. This process will help you discover what context Claude actually needs, instead of trying to anticipate it upfront.</li>
+</ul>
+<h3>Security considerations when using Skills</h3>
+<p>Skills provide Claude with new capabilities through instructions and code. While this makes them powerful, it also means that malicious skills may introduce vulnerabilities in the environment where they’re used or direct Claude to exfiltrate data and take unintended actions.
+We recommend installing skills only from trusted sources. When installing a skill from a less-trusted source, thoroughly audit it before use. Start by reading the contents of the files bundled in the skill to understand what it does, paying particular attention to code dependencies and bundled resources like images or scripts. Similarly, pay attention to instructions or code within the skill that instruct Claude to connect to potentially untrusted external network sources.</p>
+<h2>The future of Skills</h2>
+<p>Agent Skills aresupported todayacrossClaude.ai, Claude Code, the Claude Agent SDK, and the Claude Developer Platform.
+In the coming weeks, we’ll continue to add features that support the full lifecycle of creating, editing, discovering, sharing, and using Skills. We’re especially excited about the opportunity for Skills to help organizations and individuals share their context and workflows with Claude. We’ll also explore how Skills can complementModel Context Protocol(MCP) servers by teaching agents more complex workflows that involve external tools and software.
+Looking further ahead, we hope to enable agents to create, edit, and evaluate Skills on their own, letting them codify their own patterns of behavior into reusable capabilities.
+Skills are a simple concept with a correspondingly simple format. This simplicity makes it easier for organizations, developers, and end users to build customized agents and give them new capabilities.
+We’re excited to see what people build with Skills. Get started today by checking out our Skillsdocsandcookbook.</p>
+<h2>Acknowledgements</h2>
+<p>Written by Barry Zhang, Keith Lazuka, and Mahesh Murag, who all really like folders. Special thanks to the many others across Anthropic who championed, supported, and built Skills.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

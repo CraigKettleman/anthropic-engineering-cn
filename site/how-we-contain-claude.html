@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我们如何在各产品中对 Claude 进行隔离管控 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">三类风险，三层防御</a>
+<a class="toc-h2" href="#heading-2">智能体隔离管控的模式</a>
+<a class="toc-h3" href="#heading-3">模式一：临时容器（claude.ai 代码执行）</a>
+<a class="toc-h3" href="#heading-4">模式二：人在环沙箱（Claude Code）</a>
+<a class="toc-h3" href="#heading-5">模式三：本地虚拟机（Claude Cowork）</a>
+<a class="toc-h2" href="#heading-6">信任智能体读取的内容</a>
+<a class="toc-h2" href="#heading-7">展望未来</a>
+<a class="toc-h2" href="#heading-8">总结</a>
+<a class="toc-h3" href="#heading-9">致谢</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">Three types of risk, three components of defense</a>
+<a class="toc-h2" href="#heading-2">Patterns for containing agents</a>
+<a class="toc-h3" href="#heading-3">Pattern 1: The ephemeral container (claude.ai code execution)</a>
+<a class="toc-h3" href="#heading-4">Pattern 2: The human-in-the-loop sandbox (Claude Code)</a>
+<a class="toc-h3" href="#heading-5">Pattern 3: The local VM (Claude Cowork)</a>
+<a class="toc-h2" href="#heading-6">Trusting what the agent reads</a>
+<a class="toc-h2" href="#heading-7">Looking ahead</a>
+<a class="toc-h2" href="#heading-8">Summary</a>
+<a class="toc-h3" href="#heading-9">Acknowledgements</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2026</div>
+            <div class="title-block">
+                <h1 class="cn">我们如何在各产品中对 Claude 进行隔离管控</h1>
+                <h1 class="en">How we contain Claude across products</h1>
+                <div class="en-title">How we contain Claude across products</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Twelve months ago, we&#x27;d have rejected out of hand the idea of granting Claude access sufficient to take down an internal Anthropic service. Today that level of access is routine, and Anthropic developers are more productive for it. The risk of these deployments has two components: how likely a failure is, and how much damage one could do. Progress on safeguards and model training has steadily driven down the first; the second—the theoretical blast radius—only grows as capabilities and access expand. Yet as agents become capable of doing work that once required a person or even a team, the cost ofnotdeploying grows large enough that the risk-reward calculation tips heavily toward adoption, as long as products can be made safe. The engineering question becomes how to cap the blast radius.
+There are broadly two ways to do this.
+The first is to supervise the agent’s behavior via a human-in-the-loop. Claude Code previously protected against agents taking unintended actions by asking users for permission at each turn. Theoretically that works, but we’ve found the approach to be fallible. Our telemetry showed users approved roughly 93% of permission prompts. The more approvals a user sees, the less attention they pay to each, becoming over time much less diligent in their supervision. We recently built Claude Code auto mode, whichautomates safer approvalsin order to reduce this approval fatigue. Still, vulnerabilities remain—any probabilistic defense has a non-zero miss rate.1
+The second approach to capping the blast radius—and the focus of much of this post—is containment. Rather than supervising what the agent does, we supervise what it’sableto do by enforcing access boundaries through, for example, sandboxes, virtual machines, and egress controls. This is where Anthropic engineering has devoted the most effort, and also where many of the most surprising security failures have occurred.
+Over the past two years, we’ve shipped three primary agentic products:claude.ai, Claude Code, and Claude Cowork. Each serves a different audience, requiring a different containment architecture. This article shares what’s held up, what’s broken, and what we’ve learned about agent security along the way.</p></div><div class="lang-cn-block"><p>十二个月前，我们会断然拒绝给予 Claude 足够权限以至于可能搞垮 Anthropic 内部服务的想法。而如今，这种级别的访问权限已成为常态，Anthropic 的开发者也因此变得更加高效。这些部署的风险由两个因素构成：故障发生的可能性有多大，以及一旦发生可能造成多大的损害。安全防护措施和模型训练的进步稳步降低了第一个因素；而第二个因素——理论上的爆炸半径（blast radius）——则随着能力和访问权限的扩展只会不断增长。然而，当智能体（Agent）能够胜任曾经需要一个人甚至一个团队才能完成的工作时，不部署的代价就变得足够大，以至于风险回报的天平会大幅倾向于采用，只要产品能够做到足够安全。工程问题就变成了如何限制爆炸半径。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Three types of risk, three components of defense</h2></div><div class="lang-cn-block"><p>大致有两种方式可以做到这一点。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Security risks to agents fall into one of three categories:
+User misuse:A user—either maliciously or through carelessness—directs the agent to do something harmful. This includes everything from asking the agent to bypass a check they find annoying, to running a destructive command they don’t understand, to specifying intentional harm.
+Model misbehavior:The agent takes a harmful action no one asked for. As our models have improved, they have become more aligned on most behavior evaluations, but this doesn’t mean risk necessarily shrinks. Less capable models are more likely to misread a situation and make obvious errors. More capable models make fewer mistakes, but they’re also better at finding unexpected paths to a goal, often by routing around restrictions nobody thought to write down.
+At Anthropic, we’ve seen Claude models“helpfully” escape a sandboxin order to complete a task, examine git history tofind answers to a coding test, and spontaneously identify the benchmark it was being run on in order todecrypt its answer key. Each model brings a new set of capabilities that are sometimes put to work in unexpected ways.
+External attackers:The agent is attacked through external vectors such as tools, files, or network access. This category includes both prompt injection and conventional attacks on the agent&#x27;s runtime, orchestration layer, or proxy.
+When building containment and defense systems, we apply defenses to three main components:
+The environment in which the agent runs.We constrain where and how an agent can act with process sandboxes, VMs, filesystem boundaries, and egress controls. The goal is to set a hard boundary on what an agent can reach. For example, if credentials never enter the sandbox, they can&#x27;t be exfiltrated, regardless of whether the cause is a user, a model finding a “creative” path, or an attacker.
+A tight perimeter also means you can relax oversight. Claude Code’sreference devcontainerexists precisely so that the agent can run unattended, without per-action approvals.
+The model the agent consults.The mechanisms here include system prompts, classifiers, probes, and training modifications. Because models are probabilistic, these shape only what the agenttendsto do, not what it is theoretically capable of doing.
+These defenses are strong. On Gray Swan&#x27;s Agent Red Teaming benchmark, which tests susceptibility to prompt injection,Claude Opus 4.7holds attack success to roughly 0.1% on single attempts, and around 5–6% after 100 adaptive attempts. Claude Code auto mode catches roughly 83% of overeager behaviorsbefore they execute. Yet even with best-in-class defenses, protection in the model layer will never be 100% effective, which is why it can&#x27;t stand alone.
+The external content the agent can reach.MCP servers, third-party plugins, and web search tools all feed content into the agent’s context from sources you don’t control. An audited connector isn’t the same as audited data—a GitHub connector, for instance, can load a poisoned README straight into the model’s context despite passing malware checks. Granularly limiting tool permissions can help limit the blast radius. An agent with read-only DB access, for instance, can be deployed far more broadly than one that writes to prod.
+Defenses should overlap and complement each other. When environmental defenses aren’t available, the model layer has to pick up the slack (this is precisely what Claude Code’sauto modeis designed for). Locally, the environment and model defenses can guard against malicious tool outputs, but defenses can be added higher up the chain by limiting the tool’s capabilities and access.</p></div><div class="lang-cn-block"><p>第一种是通过人在环（human-in-the-loop）来监督智能体的行为。Claude Code 此前通过在每一轮对话中请求用户许可来防止智能体采取非预期的操作。理论上这行得通，但我们发现这种方法存在缺陷。我们的遥测数据显示，用户大约批准了 93% 的权限提示。用户看到的批准请求越多，对每一个请求的关注就越少，久而久之，监督就变得越来越不认真。我们最近构建了 Claude Code 自动模式（auto mode），该模式将更安全的批准自动化，以减少这种批准疲劳（approval fatigue）。尽管如此，漏洞依然存在——任何概率性防御都有非零的漏检率。¹</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Patterns for containing agents</h2></div><div class="lang-cn-block"><p>限制爆炸半径的第二种方法——也是本文的重点——是隔离管控（containment）。与其监督智能体做了什么，不如监督它能够做什么，通过沙箱、虚拟机和出口控制等手段强制执行访问边界。这正是 Anthropic 工程团队投入最多精力的地方，同时也是许多最令人意外的安全事故发生的地方。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Focusing on the environment layer, we describe three isolation patterns and how they’re tailored for each Claude platform—claude.ai, Claude Code, and Cowork. We arrived at each design gradually, after finding the balance between the capabilities we need from the agent and the degree of intervention required from the user.</p></div><div class="lang-cn-block"><p>在过去的两年里，我们发布了三个主要的智能体产品：claude.ai、Claude Code 和 Claude Cowork。每个产品服务于不同的用户群体，需要不同的隔离管控架构。本文分享了哪些做法经受住了考验，哪些做法出了问题，以及我们在智能体安全方面学到的经验。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Pattern 1: The ephemeral container (claude.ai code execution)</h3></div><div class="lang-cn-block"><h2 id="heading-1">三类风险，三层防御</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Though best known as a chat interface, claude.ai also writes and runs code, generates files, and calls connectors. When Claude runs code inside claude.ai, it does so in agVisorcontainer on isolated infrastructure. The agent is entirely server-side; no code runs on the local machine, and the filesystem is ephemeral (per-session). The blast radius is minimal, but so is the ceiling on what Claude can do—there&#x27;s no persistent workspace and no access to the user&#x27;s filesystem.
+This also makesclaude.aisubject to a more traditional threat model. We&#x27;re not protecting user machines from agents; we&#x27;re protecting our own infrastructure and each tenant from one another. Our pre-launch work forclaude.aiwas dominated by traditional security work like network configuration, internal service auth, and orchestration.
+That work reinforced the oldest lesson in security: the weakest layer is the one you built yourself. gVisor andseccomphave been hardened against well-resourced adversaries for far longer than agentic AI has existed, so the review effort went into the newer pieces we&#x27;d built around them. We’ll come back to this later, since our custom proxy is also the piece that broke in our most consequential incident.</p></div><div class="lang-cn-block"><p>智能体的安全风险可分为以下三类：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Pattern 2: The human-in-the-loop sandbox (Claude Code)</h3></div><div class="lang-cn-block"><p><strong>用户误用：</strong> 用户——无论是出于恶意还是疏忽——指示智能体去做有害的事情。这包括从要求智能体绕过他们觉得烦人的检查，到运行他们不理解的破坏性命令，再到故意指定有害行为等各种情况。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Claude Code runs on a user&#x27;s machine and has access to their filesystem, shell, and network. Without this, coding agents have limited usefulness, so it’s imperative to find a way to grant that access safely.
+One approach is to rely on a human-in-the-loop. This is only a tractable solution for Claude Code because the average user is a developer who’s familiar with coding environments: they can read bash, they understand what rm -rf does, and they already run npm install from untrusted sources several times a week. All that means that when an “allow this” dialog pops up, they are highly likely to have the expertise to accurately evaluate what the agent is attempting to do and the risk involved. Given this, Claude Code launched with the simplest possible defense: allow reads, require approval for write, bash, and network access.
+However, as mentioned, approval fatigue showedup within weeks.Ironically, this meant that a feature originally designed to provide oversight could arguably have the opposite effect—some users might simply stop paying attention. As a first step to mitigate incautious approvals, we shipped an OS-level sandbox (Seatbelt on macOS, bubblewrap on Linux) that hardens the boundary: reads are allowed, writes are allowed inside the workspace, but network is denied by default. Within the sandbox, the agent runs largely without interruption. The result was an 84% reduction in permission prompts, and weopen-sourced the runtime, so the boundary is auditable.
+Ouranonymized usage dataalso showed that experienced users auto-approve roughly twice as often as new users, but they also interrupt the agent mid-execution more frequently. Instead of gating individual steps, experienced users are more likely to supervise the agent only when it goes off track. While this may be a natural evolution in how people prefer to work with agents, this too is fallible, requiring users to be technical and attentive enough to notice drift in the first place. As model capabilities improve and agents begin writing increasingly ambitious bash, it becomes harder to notice any such drift. And as users move to multi-agent systems, this approach is also much less likely to be an effective oversight strategy.</p></div><div class="lang-cn-block"><p><strong>模型失范行为：</strong> 智能体采取了没有人要求的有害操作。随着模型的改进，它们在大多数行为评估上变得更加对齐（aligned），但这并不意味着风险必然降低。能力较弱的模型更容易误判情况并犯下明显错误。能力较强的模型犯错更少，但它们也更善于找到通往目标的非预期路径，通常是通过绕过没有人想到要写下的限制。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Risk we missed: Everything before the trust dialog</h4></div><div class="lang-cn-block"><p>在 Anthropic，我们见过 Claude 模型&quot;好心地&quot;逃出沙箱以完成任务，检查 git 历史来寻找编程测试的答案，以及自发识别出它正在运行的基准测试，从而解密答案密钥。每个模型都会带来新的能力组合，这些能力有时会以意想不到的方式被投入使用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Between mid-2025 and January 2026, we received reports of vulnerabilities in Claude Code through our responsible disclosure program. Three of these vulnerabilities targeted code that executesbeforethe user has consented to anything. To understand how this is possible, consider the most direct case: a developer clones a repository to review a pull request, and that repository contains a .claude/settings.json which defines a hook. Because Claude Code reads project settings during startup—before presenting the standard &quot;Do you trust this folder?&quot; prompt—the hook the attacker had authored and committed would execute automatically. The remaining cases looked structurally similar, in which input from the not-yet-trusted directory was parsed before the trust boundary had been established.
+The fix in each case had the same shape: defer parsing and execution of project-local configuration until after the user accepts the trust prompt. If you&#x27;re building something similar, treat project-open, config-load, and localhost listeners the way you&#x27;d treat any inbound request from the internet. They shouldn’t be implicitly trusted just because they feel local and arrive before the user has consented.</p></div><div class="lang-cn-block"><p><strong>外部攻击者：</strong> 智能体通过外部向量（如工具、文件或网络访问）遭到攻击。这一类别包括提示注入（prompt injection）以及针对智能体运行时、编排层或代理的常规攻击。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Risk we missed: The user as an injection vector</h4></div><div class="lang-cn-block"><p>在构建隔离管控和防御系统时，我们将防御应用于三个主要组成部分：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In February 2026, during a controlled internal red-team exercise, a researcher successfully phished an employee into launching Claude Code with a malicious prompt. The phish looked like ordinary collaboration—a &quot;can you run this for me?&quot; email with a ready-to-paste prompt attached—and the prompt itself read like routine task instructions. But somewhere among the setup steps, it gently asked Claude to read ~/.aws/credentials, encode the contents, and POST them to an external endpoint. Across 25 retries of that prompt, Claude completed the exfiltration 24 times.
+This is adirectprompt injection—the attacker&#x27;s instructions arrived through the user, not through tool output or fetched content. Our model-layer defenses anchor on user intent—when the user is the one typing the instruction, there&#x27;s nothing anomalous for a classifier to catch. A human contractor handed the same script would have done the same thing.
+The only defense that holds in this situation is the environment, specifically egress controls that block the POST regardless of intent and filesystem boundaries that keep ~/.aws out of reach in the first place.
+(When we shared the working prompt in internal Slack for discussion, someone pointed out that some internal agentsreadSlack. The payload was now ambient. We added acanary stringto the thread so we&#x27;d notice if anything picked it up. In a world where agents read everything, the investigation tooling is also an attack surface.)</p></div><div class="lang-cn-block"><p><strong>智能体运行的环境。</strong> 我们通过进程沙箱、虚拟机、文件系统边界和出口控制来约束智能体可以行动的位置和方式。目标是为智能体能够触及的范围设定一个硬性边界。例如，如果凭证从未进入沙箱，那么无论原因是用户、模型找到了一条&quot;创造性&quot;路径，还是攻击者，凭证都不可能被泄露。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Pattern 3: The local VM (Claude Cowork)</h3></div><div class="lang-cn-block"><p>紧密的边界也意味着你可以放松监督。Claude Code 的参考开发容器（devcontainer）存在的意义正是让智能体可以无人值守地运行，无需逐项审批。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Claude Cowork runs on a user&#x27;s desktop with access to a workspace folder selected by the user. Because the platform is built for general knowledge work, not software engineering, the average user is much less likely to be fluent in bash.
+As a result, the human-in-the-loop sandbox strategy may not transfer; a non-technical knowledge worker shouldn’t be expected to judge bash incantations such as find . -name &quot;*.tmp&quot; -exec rm {} \;. When approving an exception requires expertise the typical user doesn’t have, admins should set a boundary that is absolute and always-on.
+To enable this, our first version of Claude Cowork ran inside a full virtual machine using the platform&#x27;s vendor hypervisor (Apple&#x27;s Virtualization framework on macOS, HCS on Windows). The VM has its own Linux kernel, its own filesystem, and its own process table. The user&#x27;s selected workspace and .claude folder are mounted; nothing else on the host is visible. Credentials stay in the host&#x27;s keychain and never enter the guest machine. This design protects against the possibility that Claude will, at some point, behave in a misaligned manner. A compromised Claude could still damage what&#x27;s inside the workspace folder, so the architecture is designed to make sure that&#x27;s theonlything it can reach (until the user adds connectors), and that the user controls what&#x27;s mounted there.
+In the original architecture—what we call full-VM mode—the agent loop itself ran inside the guest, so Claude executed as an ordinary Linux user with no awareness it was sandboxed. Compare this to Claude Code, where a privileged process sits outside the sandbox deciding per-command whether to enforce it; a persuasive injected prompt or a fatigued approval click can get that process to run something un-sandboxed. Here, there was no outer process holding an escape-hatch key, and so no component with the authority to grant an exception.
+However, we soon realized that running the whole agent in full-VM mode caused practical problems: any failure during VM startup made Cowork unusable. Moving the agent loopoutsideof the VM, while keeping code execution inside of it, allowed Claude to still respond to the user and help debug issues rather than freeze on an error. This change caused minimal security impact because the VM still enforces filesystem and network controls over code executed by the agent.
+Separately, we also moved local MCP servers outside the VM. Running them inside the VM made them harder to audit, created brittle dependency issues when the VM updated, and didn’t support MCPs that required interaction with local processes such as databases—such servers had to run on the host regardless. The change brings Claude Cowork in line with how local MCP servers already work in Claude Desktop: treating them like any software a user might choose to install and entrusting admins to decide which local MCPs to enable (if any). Remote MCP servers are unaffected since they do not run on the user&#x27;s machine.
+Filesystem controls were another important architectural choice. Claude needs to be able to accesssomefiles on the host in order to be useful, but we wanted to minimize the blast radius and provide transparency to the user about local file access. We found that offering different file-mount modes helps to granularly control risk; Claude Cowork offers read-only, read-write, and read-write-no-delete. One potential gotcha here is that symlink resolution has to happenbeforepath validation, not after, or a symlink inside an authorized folder can point outside and escape. For enterprise customers, we allow admins to control this via mount-path allowlists in MDM settings.</p></div><div class="lang-cn-block"><p><strong>智能体查询的模型。</strong> 这里的机制包括系统提示、分类器、探针和训练修改。由于模型是概率性的，这些手段只能塑造智能体倾向于做什么，而非它在理论上能够做什么。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Risk we missed: Exfiltration through an approved domain</h4></div><div class="lang-cn-block"><p>这些防御是强大的。在 Gray Swan 的智能体红队基准测试（测试提示注入的易感性）中，Claude Opus 4.7 将单次尝试的攻击成功率控制在约 0.1%，经过 100 次自适应尝试后约为 5-6%。Claude Code 自动模式在执行前捕获了大约 83% 的过于激进的行为。然而，即使拥有一流的防御，模型层的保护也永远不会 100% 有效，这就是为什么它不能单独依赖。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>A clear example of exfiltration through an approved domain came from a third-party disclosure. Claude Cowork&#x27;s egress allowlist correctly passed traffic to api.anthropic.com—the product can&#x27;t function without calling our own API. In this case, a malicious file placed in the user&#x27;s mounted workspace carried hidden instructions along with an API key controlled by the attacker. Claude, following the instructions, read other files in the workspace and called Anthropic&#x27;s Files API using the attacker&#x27;s key. The egress proxy checked the destination, saw api.anthropic.com, and let it through. The files were uploaded to the attacker&#x27;s Anthropic account. The sandbox worked perfectly, and yet the data was exfiltrated.
+Previously, we’d conceptualized the allowlist as a destination filter, something that told Claudethese domains are okay to talk to.But it may be better conceptualized as a capability grant. Every function reachable through any domain on an allowlist is now an attack surface. Allowing api.anthropic.com meant allowing file uploads to arbitrary Anthropic accounts.
+We fixed it using a defensive man-in-the-middle proxy inside the VM that intercepts traffic to our API. It only passes requests carrying the VM&#x27;s own provisioned session token; an attacker-embedded key is rejected by the proxy. It also blocks headers that would enable server-side fetch. The proxy sits inside the VM rather than on our servers because only the VM knows provenance—from the server&#x27;s perspective, a Cowork request is indistinguishable from any other API client.
+This is also a second instance of the principle that the software you build yourself is often the weakest. The hypervisor, seccomp, and gVisor across our products have been dependable. Our custom allowlist proxy was the piece that failed.</p></div><div class="lang-cn-block"><p><strong>智能体能够触及的外部内容。</strong> MCP 服务器、第三方插件和网络搜索工具都从你无法控制的来源向智能体的上下文中注入内容。经过审计的连接器与经过审计的数据是两回事——例如，一个 GitHub 连接器可以将投毒的 README 直接加载到模型的上下文中，尽管它通过了恶意软件检查。细粒度地限制工具权限可以帮助限制爆炸半径。例如，一个只有只读数据库访问权限的智能体，可以比一个向生产环境写入数据的智能体更广泛地部署。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Risk we missed: VM isolation kept the endpoint detection software out too</h4></div><div class="lang-cn-block"><p>防御应该相互重叠、互为补充。当环境防御不可用时，模型层必须承担起重任（这正是 Claude Code 自动模式的设计目的）。在本地环境中，环境和模型防御可以防止恶意工具输出，但也可以在更高层级上通过限制工具的能力和访问权限来增加防御。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When evaluating Claude Cowork, enterprise security teams asked, &quot;Why can&#x27;t our EDR see inside?&quot; The answer was that the same isolation keeping Claude contained also kept host-based endpoint detection and response out. From the EDR&#x27;s perspective, Claude Cowork is an opaque hypervisor process. It can&#x27;t inspect the guest.
+Isolation reduces visibility, and opacity is problematic for teams whose compliance posture depends on endpoint visibility. Our current mitigation is to use pull-basedOTLPexports that let administrators retrieve event logs after the fact, but this is not the same as live monitoring. If you&#x27;re building something similar, budget for this conversation early.</p></div><div class="lang-cn-block"><h2 id="heading-2">智能体隔离管控的模式</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Trusting what the agent reads</h2></div><div class="lang-cn-block"><p>聚焦于环境层，我们描述三种隔离模式，以及它们如何为每个 Claude 平台——claude.ai、Claude Code 和 Cowork——量身定制。我们是逐步达到每种设计的，在发现智能体所需能力与用户所需干预程度之间的平衡之后。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Enterprises often ask us how to secure MCP connections. It&#x27;s a good question, but the right one is broader than MCP specifically. Any external resource provided to an agent represents two risks at once: a code execution risk, in the traditional supply-chain sense, and a prompt injection vector. Traditional dependency auditing (pinning versions, verifying signatures, reviewing source) addresses the first, but misses the second.
+Remote versus local is more important than it seems.A locally installed tool is auditable. You can read the code, pin the version, and know it won&#x27;t change under you. A remote tool—a hosted MCP server, a cloud connector—can change behavior at any point after you’ve approved it; your install-time trust decision may no longer apply. Ourconnector directoryaddresses this through ongoing review, but anything outside it should be treated as untrusted. Run it against fake data first, in an environment where the blast radius of a malicious tool is contained.
+Tool output is an attack surface even when the tool is trusted.The GitHub README example mentioned earlier is exactly this case; any input scanning applied to web pages needs to be applied to network-enabled tool results with the same rigor. Even though this adds latency and isn&#x27;t a perfect defense, we err toward live inspection: once a poisoned tool return has steered the agent into exfiltrating data, the log just shows a successful, authorized API call. There&#x27;s no after-the-fact signal to find.
+In Claude Code and Claude Cowork, tool calls route through proxies that enforce network and file policy and can inspect return values before they enter the model&#x27;s context. The classifier that does the inspection can be a small, fast model; it doesn&#x27;t need to be the one doing the reasoning.</p></div><div class="lang-cn-block"><h3 id="heading-3">模式一：临时容器（claude.ai 代码执行）</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Looking ahead</h2></div><div class="lang-cn-block"><p>尽管 claude.ai 最为人知的是其聊天界面，但它也能编写和运行代码、生成文件以及调用连接器。当 Claude 在 claude.ai 内部运行代码时，它是在隔离基础设施上的 gVisor 容器中完成的。智能体完全在服务端运行；没有任何代码在本地机器上运行，文件系统是临时的（按会话创建）。爆炸半径最小，但 Claude 能做的事情的上限也很低——没有持久化的工作空间，也无法访问用户的文件系统。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Models and products are advancing fast. As they do, risks morph and evolve, and our mitigations must keep pace to meet them.
+Persistent memory poisoning.The share of agent context that persists across sessions keeps growing—this includes product memory, CLAUDE.md files, mounted workspaces, and the state directories of scheduled and long-running agents. An injection that lands in any of these is reloaded each time the agent starts. As more agent state survives the session, we are threatened by new persistence mechanisms in the classic post-exploitation sense. Good classifiers on session startup will need to become more commonplace.
+Multi-agent trust escalation.On the one hand, sub-agents can isolate untrusted content, returning structured facts rather than raw text up to the main agent. On the other hand, this can be abused: if a sub-agent&#x27;s output is treated as higher-trust than raw tool results, because such output came from “us,” a new vector for prompt injection is introduced. In multi-agent systems, there is a tradeoff between allocating differing trust levels and becoming liable to trust escalation.
+Agent identity.Claude Cowork&#x27;s answer to agent identity is concrete: credentials stay in the host keychain, the VM gets a per-session scoped-down token, and that token can be revoked independently of the user&#x27;s. However, we are starting to grapple with the broader question of cross-platform agent identity. Should an agent possess its own principal identity, or should it act as an extension of the user and inherit the user’s permissions? Ultimately, the answer may be a blend of the two.
+As agents grow more capable, attack surfaces are constantly shifting. The types of failures we’ve seen are likely to be repeated across industries and labs. We need collective investment in agent-specific security posture, from shared benchmarks and disclosure norms to common identity standards and cross-vendor red-teaming. We focus on containment in this piece, but that&#x27;s only one part of the security picture for agents. For governance, observability, and the rest of the stack, seeNIST&#x27;s project on AI agent identity and authorization, thesix-agency guidance on adopting agentic AIled by Australia&#x27;s ACSC with CISA and the UK&#x27;s NCSC, andISO/IEC 42001, the AI management standard. Our Glasswing initiative is one contribution, but we look forward to working with both partners and competitors on this critical issue.</p></div><div class="lang-cn-block"><p>这也使得 claude.ai 面临一种更传统的威胁模型。我们保护的不是用户机器免受智能体侵害；我们保护的是我们自己的基础设施以及各个租户之间的隔离。claude.ai 上线前的工作主要集中在传统的安全工作上，如网络配置、内部服务认证和编排。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Summary</h2></div><div class="lang-cn-block"><p>这些工作强化了安全领域最古老的教训：最薄弱的那一层是你自己构建的那一层。gVisor 和 seccomp 在对抗资源充足的对手方面已经历了比智能体 AI 存在时间更长得多的考验，因此审查工作主要集中在我们围绕它们构建的新组件上。我们稍后会再回到这一点，因为我们自定义的代理也是在我们最重大的事故中出问题的那个组件。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In short, there are a few principles we keep returning to:
+Design for containment at the environment layer first, then steer behavior at the model layer.Two of the incidents that taught us the most—the employee phish and the third-party allowlist disclosure—were both cases of egress, in which data left through a permitted path. In each, the model layer couldn&#x27;t help; there was nothing anomalous for it to catch. The deterministic boundary is what gets hit when everything probabilistic misses.
+Match isolation strength to the user&#x27;s capacity for oversight.A developer who can read bash and a knowledge worker who can&#x27;t are not running the same threat model. The question of whether a user can evaluate what an agent is about to do should help determine the containment strategy, and answering it wrong in either direction—too much friction for experts, too much trust for non-experts—is its own failure.
+Be wary of custom components.Battle-tested hypervisors, syscall filters, and container runtimes have survived more adversarial attention than anything you&#x27;ll build. Across every deployment described here, the standard primitives held while our own work around them exposed flaws.
+Ultimately, while agents may be a new category of software, their system-level interactions are not. They still read files, open sockets, and spawn processes; this makes containment with mature tooling a crucially viable defense. The risk-reward balance of deployments will keep shifting as AI develops, but placing a hard limit on blast radius often forces that balance into the right direction.</p></div><div class="lang-cn-block"><h3 id="heading-4">模式二：人在环沙箱（Claude Code）</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Acknowledgements</h3></div><div class="lang-cn-block"><p>Claude Code 运行在用户的机器上，可以访问其文件系统、Shell 和网络。没有这些，编程智能体的用处有限，因此找到一种安全地授予这些访问权限的方式至关重要。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Max McGuinness, Mikaela Grace, Jiri De Jonghe, Jake Eaton, and Abel Ribbink.
+We&#x27;re also grateful to Hanah Ho, Hasnain Lakhani, Pedram Navid, Molly Villagra, Maya Nielan, Akila Srinivasan, Travis Szucs, Sam Attard, Alfred Xing, Mohamad El Hajj, Gabby Curtis, David Dworken, Adam Jones, Amie Rotherham, Christian Ryan, Lucas Smedley, Brett Andrews, and others for their contributions.
+Special thanks to our security and product engineering teams, and to the individuals and organizations that have reported vulnerabilities in Claude products.</p></div><div class="lang-cn-block"><p>一种方法是依赖人在环。对于 Claude Code 来说，这只是一个可行的解决方案，因为普通用户是熟悉编码环境的开发者：他们能读懂 bash，理解 <code class="inline">rm -rf</code> 做了什么，并且每周已经多次从不受信任的源运行 <code class="inline">npm install</code>。所有这些意味着，当弹出&quot;允许此操作&quot;的对话框时，他们极有可能具备准确评估智能体正在尝试做什么以及相关风险的专业知识。鉴于此，Claude Code 以最简单的防御方式启动：允许读取，对写入、bash 和网络访问要求审批。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Footnotes</h4></div><div class="lang-cn-block"><p>然而，如前所述，批准疲劳在几周内就出现了。具有讽刺意味的是，这意味着一个原本旨在提供监督的功能可能实际上产生了相反的效果——某些用户可能干脆不再关注。作为减轻草率批准的第一步，我们发布了操作系统级沙箱（macOS 上的 Seatbelt，Linux 上的 bubblewrap）来加固边界：读取被允许，工作空间内的写入被允许，但网络默认被拒绝。在沙箱内，智能体基本上可以不间断地运行。结果是权限提示减少了 84%，并且我们开源了运行时，因此边界是可审计的。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Claude Code auto mode delegates command approvals to a model-based classifier; it minimizes friction (roughly 0.4% of benign commands blocked) at the cost of missing a fraction of risky ones (~17% of overeager actions get through), so it&#x27;s one layer of defense-in-depth inside a sandbox, not a substitute for one.</li></ul></div><div class="lang-cn-block"><p>我们的匿名使用数据还显示，经验丰富的用户自动批准的频率大约是新用户的两倍，但他们也更频繁地在执行中途打断智能体。经验丰富的用户不是逐个步骤把关，而是更倾向于仅在智能体偏离轨道时进行监督。虽然这可能是人们与智能体交互方式的自然演变，但这种做法同样存在缺陷，它要求用户足够专业且足够专注，以便首先注意到偏离。随着模型能力的提升，智能体开始编写越来越大胆的 bash 命令，注意到这种偏离变得越来越困难。而随着用户转向多智能体系统，这种做法也更不太可能成为有效的监督策略。</p></div></div>
+<div class="lang-cn-block"><h4>我们遗漏的风险：信任对话框之前的一切</h4></div>
+<div class="lang-cn-block"><p>在 2025 年中期到 2026 年 1 月期间，我们通过负责任的披露计划收到了关于 Claude Code 漏洞的报告。其中三个漏洞针对的是在用户同意任何操作之前就执行的代码。要理解这如何可能，考虑最直接的情况：开发者克隆一个仓库来审查拉取请求（Pull Request），而该仓库包含一个定义了钩子（hook）的 <code class="inline">.claude/settings.json</code>。由于 Claude Code 在启动期间读取项目设置——在显示标准的&quot;你信任这个文件夹吗？&quot;提示之前——攻击者编写并提交的钩子会自动执行。其余的情况在结构上类似，即来自尚未被信任的目录的输入在信任边界建立之前就被解析了。</p></div>
+<div class="lang-cn-block"><p>每个案例的修复都有相同的模式：将项目本地配置的解析和执行推迟到用户接受信任提示之后。如果你正在构建类似的东西，请将项目打开、配置加载和 localhost 监听器视为来自互联网的任何入站请求来对待。它们不应该仅仅因为看起来是本地的并且在用户同意之前到达就被隐式信任。</p></div>
+<div class="lang-cn-block"><h4>我们遗漏的风险：用户作为注入向量</h4></div>
+<div class="lang-cn-block"><p>2026 年 2 月，在一次受控的内部红队演练中，一名研究人员成功地诱骗一名员工使用恶意提示启动 Claude Code。这次钓鱼看起来像是普通的协作——一封&quot;你能帮我运行一下这个吗？&quot;的邮件，附带了一个可以直接粘贴的提示——而提示本身读起来就像常规的任务说明。但在设置步骤中的某处，它巧妙地要求 Claude 读取 <code class="inline">~/.aws/credentials</code>，对内容进行编码，并将其 POST 到一个外部端点。在对这个提示的 25 次重试中，Claude 在 24 次中完成了数据泄露。</p></div>
+<div class="lang-cn-block"><p>这是一种直接的提示注入——攻击者的指令通过用户到达，而非通过工具输出或获取的内容。我们的模型层防御锚定于用户意图——当用户自己在输入指令时，分类器没有异常可抓。一个人类合同工拿到同样的脚本也会做同样的事情。</p></div>
+<div class="lang-cn-block"><p>在这种情况下唯一有效的防御是环境层面的，具体来说是出口控制（无论意图如何都阻止 POST）以及文件系统边界（从根本上将 <code class="inline">~/.aws</code> 保持在不可触及的范围之外）。</p></div>
+<div class="lang-cn-block"><p>（当我们在内部 Slack 中分享了这个有效提示以供讨论时，有人指出一些内部智能体会读取 Slack。该载荷现在变成了环境中的存在。我们在线程中添加了一个金丝雀字符串（canary string），以便在有任何东西读取它时能够注意到。在一个智能体读取一切的世界里，调查工具本身也是一个攻击面。）</p></div>
+<div class="lang-cn-block"><h3 id="heading-5">模式三：本地虚拟机（Claude Cowork）</h3></div>
+<div class="lang-cn-block"><p>Claude Cowork 运行在用户的桌面上，可以访问用户选择的工作空间文件夹。由于该平台是为通用知识工作而非软件工程构建的，普通用户不太可能熟悉 bash。</p></div>
+<div class="lang-cn-block"><p>因此，人在环沙箱策略可能不适用；不应该期望一个非技术背景的知识工作者能够判断诸如 <code class="inline">find . -name &quot;*.tmp&quot; -exec rm {} \;</code> 这样的 bash 命令。当批准一个例外需要典型用户不具备的专业知识时，管理员应该设定一个绝对的、始终生效的边界。</p></div>
+<div class="lang-cn-block"><p>为此，我们第一版的 Claude Cowork 运行在一个完整的虚拟机内，使用平台的虚拟化管理程序（macOS 上的 Apple Virtualization framework，Windows 上的 HCS）。该虚拟机拥有自己的 Linux 内核、自己的文件系统和自己的进程表。用户选择的工作空间和 <code class="inline">.claude</code> 文件夹被挂载；主机上的其他任何东西都不可见。凭证保存在主机的钥匙串（keychain）中，永远不会进入客户机。这种设计保护了 Claude 在某个时刻表现出失范行为的可能性。一个被攻破的 Claude 仍然可以损害工作空间文件夹内的内容，因此架构的设计确保这是它唯一能够触及的东西（直到用户添加连接器），并且用户控制着挂载的内容。</p></div>
+<div class="lang-cn-block"><p>在原始架构中——我们称之为完整虚拟机模式——智能体循环本身运行在客户机内部，因此 Claude 以普通 Linux 用户的身份执行，完全不知道自己被沙箱化了。与之对比的是 Claude Code，其中有一个特权进程坐在沙箱外部，逐条命令地决定是否执行沙箱隔离；一个有说服力的注入提示或一次疲劳的批准点击就可能让该进程运行未经沙箱隔离的命令。在这里，没有持有逃生通道钥匙的外部进程，因此也没有有权批准例外的组件。</p></div>
+<div class="lang-cn-block"><p>然而，我们很快意识到，在完整虚拟机模式下运行整个智能体会导致实际问题：虚拟机启动过程中的任何故障都会使 Cowork 无法使用。将智能体循环移到虚拟机外部，同时将代码执行保留在内部，使得 Claude 仍然能够响应用户并帮助调试问题，而不是在出错时冻结。这一变化带来的安全影响很小，因为虚拟机仍然对智能体执行的代码强制执行文件系统和网络控制。</p></div>
+<div class="lang-cn-block"><p>另外，我们还将本地 MCP 服务器移到了虚拟机外部。在虚拟机内部运行它们使得审计更加困难，在虚拟机更新时产生了脆弱的依赖问题，并且不支持需要与本地进程（如数据库）交互的 MCP——这些服务器无论如何都必须在主机上运行。这一变化使得 Claude Cowork 与 Claude Desktop 中本地 MCP 服务器的工作方式保持一致：将它们视为用户可能选择安装的任何软件，并信任管理员来决定启用哪些本地 MCP（如果有）。远程 MCP 服务器不受影响，因为它们不在用户的机器上运行。</p></div>
+<div class="lang-cn-block"><p>文件系统控制是另一个重要的架构选择。Claude 需要能够访问主机上的某些文件才能发挥作用，但我们希望最小化爆炸半径，并向用户提供关于本地文件访问的透明度。我们发现提供不同的文件挂载模式有助于细粒度地控制风险；Claude Cowork 提供只读、读写和读写但不可删除三种模式。这里一个潜在的陷阱是，符号链接解析必须在路径验证之前而非之后进行，否则一个授权文件夹内的符号链接可以指向外部并逃逸。对于企业客户，我们允许管理员通过 MDM 设置中的挂载路径白名单来控制这一点。</p></div>
+<div class="lang-cn-block"><h4>我们遗漏的风险：通过受批准域名进行的数据泄露</h4></div>
+<div class="lang-cn-block"><p>一个通过受批准域名进行数据泄露的清晰案例来自第三方披露。Claude Cowork 的出口白名单正确地将流量传递到 <code class="inline">api.anthropic.com</code>——产品无法在不调用我们自己 API 的情况下运行。在本案例中，一个放置在用户挂载工作空间中的恶意文件携带着隐藏指令以及攻击者控制的 API 密钥。Claude 遵循指令，读取工作空间中的其他文件，并使用攻击者的密钥调用 Anthropic 的 Files API。出口代理检查了目标地址，看到是 <code class="inline">api.anthropic.com</code>，就放行了。文件被上传到了攻击者的 Anthropic 账户。沙箱工作得完美无缺，然而数据还是被泄露了。</p></div>
+<div class="lang-cn-block"><p>此前，我们将白名单概念化为一个目的地过滤器，一个告诉 Claude 这些域名可以对话的东西。但将其概念化为一种能力授予可能更好。通过白名单上任何域名可达的每个功能现在都是一个攻击面。允许 <code class="inline">api.anthropic.com</code> 意味着允许向任意 Anthropic 账户上传文件。</p></div>
+<div class="lang-cn-block"><p>我们通过在虚拟机内部放置一个防御性中间人代理（man-in-the-middle proxy）来拦截发往我们 API 的流量以修复此问题。它只传递携带虚拟机自身预配会话令牌的请求；攻击者嵌入的密钥会被代理拒绝。它还会阻止可能启用服务端获取（server-side fetch）的头部。代理位于虚拟机内部而非我们的服务器上，因为只有虚拟机知道来源——从服务器的角度来看，Cowork 的请求与任何其他 API 客户端的请求是无法区分的。</p></div>
+<div class="lang-cn-block"><p>这也是&quot;你自己构建的软件往往是最薄弱的&quot;这一原则的第二个实例。我们产品中的虚拟化管理程序、seccomp 和 gVisor 一直很可靠。我们自定义的白名单代理才是失败的那个组件。</p></div>
+<div class="lang-cn-block"><h4>我们遗漏的风险：虚拟机隔离也将端点检测软件挡在了门外</h4></div>
+<div class="lang-cn-block"><p>在评估 Claude Cowork 时，企业安全团队问：&quot;为什么我们的 EDR 看不到内部？&quot;答案是，使 Claude 保持隔离的同一道隔离墙，也将基于主机的端点检测与响应（EDR）挡在了外面。从 EDR 的角度来看，Claude Cowork 是一个不透明的虚拟化管理程序进程。它无法检查客户机。</p></div>
+<div class="lang-cn-block"><p>隔离降低了可见性，而对于合规态势依赖端点可见性的团队来说，不透明是有问题的。我们当前的缓解措施是使用基于拉取的 OTLP 导出，允许管理员事后检索事件日志，但这与实时监控不同。如果你正在构建类似的东西，请尽早为这次对话做好预算。</p></div>
+<div class="lang-cn-block"><h2 id="heading-6">信任智能体读取的内容</h2></div>
+<div class="lang-cn-block"><p>企业经常问我们如何保护 MCP 连接。这是一个好问题，但正确的关注点比 MCP 本身更广泛。提供给智能体的任何外部资源同时代表两种风险：代码执行风险（传统的供应链意义上）和提示注入向量。传统的依赖审计（锁定版本、验证签名、审查源代码）解决了第一个问题，但遗漏了第二个。</p></div>
+<div class="lang-cn-block"><p>远程与本地比表面上看起来更重要。本地安装的工具是可审计的。你可以阅读代码、锁定版本，并知道它不会在你不知情的情况下发生变化。远程工具——托管的 MCP 服务器、云连接器——可以在你批准之后的任何时间改变行为；你在安装时的信任决策可能不再适用。我们的连接器目录通过持续审查来解决这一问题，但目录之外的任何东西都应被视为不受信任的。首先针对虚假数据运行它，在一个恶意工具的爆炸半径被限制的环境中。</p></div>
+<div class="lang-cn-block"><p><strong>即使工具本身是可信的，工具输出也是一个攻击面。</strong> 前面提到的 GitHub README 案例正是这种情况；应用于网页的任何输入扫描都需要以同样的严格程度应用于启用网络的工具结果。尽管这会增加延迟且不是完美的防御，我们倾向于实时检查：一旦被投毒的工具返回值引导智能体泄露了数据，日志只会显示一次成功的、经过授权的 API 调用。没有事后可以发现的信号。</p></div>
+<div class="lang-cn-block"><p>在 Claude Code 和 Claude Cowork 中，工具调用通过强制执行网络和文件策略的代理进行路由，并可以在返回值进入模型上下文之前对其进行检查。执行检查的分类器可以是一个小型、快速的模型；它不需要是执行推理的那个模型。</p></div>
+<div class="lang-cn-block"><h2 id="heading-7">展望未来</h2></div>
+<div class="lang-cn-block"><p>模型和产品正在快速发展。随着它们的发展，风险也在变化和演变，我们的缓解措施必须跟上步伐以应对它们。</p></div>
+<div class="lang-cn-block"><p><strong>持久化记忆投毒。</strong> 跨会话持久化的智能体上下文比例持续增长——这包括产品记忆、CLAUDE.md 文件、挂载的工作空间，以及计划任务和长期运行智能体的状态目录。注入到这些位置中任何一个的内容都会在每次智能体启动时被重新加载。随着更多智能体状态在会话后得以保留，我们在经典的后渗透（post-exploitation）意义上面临着来自新持久化机制的威胁。会话启动时的良好分类器将需要变得更加普遍。</p></div>
+<div class="lang-cn-block"><p><strong>多智能体信任升级。</strong> 一方面，子智能体可以隔离不受信任的内容，向上级智能体返回结构化的事实而非原始文本。另一方面，这可能被滥用：如果子智能体的输出被视为比原始工具结果具有更高的信任度（因为这种输出来自&quot;我们自己&quot;），就引入了一种新的提示注入向量。在多智能体系统中，在分配不同的信任级别和变得容易受到信任升级攻击之间存在权衡。</p></div>
+<div class="lang-cn-block"><p><strong>智能体身份。</strong> Claude Cowork 对智能体身份的回答是具体的：凭证保存在主机钥匙串中，虚拟机获得一个按会话缩小范围的令牌，该令牌可以独立于用户的令牌被撤销。然而，我们开始着手处理更广泛的跨平台智能体身份问题。智能体应该拥有自己的主体身份（principal identity），还是应该作为用户的延伸并继承用户的权限？最终，答案可能是两者的结合。</p></div>
+<div class="lang-cn-block"><p>随着智能体变得更加能干，攻击面在不断变化。我们所见过的失败类型可能会在各个行业和实验室中重复出现。我们需要在智能体特定的安全态势方面进行集体投资，从共享的基准测试和披露规范，到通用的身份标准和跨供应商的红队测试。我们在本文中聚焦于隔离管控，但这只是智能体安全图景的一部分。关于治理、可观测性以及技术栈的其他部分，请参见 NIST 的 AI 智能体身份与授权项目、由澳大利亚 ACSC 联合 CISA 和英国 NCSC 主导的六机构智能体 AI 采用指南，以及 ISO/IEC 42001 AI 管理标准。我们的 Glasswing 计划是一个贡献，但我们期待与合作伙伴和竞争对手在这个关键问题上共同合作。</p></div>
+<div class="lang-cn-block"><h2 id="heading-8">总结</h2></div>
+<div class="lang-cn-block"><p>简而言之，有几条原则我们不断回归：</p></div>
+<div class="lang-cn-block"><p><strong>首先在环境层设计隔离管控，然后在模型层引导行为。</strong> 教会我们最多的两个事件——员工钓鱼和第三方白名单泄露——都是出口方面的问题，数据通过受许可的路径流出。在这两个案例中，模型层都无能为力；没有异常可以被捕捉。当所有概率性防御都失效时，确定性的边界才是被撞击的那个。</p></div>
+<div class="lang-cn-block"><p><strong>将隔离强度与用户的监督能力相匹配。</strong> 一个能读懂 bash 的开发者和一个不能的知识工作者面临的不是同一个威胁模型。用户能否评估智能体即将做什么这个问题应该帮助决定隔离管控策略，而在任一方向上回答错误——对专家施加过多摩擦，对非专家给予过多信任——本身就是一种失败。</p></div>
+<div class="lang-cn-block"><p><strong>警惕自定义组件。</strong> 经过实战考验的虚拟化管理程序、系统调用过滤器和容器运行时，已经经历了比你将构建的任何东西更多的对抗性关注。在本文描述的每一个部署中，标准原语都经受住了考验，而我们围绕它们构建的自定义组件暴露了缺陷。</p></div>
+<div class="lang-cn-block"><p>归根结底，虽然智能体可能是一种新的软件类别，但它们的系统级交互并非如此。它们仍然读取文件、打开套接字并生成进程；这使得使用成熟工具进行隔离管控成为一种至关重要的可行防御。随着 AI 的发展，部署的风险回报平衡将持续变化，但对爆炸半径设定硬性限制往往会将这种平衡推向正确的方向。</p></div>
+<div class="lang-cn-block"><h3 id="heading-9">致谢</h3></div>
+<div class="lang-cn-block"><p>由 Max McGuinness、Mikaela Grace、Jiri De Jonghe、Jake Eaton 和 Abel Ribbink 撰写。</p></div>
+<div class="lang-cn-block"><p>我们还要感谢 Hanah Ho、Hasnain Lakhani、Pedram Navid、Molly Villagra、Maya Nielan、Akila Srinivasan、Travis Szucs、Sam Attard、Alfred Xing、Mohamad El Hajj、Gabby Curtis、David Dworken、Adam Jones、Amie Rotherham、Christian Ryan、Lucas Smedley、Brett Andrews 以及其他人的贡献。</p></div>
+<div class="lang-cn-block"><p>特别感谢我们的安全和产品工程团队，以及报告了 Claude 产品漏洞的个人和组织。</p></div>
+<div class="lang-cn-block"><h4>脚注</h4></div>
+<div class="lang-cn-block"><ul><li>Claude Code 自动模式将命令批准委托给一个基于模型的分类器；它以大约 0.4% 的良性命令被阻止为代价最小化摩擦，但会漏掉一小部分风险命令（约 17% 的过于激进的操作得以通过），因此它是沙箱内部纵深防御的一层，而非沙箱的替代品。</li></ul></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>十二个月前，我们会断然拒绝给予 Claude 足够权限以至于可能搞垮 Anthropic 内部服务的想法。而如今，这种级别的访问权限已成为常态，Anthropic 的开发者也因此变得更加高效。这些部署的风险由两个因素构成：故障发生的可能性有多大，以及一旦发生可能造成多大的损害。安全防护措施和模型训练的进步稳步降低了第一个因素；而第二个因素——理论上的爆炸半径（blast radius）——则随着能力和访问权限的扩展只会不断增长。然而，当智能体（Agent）能够胜任曾经需要一个人甚至一个团队才能完成的工作时，不部署的代价就变得足够大，以至于风险回报的天平会大幅倾向于采用，只要产品能够做到足够安全。工程问题就变成了如何限制爆炸半径。</p>
+<p>大致有两种方式可以做到这一点。</p>
+<p>第一种是通过人在环（human-in-the-loop）来监督智能体的行为。Claude Code 此前通过在每一轮对话中请求用户许可来防止智能体采取非预期的操作。理论上这行得通，但我们发现这种方法存在缺陷。我们的遥测数据显示，用户大约批准了 93% 的权限提示。用户看到的批准请求越多，对每一个请求的关注就越少，久而久之，监督就变得越来越不认真。我们最近构建了 Claude Code 自动模式（auto mode），该模式将更安全的批准自动化，以减少这种批准疲劳（approval fatigue）。尽管如此，漏洞依然存在——任何概率性防御都有非零的漏检率。¹</p>
+<p>限制爆炸半径的第二种方法——也是本文的重点——是隔离管控（containment）。与其监督智能体做了什么，不如监督它能够做什么，通过沙箱、虚拟机和出口控制等手段强制执行访问边界。这正是 Anthropic 工程团队投入最多精力的地方，同时也是许多最令人意外的安全事故发生的地方。</p>
+<p>在过去的两年里，我们发布了三个主要的智能体产品：claude.ai、Claude Code 和 Claude Cowork。每个产品服务于不同的用户群体，需要不同的隔离管控架构。本文分享了哪些做法经受住了考验，哪些做法出了问题，以及我们在智能体安全方面学到的经验。</p>
+<h2>三类风险，三层防御</h2>
+<p>智能体的安全风险可分为以下三类：</p>
+<p><strong>用户误用：</strong> 用户——无论是出于恶意还是疏忽——指示智能体去做有害的事情。这包括从要求智能体绕过他们觉得烦人的检查，到运行他们不理解的破坏性命令，再到故意指定有害行为等各种情况。</p>
+<p><strong>模型失范行为：</strong> 智能体采取了没有人要求的有害操作。随着模型的改进，它们在大多数行为评估上变得更加对齐（aligned），但这并不意味着风险必然降低。能力较弱的模型更容易误判情况并犯下明显错误。能力较强的模型犯错更少，但它们也更善于找到通往目标的非预期路径，通常是通过绕过没有人想到要写下的限制。</p>
+<p>在 Anthropic，我们见过 Claude 模型&quot;好心地&quot;逃出沙箱以完成任务，检查 git 历史来寻找编程测试的答案，以及自发识别出它正在运行的基准测试，从而解密答案密钥。每个模型都会带来新的能力组合，这些能力有时会以意想不到的方式被投入使用。</p>
+<p><strong>外部攻击者：</strong> 智能体通过外部向量（如工具、文件或网络访问）遭到攻击。这一类别包括提示注入（prompt injection）以及针对智能体运行时、编排层或代理的常规攻击。</p>
+<p>在构建隔离管控和防御系统时，我们将防御应用于三个主要组成部分：</p>
+<p><strong>智能体运行的环境。</strong> 我们通过进程沙箱、虚拟机、文件系统边界和出口控制来约束智能体可以行动的位置和方式。目标是为智能体能够触及的范围设定一个硬性边界。例如，如果凭证从未进入沙箱，那么无论原因是用户、模型找到了一条&quot;创造性&quot;路径，还是攻击者，凭证都不可能被泄露。</p>
+<p>紧密的边界也意味着你可以放松监督。Claude Code 的参考开发容器（devcontainer）存在的意义正是让智能体可以无人值守地运行，无需逐项审批。</p>
+<p><strong>智能体查询的模型。</strong> 这里的机制包括系统提示、分类器、探针和训练修改。由于模型是概率性的，这些手段只能塑造智能体倾向于做什么，而非它在理论上能够做什么。</p>
+<p>这些防御是强大的。在 Gray Swan 的智能体红队基准测试（测试提示注入的易感性）中，Claude Opus 4.7 将单次尝试的攻击成功率控制在约 0.1%，经过 100 次自适应尝试后约为 5-6%。Claude Code 自动模式在执行前捕获了大约 83% 的过于激进的行为。然而，即使拥有一流的防御，模型层的保护也永远不会 100% 有效，这就是为什么它不能单独依赖。</p>
+<p><strong>智能体能够触及的外部内容。</strong> MCP 服务器、第三方插件和网络搜索工具都从你无法控制的来源向智能体的上下文中注入内容。经过审计的连接器与经过审计的数据是两回事——例如，一个 GitHub 连接器可以将投毒的 README 直接加载到模型的上下文中，尽管它通过了恶意软件检查。细粒度地限制工具权限可以帮助限制爆炸半径。例如，一个只有只读数据库访问权限的智能体，可以比一个向生产环境写入数据的智能体更广泛地部署。</p>
+<p>防御应该相互重叠、互为补充。当环境防御不可用时，模型层必须承担起重任（这正是 Claude Code 自动模式的设计目的）。在本地环境中，环境和模型防御可以防止恶意工具输出，但也可以在更高层级上通过限制工具的能力和访问权限来增加防御。</p>
+<h2>智能体隔离管控的模式</h2>
+<p>聚焦于环境层，我们描述三种隔离模式，以及它们如何为每个 Claude 平台——claude.ai、Claude Code 和 Cowork——量身定制。我们是逐步达到每种设计的，在发现智能体所需能力与用户所需干预程度之间的平衡之后。</p>
+<h3>模式一：临时容器（claude.ai 代码执行）</h3>
+<p>尽管 claude.ai 最为人知的是其聊天界面，但它也能编写和运行代码、生成文件以及调用连接器。当 Claude 在 claude.ai 内部运行代码时，它是在隔离基础设施上的 gVisor 容器中完成的。智能体完全在服务端运行；没有任何代码在本地机器上运行，文件系统是临时的（按会话创建）。爆炸半径最小，但 Claude 能做的事情的上限也很低——没有持久化的工作空间，也无法访问用户的文件系统。</p>
+<p>这也使得 claude.ai 面临一种更传统的威胁模型。我们保护的不是用户机器免受智能体侵害；我们保护的是我们自己的基础设施以及各个租户之间的隔离。claude.ai 上线前的工作主要集中在传统的安全工作上，如网络配置、内部服务认证和编排。</p>
+<p>这些工作强化了安全领域最古老的教训：最薄弱的那一层是你自己构建的那一层。gVisor 和 seccomp 在对抗资源充足的对手方面已经历了比智能体 AI 存在时间更长得多的考验，因此审查工作主要集中在我们围绕它们构建的新组件上。我们稍后会再回到这一点，因为我们自定义的代理也是在我们最重大的事故中出问题的那个组件。</p>
+<h3>模式二：人在环沙箱（Claude Code）</h3>
+<p>Claude Code 运行在用户的机器上，可以访问其文件系统、Shell 和网络。没有这些，编程智能体的用处有限，因此找到一种安全地授予这些访问权限的方式至关重要。</p>
+<p>一种方法是依赖人在环。对于 Claude Code 来说，这只是一个可行的解决方案，因为普通用户是熟悉编码环境的开发者：他们能读懂 bash，理解 <code class="inline">rm -rf</code> 做了什么，并且每周已经多次从不受信任的源运行 <code class="inline">npm install</code>。所有这些意味着，当弹出&quot;允许此操作&quot;的对话框时，他们极有可能具备准确评估智能体正在尝试做什么以及相关风险的专业知识。鉴于此，Claude Code 以最简单的防御方式启动：允许读取，对写入、bash 和网络访问要求审批。</p>
+<p>然而，如前所述，批准疲劳在几周内就出现了。具有讽刺意味的是，这意味着一个原本旨在提供监督的功能可能实际上产生了相反的效果——某些用户可能干脆不再关注。作为减轻草率批准的第一步，我们发布了操作系统级沙箱（macOS 上的 Seatbelt，Linux 上的 bubblewrap）来加固边界：读取被允许，工作空间内的写入被允许，但网络默认被拒绝。在沙箱内，智能体基本上可以不间断地运行。结果是权限提示减少了 84%，并且我们开源了运行时，因此边界是可审计的。</p>
+<p>我们的匿名使用数据还显示，经验丰富的用户自动批准的频率大约是新用户的两倍，但他们也更频繁地在执行中途打断智能体。经验丰富的用户不是逐个步骤把关，而是更倾向于仅在智能体偏离轨道时进行监督。虽然这可能是人们与智能体交互方式的自然演变，但这种做法同样存在缺陷，它要求用户足够专业且足够专注，以便首先注意到偏离。随着模型能力的提升，智能体开始编写越来越大胆的 bash 命令，注意到这种偏离变得越来越困难。而随着用户转向多智能体系统，这种做法也更不太可能成为有效的监督策略。</p>
+<h4>我们遗漏的风险：信任对话框之前的一切</h4>
+<p>在 2025 年中期到 2026 年 1 月期间，我们通过负责任的披露计划收到了关于 Claude Code 漏洞的报告。其中三个漏洞针对的是在用户同意任何操作之前就执行的代码。要理解这如何可能，考虑最直接的情况：开发者克隆一个仓库来审查拉取请求（Pull Request），而该仓库包含一个定义了钩子（hook）的 <code class="inline">.claude/settings.json</code>。由于 Claude Code 在启动期间读取项目设置——在显示标准的&quot;你信任这个文件夹吗？&quot;提示之前——攻击者编写并提交的钩子会自动执行。其余的情况在结构上类似，即来自尚未被信任的目录的输入在信任边界建立之前就被解析了。</p>
+<p>每个案例的修复都有相同的模式：将项目本地配置的解析和执行推迟到用户接受信任提示之后。如果你正在构建类似的东西，请将项目打开、配置加载和 localhost 监听器视为来自互联网的任何入站请求来对待。它们不应该仅仅因为看起来是本地的并且在用户同意之前到达就被隐式信任。</p>
+<h4>我们遗漏的风险：用户作为注入向量</h4>
+<p>2026 年 2 月，在一次受控的内部红队演练中，一名研究人员成功地诱骗一名员工使用恶意提示启动 Claude Code。这次钓鱼看起来像是普通的协作——一封&quot;你能帮我运行一下这个吗？&quot;的邮件，附带了一个可以直接粘贴的提示——而提示本身读起来就像常规的任务说明。但在设置步骤中的某处，它巧妙地要求 Claude 读取 <code class="inline">~/.aws/credentials</code>，对内容进行编码，并将其 POST 到一个外部端点。在对这个提示的 25 次重试中，Claude 在 24 次中完成了数据泄露。</p>
+<p>这是一种直接的提示注入——攻击者的指令通过用户到达，而非通过工具输出或获取的内容。我们的模型层防御锚定于用户意图——当用户自己在输入指令时，分类器没有异常可抓。一个人类合同工拿到同样的脚本也会做同样的事情。</p>
+<p>在这种情况下唯一有效的防御是环境层面的，具体来说是出口控制（无论意图如何都阻止 POST）以及文件系统边界（从根本上将 <code class="inline">~/.aws</code> 保持在不可触及的范围之外）。</p>
+<p>（当我们在内部 Slack 中分享了这个有效提示以供讨论时，有人指出一些内部智能体会读取 Slack。该载荷现在变成了环境中的存在。我们在线程中添加了一个金丝雀字符串（canary string），以便在有任何东西读取它时能够注意到。在一个智能体读取一切的世界里，调查工具本身也是一个攻击面。）</p>
+<h3>模式三：本地虚拟机（Claude Cowork）</h3>
+<p>Claude Cowork 运行在用户的桌面上，可以访问用户选择的工作空间文件夹。由于该平台是为通用知识工作而非软件工程构建的，普通用户不太可能熟悉 bash。</p>
+<p>因此，人在环沙箱策略可能不适用；不应该期望一个非技术背景的知识工作者能够判断诸如 <code class="inline">find . -name &quot;*.tmp&quot; -exec rm {} \;</code> 这样的 bash 命令。当批准一个例外需要典型用户不具备的专业知识时，管理员应该设定一个绝对的、始终生效的边界。</p>
+<p>为此，我们第一版的 Claude Cowork 运行在一个完整的虚拟机内，使用平台的虚拟化管理程序（macOS 上的 Apple Virtualization framework，Windows 上的 HCS）。该虚拟机拥有自己的 Linux 内核、自己的文件系统和自己的进程表。用户选择的工作空间和 <code class="inline">.claude</code> 文件夹被挂载；主机上的其他任何东西都不可见。凭证保存在主机的钥匙串（keychain）中，永远不会进入客户机。这种设计保护了 Claude 在某个时刻表现出失范行为的可能性。一个被攻破的 Claude 仍然可以损害工作空间文件夹内的内容，因此架构的设计确保这是它唯一能够触及的东西（直到用户添加连接器），并且用户控制着挂载的内容。</p>
+<p>在原始架构中——我们称之为完整虚拟机模式——智能体循环本身运行在客户机内部，因此 Claude 以普通 Linux 用户的身份执行，完全不知道自己被沙箱化了。与之对比的是 Claude Code，其中有一个特权进程坐在沙箱外部，逐条命令地决定是否执行沙箱隔离；一个有说服力的注入提示或一次疲劳的批准点击就可能让该进程运行未经沙箱隔离的命令。在这里，没有持有逃生通道钥匙的外部进程，因此也没有有权批准例外的组件。</p>
+<p>然而，我们很快意识到，在完整虚拟机模式下运行整个智能体会导致实际问题：虚拟机启动过程中的任何故障都会使 Cowork 无法使用。将智能体循环移到虚拟机外部，同时将代码执行保留在内部，使得 Claude 仍然能够响应用户并帮助调试问题，而不是在出错时冻结。这一变化带来的安全影响很小，因为虚拟机仍然对智能体执行的代码强制执行文件系统和网络控制。</p>
+<p>另外，我们还将本地 MCP 服务器移到了虚拟机外部。在虚拟机内部运行它们使得审计更加困难，在虚拟机更新时产生了脆弱的依赖问题，并且不支持需要与本地进程（如数据库）交互的 MCP——这些服务器无论如何都必须在主机上运行。这一变化使得 Claude Cowork 与 Claude Desktop 中本地 MCP 服务器的工作方式保持一致：将它们视为用户可能选择安装的任何软件，并信任管理员来决定启用哪些本地 MCP（如果有）。远程 MCP 服务器不受影响，因为它们不在用户的机器上运行。</p>
+<p>文件系统控制是另一个重要的架构选择。Claude 需要能够访问主机上的某些文件才能发挥作用，但我们希望最小化爆炸半径，并向用户提供关于本地文件访问的透明度。我们发现提供不同的文件挂载模式有助于细粒度地控制风险；Claude Cowork 提供只读、读写和读写但不可删除三种模式。这里一个潜在的陷阱是，符号链接解析必须在路径验证之前而非之后进行，否则一个授权文件夹内的符号链接可以指向外部并逃逸。对于企业客户，我们允许管理员通过 MDM 设置中的挂载路径白名单来控制这一点。</p>
+<h4>我们遗漏的风险：通过受批准域名进行的数据泄露</h4>
+<p>一个通过受批准域名进行数据泄露的清晰案例来自第三方披露。Claude Cowork 的出口白名单正确地将流量传递到 <code class="inline">api.anthropic.com</code>——产品无法在不调用我们自己 API 的情况下运行。在本案例中，一个放置在用户挂载工作空间中的恶意文件携带着隐藏指令以及攻击者控制的 API 密钥。Claude 遵循指令，读取工作空间中的其他文件，并使用攻击者的密钥调用 Anthropic 的 Files API。出口代理检查了目标地址，看到是 <code class="inline">api.anthropic.com</code>，就放行了。文件被上传到了攻击者的 Anthropic 账户。沙箱工作得完美无缺，然而数据还是被泄露了。</p>
+<p>此前，我们将白名单概念化为一个目的地过滤器，一个告诉 Claude 这些域名可以对话的东西。但将其概念化为一种能力授予可能更好。通过白名单上任何域名可达的每个功能现在都是一个攻击面。允许 <code class="inline">api.anthropic.com</code> 意味着允许向任意 Anthropic 账户上传文件。</p>
+<p>我们通过在虚拟机内部放置一个防御性中间人代理（man-in-the-middle proxy）来拦截发往我们 API 的流量以修复此问题。它只传递携带虚拟机自身预配会话令牌的请求；攻击者嵌入的密钥会被代理拒绝。它还会阻止可能启用服务端获取（server-side fetch）的头部。代理位于虚拟机内部而非我们的服务器上，因为只有虚拟机知道来源——从服务器的角度来看，Cowork 的请求与任何其他 API 客户端的请求是无法区分的。</p>
+<p>这也是&quot;你自己构建的软件往往是最薄弱的&quot;这一原则的第二个实例。我们产品中的虚拟化管理程序、seccomp 和 gVisor 一直很可靠。我们自定义的白名单代理才是失败的那个组件。</p>
+<h4>我们遗漏的风险：虚拟机隔离也将端点检测软件挡在了门外</h4>
+<p>在评估 Claude Cowork 时，企业安全团队问：&quot;为什么我们的 EDR 看不到内部？&quot;答案是，使 Claude 保持隔离的同一道隔离墙，也将基于主机的端点检测与响应（EDR）挡在了外面。从 EDR 的角度来看，Claude Cowork 是一个不透明的虚拟化管理程序进程。它无法检查客户机。</p>
+<p>隔离降低了可见性，而对于合规态势依赖端点可见性的团队来说，不透明是有问题的。我们当前的缓解措施是使用基于拉取的 OTLP 导出，允许管理员事后检索事件日志，但这与实时监控不同。如果你正在构建类似的东西，请尽早为这次对话做好预算。</p>
+<h2>信任智能体读取的内容</h2>
+<p>企业经常问我们如何保护 MCP 连接。这是一个好问题，但正确的关注点比 MCP 本身更广泛。提供给智能体的任何外部资源同时代表两种风险：代码执行风险（传统的供应链意义上）和提示注入向量。传统的依赖审计（锁定版本、验证签名、审查源代码）解决了第一个问题，但遗漏了第二个。</p>
+<p>远程与本地比表面上看起来更重要。本地安装的工具是可审计的。你可以阅读代码、锁定版本，并知道它不会在你不知情的情况下发生变化。远程工具——托管的 MCP 服务器、云连接器——可以在你批准之后的任何时间改变行为；你在安装时的信任决策可能不再适用。我们的连接器目录通过持续审查来解决这一问题，但目录之外的任何东西都应被视为不受信任的。首先针对虚假数据运行它，在一个恶意工具的爆炸半径被限制的环境中。</p>
+<p><strong>即使工具本身是可信的，工具输出也是一个攻击面。</strong> 前面提到的 GitHub README 案例正是这种情况；应用于网页的任何输入扫描都需要以同样的严格程度应用于启用网络的工具结果。尽管这会增加延迟且不是完美的防御，我们倾向于实时检查：一旦被投毒的工具返回值引导智能体泄露了数据，日志只会显示一次成功的、经过授权的 API 调用。没有事后可以发现的信号。</p>
+<p>在 Claude Code 和 Claude Cowork 中，工具调用通过强制执行网络和文件策略的代理进行路由，并可以在返回值进入模型上下文之前对其进行检查。执行检查的分类器可以是一个小型、快速的模型；它不需要是执行推理的那个模型。</p>
+<h2>展望未来</h2>
+<p>模型和产品正在快速发展。随着它们的发展，风险也在变化和演变，我们的缓解措施必须跟上步伐以应对它们。</p>
+<p><strong>持久化记忆投毒。</strong> 跨会话持久化的智能体上下文比例持续增长——这包括产品记忆、CLAUDE.md 文件、挂载的工作空间，以及计划任务和长期运行智能体的状态目录。注入到这些位置中任何一个的内容都会在每次智能体启动时被重新加载。随着更多智能体状态在会话后得以保留，我们在经典的后渗透（post-exploitation）意义上面临着来自新持久化机制的威胁。会话启动时的良好分类器将需要变得更加普遍。</p>
+<p><strong>多智能体信任升级。</strong> 一方面，子智能体可以隔离不受信任的内容，向上级智能体返回结构化的事实而非原始文本。另一方面，这可能被滥用：如果子智能体的输出被视为比原始工具结果具有更高的信任度（因为这种输出来自&quot;我们自己&quot;），就引入了一种新的提示注入向量。在多智能体系统中，在分配不同的信任级别和变得容易受到信任升级攻击之间存在权衡。</p>
+<p><strong>智能体身份。</strong> Claude Cowork 对智能体身份的回答是具体的：凭证保存在主机钥匙串中，虚拟机获得一个按会话缩小范围的令牌，该令牌可以独立于用户的令牌被撤销。然而，我们开始着手处理更广泛的跨平台智能体身份问题。智能体应该拥有自己的主体身份（principal identity），还是应该作为用户的延伸并继承用户的权限？最终，答案可能是两者的结合。</p>
+<p>随着智能体变得更加能干，攻击面在不断变化。我们所见过的失败类型可能会在各个行业和实验室中重复出现。我们需要在智能体特定的安全态势方面进行集体投资，从共享的基准测试和披露规范，到通用的身份标准和跨供应商的红队测试。我们在本文中聚焦于隔离管控，但这只是智能体安全图景的一部分。关于治理、可观测性以及技术栈的其他部分，请参见 NIST 的 AI 智能体身份与授权项目、由澳大利亚 ACSC 联合 CISA 和英国 NCSC 主导的六机构智能体 AI 采用指南，以及 ISO/IEC 42001 AI 管理标准。我们的 Glasswing 计划是一个贡献，但我们期待与合作伙伴和竞争对手在这个关键问题上共同合作。</p>
+<h2>总结</h2>
+<p>简而言之，有几条原则我们不断回归：</p>
+<p><strong>首先在环境层设计隔离管控，然后在模型层引导行为。</strong> 教会我们最多的两个事件——员工钓鱼和第三方白名单泄露——都是出口方面的问题，数据通过受许可的路径流出。在这两个案例中，模型层都无能为力；没有异常可以被捕捉。当所有概率性防御都失效时，确定性的边界才是被撞击的那个。</p>
+<p><strong>将隔离强度与用户的监督能力相匹配。</strong> 一个能读懂 bash 的开发者和一个不能的知识工作者面临的不是同一个威胁模型。用户能否评估智能体即将做什么这个问题应该帮助决定隔离管控策略，而在任一方向上回答错误——对专家施加过多摩擦，对非专家给予过多信任——本身就是一种失败。</p>
+<p><strong>警惕自定义组件。</strong> 经过实战考验的虚拟化管理程序、系统调用过滤器和容器运行时，已经经历了比你将构建的任何东西更多的对抗性关注。在本文描述的每一个部署中，标准原语都经受住了考验，而我们围绕它们构建的自定义组件暴露了缺陷。</p>
+<p>归根结底，虽然智能体可能是一种新的软件类别，但它们的系统级交互并非如此。它们仍然读取文件、打开套接字并生成进程；这使得使用成熟工具进行隔离管控成为一种至关重要的可行防御。随着 AI 的发展，部署的风险回报平衡将持续变化，但对爆炸半径设定硬性限制往往会将这种平衡推向正确的方向。</p>
+<h3>致谢</h3>
+<p>由 Max McGuinness、Mikaela Grace、Jiri De Jonghe、Jake Eaton 和 Abel Ribbink 撰写。</p>
+<p>我们还要感谢 Hanah Ho、Hasnain Lakhani、Pedram Navid、Molly Villagra、Maya Nielan、Akila Srinivasan、Travis Szucs、Sam Attard、Alfred Xing、Mohamad El Hajj、Gabby Curtis、David Dworken、Adam Jones、Amie Rotherham、Christian Ryan、Lucas Smedley、Brett Andrews 以及其他人的贡献。</p>
+<p>特别感谢我们的安全和产品工程团队，以及报告了 Claude 产品漏洞的个人和组织。</p>
+<h4>脚注</h4>
+<ul>
+<li>Claude Code 自动模式将命令批准委托给一个基于模型的分类器；它以大约 0.4% 的良性命令被阻止为代价最小化摩擦，但会漏掉一小部分风险命令（约 17% 的过于激进的操作得以通过），因此它是沙箱内部纵深防御的一层，而非沙箱的替代品。</li>
+</ul></div>
+                <div class="lang-en"><p>Twelve months ago, we&#x27;d have rejected out of hand the idea of granting Claude access sufficient to take down an internal Anthropic service. Today that level of access is routine, and Anthropic developers are more productive for it. The risk of these deployments has two components: how likely a failure is, and how much damage one could do. Progress on safeguards and model training has steadily driven down the first; the second—the theoretical blast radius—only grows as capabilities and access expand. Yet as agents become capable of doing work that once required a person or even a team, the cost ofnotdeploying grows large enough that the risk-reward calculation tips heavily toward adoption, as long as products can be made safe. The engineering question becomes how to cap the blast radius.
+There are broadly two ways to do this.
+The first is to supervise the agent’s behavior via a human-in-the-loop. Claude Code previously protected against agents taking unintended actions by asking users for permission at each turn. Theoretically that works, but we’ve found the approach to be fallible. Our telemetry showed users approved roughly 93% of permission prompts. The more approvals a user sees, the less attention they pay to each, becoming over time much less diligent in their supervision. We recently built Claude Code auto mode, whichautomates safer approvalsin order to reduce this approval fatigue. Still, vulnerabilities remain—any probabilistic defense has a non-zero miss rate.1
+The second approach to capping the blast radius—and the focus of much of this post—is containment. Rather than supervising what the agent does, we supervise what it’sableto do by enforcing access boundaries through, for example, sandboxes, virtual machines, and egress controls. This is where Anthropic engineering has devoted the most effort, and also where many of the most surprising security failures have occurred.
+Over the past two years, we’ve shipped three primary agentic products:claude.ai, Claude Code, and Claude Cowork. Each serves a different audience, requiring a different containment architecture. This article shares what’s held up, what’s broken, and what we’ve learned about agent security along the way.</p>
+<h2>Three types of risk, three components of defense</h2>
+<p>Security risks to agents fall into one of three categories:
+User misuse:A user—either maliciously or through carelessness—directs the agent to do something harmful. This includes everything from asking the agent to bypass a check they find annoying, to running a destructive command they don’t understand, to specifying intentional harm.
+Model misbehavior:The agent takes a harmful action no one asked for. As our models have improved, they have become more aligned on most behavior evaluations, but this doesn’t mean risk necessarily shrinks. Less capable models are more likely to misread a situation and make obvious errors. More capable models make fewer mistakes, but they’re also better at finding unexpected paths to a goal, often by routing around restrictions nobody thought to write down.
+At Anthropic, we’ve seen Claude models“helpfully” escape a sandboxin order to complete a task, examine git history tofind answers to a coding test, and spontaneously identify the benchmark it was being run on in order todecrypt its answer key. Each model brings a new set of capabilities that are sometimes put to work in unexpected ways.
+External attackers:The agent is attacked through external vectors such as tools, files, or network access. This category includes both prompt injection and conventional attacks on the agent&#x27;s runtime, orchestration layer, or proxy.
+When building containment and defense systems, we apply defenses to three main components:
+The environment in which the agent runs.We constrain where and how an agent can act with process sandboxes, VMs, filesystem boundaries, and egress controls. The goal is to set a hard boundary on what an agent can reach. For example, if credentials never enter the sandbox, they can&#x27;t be exfiltrated, regardless of whether the cause is a user, a model finding a “creative” path, or an attacker.
+A tight perimeter also means you can relax oversight. Claude Code’sreference devcontainerexists precisely so that the agent can run unattended, without per-action approvals.
+The model the agent consults.The mechanisms here include system prompts, classifiers, probes, and training modifications. Because models are probabilistic, these shape only what the agenttendsto do, not what it is theoretically capable of doing.
+These defenses are strong. On Gray Swan&#x27;s Agent Red Teaming benchmark, which tests susceptibility to prompt injection,Claude Opus 4.7holds attack success to roughly 0.1% on single attempts, and around 5–6% after 100 adaptive attempts. Claude Code auto mode catches roughly 83% of overeager behaviorsbefore they execute. Yet even with best-in-class defenses, protection in the model layer will never be 100% effective, which is why it can&#x27;t stand alone.
+The external content the agent can reach.MCP servers, third-party plugins, and web search tools all feed content into the agent’s context from sources you don’t control. An audited connector isn’t the same as audited data—a GitHub connector, for instance, can load a poisoned README straight into the model’s context despite passing malware checks. Granularly limiting tool permissions can help limit the blast radius. An agent with read-only DB access, for instance, can be deployed far more broadly than one that writes to prod.
+Defenses should overlap and complement each other. When environmental defenses aren’t available, the model layer has to pick up the slack (this is precisely what Claude Code’sauto modeis designed for). Locally, the environment and model defenses can guard against malicious tool outputs, but defenses can be added higher up the chain by limiting the tool’s capabilities and access.</p>
+<h2>Patterns for containing agents</h2>
+<p>Focusing on the environment layer, we describe three isolation patterns and how they’re tailored for each Claude platform—claude.ai, Claude Code, and Cowork. We arrived at each design gradually, after finding the balance between the capabilities we need from the agent and the degree of intervention required from the user.</p>
+<h3>Pattern 1: The ephemeral container (claude.ai code execution)</h3>
+<p>Though best known as a chat interface, claude.ai also writes and runs code, generates files, and calls connectors. When Claude runs code inside claude.ai, it does so in agVisorcontainer on isolated infrastructure. The agent is entirely server-side; no code runs on the local machine, and the filesystem is ephemeral (per-session). The blast radius is minimal, but so is the ceiling on what Claude can do—there&#x27;s no persistent workspace and no access to the user&#x27;s filesystem.
+This also makesclaude.aisubject to a more traditional threat model. We&#x27;re not protecting user machines from agents; we&#x27;re protecting our own infrastructure and each tenant from one another. Our pre-launch work forclaude.aiwas dominated by traditional security work like network configuration, internal service auth, and orchestration.
+That work reinforced the oldest lesson in security: the weakest layer is the one you built yourself. gVisor andseccomphave been hardened against well-resourced adversaries for far longer than agentic AI has existed, so the review effort went into the newer pieces we&#x27;d built around them. We’ll come back to this later, since our custom proxy is also the piece that broke in our most consequential incident.</p>
+<h3>Pattern 2: The human-in-the-loop sandbox (Claude Code)</h3>
+<p>Claude Code runs on a user&#x27;s machine and has access to their filesystem, shell, and network. Without this, coding agents have limited usefulness, so it’s imperative to find a way to grant that access safely.
+One approach is to rely on a human-in-the-loop. This is only a tractable solution for Claude Code because the average user is a developer who’s familiar with coding environments: they can read bash, they understand what rm -rf does, and they already run npm install from untrusted sources several times a week. All that means that when an “allow this” dialog pops up, they are highly likely to have the expertise to accurately evaluate what the agent is attempting to do and the risk involved. Given this, Claude Code launched with the simplest possible defense: allow reads, require approval for write, bash, and network access.
+However, as mentioned, approval fatigue showedup within weeks.Ironically, this meant that a feature originally designed to provide oversight could arguably have the opposite effect—some users might simply stop paying attention. As a first step to mitigate incautious approvals, we shipped an OS-level sandbox (Seatbelt on macOS, bubblewrap on Linux) that hardens the boundary: reads are allowed, writes are allowed inside the workspace, but network is denied by default. Within the sandbox, the agent runs largely without interruption. The result was an 84% reduction in permission prompts, and weopen-sourced the runtime, so the boundary is auditable.
+Ouranonymized usage dataalso showed that experienced users auto-approve roughly twice as often as new users, but they also interrupt the agent mid-execution more frequently. Instead of gating individual steps, experienced users are more likely to supervise the agent only when it goes off track. While this may be a natural evolution in how people prefer to work with agents, this too is fallible, requiring users to be technical and attentive enough to notice drift in the first place. As model capabilities improve and agents begin writing increasingly ambitious bash, it becomes harder to notice any such drift. And as users move to multi-agent systems, this approach is also much less likely to be an effective oversight strategy.</p>
+<h4>Risk we missed: Everything before the trust dialog</h4>
+<p>Between mid-2025 and January 2026, we received reports of vulnerabilities in Claude Code through our responsible disclosure program. Three of these vulnerabilities targeted code that executesbeforethe user has consented to anything. To understand how this is possible, consider the most direct case: a developer clones a repository to review a pull request, and that repository contains a .claude/settings.json which defines a hook. Because Claude Code reads project settings during startup—before presenting the standard &quot;Do you trust this folder?&quot; prompt—the hook the attacker had authored and committed would execute automatically. The remaining cases looked structurally similar, in which input from the not-yet-trusted directory was parsed before the trust boundary had been established.
+The fix in each case had the same shape: defer parsing and execution of project-local configuration until after the user accepts the trust prompt. If you&#x27;re building something similar, treat project-open, config-load, and localhost listeners the way you&#x27;d treat any inbound request from the internet. They shouldn’t be implicitly trusted just because they feel local and arrive before the user has consented.</p>
+<h4>Risk we missed: The user as an injection vector</h4>
+<p>In February 2026, during a controlled internal red-team exercise, a researcher successfully phished an employee into launching Claude Code with a malicious prompt. The phish looked like ordinary collaboration—a &quot;can you run this for me?&quot; email with a ready-to-paste prompt attached—and the prompt itself read like routine task instructions. But somewhere among the setup steps, it gently asked Claude to read ~/.aws/credentials, encode the contents, and POST them to an external endpoint. Across 25 retries of that prompt, Claude completed the exfiltration 24 times.
+This is adirectprompt injection—the attacker&#x27;s instructions arrived through the user, not through tool output or fetched content. Our model-layer defenses anchor on user intent—when the user is the one typing the instruction, there&#x27;s nothing anomalous for a classifier to catch. A human contractor handed the same script would have done the same thing.
+The only defense that holds in this situation is the environment, specifically egress controls that block the POST regardless of intent and filesystem boundaries that keep ~/.aws out of reach in the first place.
+(When we shared the working prompt in internal Slack for discussion, someone pointed out that some internal agentsreadSlack. The payload was now ambient. We added acanary stringto the thread so we&#x27;d notice if anything picked it up. In a world where agents read everything, the investigation tooling is also an attack surface.)</p>
+<h3>Pattern 3: The local VM (Claude Cowork)</h3>
+<p>Claude Cowork runs on a user&#x27;s desktop with access to a workspace folder selected by the user. Because the platform is built for general knowledge work, not software engineering, the average user is much less likely to be fluent in bash.
+As a result, the human-in-the-loop sandbox strategy may not transfer; a non-technical knowledge worker shouldn’t be expected to judge bash incantations such as find . -name &quot;*.tmp&quot; -exec rm {} \;. When approving an exception requires expertise the typical user doesn’t have, admins should set a boundary that is absolute and always-on.
+To enable this, our first version of Claude Cowork ran inside a full virtual machine using the platform&#x27;s vendor hypervisor (Apple&#x27;s Virtualization framework on macOS, HCS on Windows). The VM has its own Linux kernel, its own filesystem, and its own process table. The user&#x27;s selected workspace and .claude folder are mounted; nothing else on the host is visible. Credentials stay in the host&#x27;s keychain and never enter the guest machine. This design protects against the possibility that Claude will, at some point, behave in a misaligned manner. A compromised Claude could still damage what&#x27;s inside the workspace folder, so the architecture is designed to make sure that&#x27;s theonlything it can reach (until the user adds connectors), and that the user controls what&#x27;s mounted there.
+In the original architecture—what we call full-VM mode—the agent loop itself ran inside the guest, so Claude executed as an ordinary Linux user with no awareness it was sandboxed. Compare this to Claude Code, where a privileged process sits outside the sandbox deciding per-command whether to enforce it; a persuasive injected prompt or a fatigued approval click can get that process to run something un-sandboxed. Here, there was no outer process holding an escape-hatch key, and so no component with the authority to grant an exception.
+However, we soon realized that running the whole agent in full-VM mode caused practical problems: any failure during VM startup made Cowork unusable. Moving the agent loopoutsideof the VM, while keeping code execution inside of it, allowed Claude to still respond to the user and help debug issues rather than freeze on an error. This change caused minimal security impact because the VM still enforces filesystem and network controls over code executed by the agent.
+Separately, we also moved local MCP servers outside the VM. Running them inside the VM made them harder to audit, created brittle dependency issues when the VM updated, and didn’t support MCPs that required interaction with local processes such as databases—such servers had to run on the host regardless. The change brings Claude Cowork in line with how local MCP servers already work in Claude Desktop: treating them like any software a user might choose to install and entrusting admins to decide which local MCPs to enable (if any). Remote MCP servers are unaffected since they do not run on the user&#x27;s machine.
+Filesystem controls were another important architectural choice. Claude needs to be able to accesssomefiles on the host in order to be useful, but we wanted to minimize the blast radius and provide transparency to the user about local file access. We found that offering different file-mount modes helps to granularly control risk; Claude Cowork offers read-only, read-write, and read-write-no-delete. One potential gotcha here is that symlink resolution has to happenbeforepath validation, not after, or a symlink inside an authorized folder can point outside and escape. For enterprise customers, we allow admins to control this via mount-path allowlists in MDM settings.</p>
+<h4>Risk we missed: Exfiltration through an approved domain</h4>
+<p>A clear example of exfiltration through an approved domain came from a third-party disclosure. Claude Cowork&#x27;s egress allowlist correctly passed traffic to api.anthropic.com—the product can&#x27;t function without calling our own API. In this case, a malicious file placed in the user&#x27;s mounted workspace carried hidden instructions along with an API key controlled by the attacker. Claude, following the instructions, read other files in the workspace and called Anthropic&#x27;s Files API using the attacker&#x27;s key. The egress proxy checked the destination, saw api.anthropic.com, and let it through. The files were uploaded to the attacker&#x27;s Anthropic account. The sandbox worked perfectly, and yet the data was exfiltrated.
+Previously, we’d conceptualized the allowlist as a destination filter, something that told Claudethese domains are okay to talk to.But it may be better conceptualized as a capability grant. Every function reachable through any domain on an allowlist is now an attack surface. Allowing api.anthropic.com meant allowing file uploads to arbitrary Anthropic accounts.
+We fixed it using a defensive man-in-the-middle proxy inside the VM that intercepts traffic to our API. It only passes requests carrying the VM&#x27;s own provisioned session token; an attacker-embedded key is rejected by the proxy. It also blocks headers that would enable server-side fetch. The proxy sits inside the VM rather than on our servers because only the VM knows provenance—from the server&#x27;s perspective, a Cowork request is indistinguishable from any other API client.
+This is also a second instance of the principle that the software you build yourself is often the weakest. The hypervisor, seccomp, and gVisor across our products have been dependable. Our custom allowlist proxy was the piece that failed.</p>
+<h4>Risk we missed: VM isolation kept the endpoint detection software out too</h4>
+<p>When evaluating Claude Cowork, enterprise security teams asked, &quot;Why can&#x27;t our EDR see inside?&quot; The answer was that the same isolation keeping Claude contained also kept host-based endpoint detection and response out. From the EDR&#x27;s perspective, Claude Cowork is an opaque hypervisor process. It can&#x27;t inspect the guest.
+Isolation reduces visibility, and opacity is problematic for teams whose compliance posture depends on endpoint visibility. Our current mitigation is to use pull-basedOTLPexports that let administrators retrieve event logs after the fact, but this is not the same as live monitoring. If you&#x27;re building something similar, budget for this conversation early.</p>
+<h2>Trusting what the agent reads</h2>
+<p>Enterprises often ask us how to secure MCP connections. It&#x27;s a good question, but the right one is broader than MCP specifically. Any external resource provided to an agent represents two risks at once: a code execution risk, in the traditional supply-chain sense, and a prompt injection vector. Traditional dependency auditing (pinning versions, verifying signatures, reviewing source) addresses the first, but misses the second.
+Remote versus local is more important than it seems.A locally installed tool is auditable. You can read the code, pin the version, and know it won&#x27;t change under you. A remote tool—a hosted MCP server, a cloud connector—can change behavior at any point after you’ve approved it; your install-time trust decision may no longer apply. Ourconnector directoryaddresses this through ongoing review, but anything outside it should be treated as untrusted. Run it against fake data first, in an environment where the blast radius of a malicious tool is contained.
+Tool output is an attack surface even when the tool is trusted.The GitHub README example mentioned earlier is exactly this case; any input scanning applied to web pages needs to be applied to network-enabled tool results with the same rigor. Even though this adds latency and isn&#x27;t a perfect defense, we err toward live inspection: once a poisoned tool return has steered the agent into exfiltrating data, the log just shows a successful, authorized API call. There&#x27;s no after-the-fact signal to find.
+In Claude Code and Claude Cowork, tool calls route through proxies that enforce network and file policy and can inspect return values before they enter the model&#x27;s context. The classifier that does the inspection can be a small, fast model; it doesn&#x27;t need to be the one doing the reasoning.</p>
+<h2>Looking ahead</h2>
+<p>Models and products are advancing fast. As they do, risks morph and evolve, and our mitigations must keep pace to meet them.
+Persistent memory poisoning.The share of agent context that persists across sessions keeps growing—this includes product memory, CLAUDE.md files, mounted workspaces, and the state directories of scheduled and long-running agents. An injection that lands in any of these is reloaded each time the agent starts. As more agent state survives the session, we are threatened by new persistence mechanisms in the classic post-exploitation sense. Good classifiers on session startup will need to become more commonplace.
+Multi-agent trust escalation.On the one hand, sub-agents can isolate untrusted content, returning structured facts rather than raw text up to the main agent. On the other hand, this can be abused: if a sub-agent&#x27;s output is treated as higher-trust than raw tool results, because such output came from “us,” a new vector for prompt injection is introduced. In multi-agent systems, there is a tradeoff between allocating differing trust levels and becoming liable to trust escalation.
+Agent identity.Claude Cowork&#x27;s answer to agent identity is concrete: credentials stay in the host keychain, the VM gets a per-session scoped-down token, and that token can be revoked independently of the user&#x27;s. However, we are starting to grapple with the broader question of cross-platform agent identity. Should an agent possess its own principal identity, or should it act as an extension of the user and inherit the user’s permissions? Ultimately, the answer may be a blend of the two.
+As agents grow more capable, attack surfaces are constantly shifting. The types of failures we’ve seen are likely to be repeated across industries and labs. We need collective investment in agent-specific security posture, from shared benchmarks and disclosure norms to common identity standards and cross-vendor red-teaming. We focus on containment in this piece, but that&#x27;s only one part of the security picture for agents. For governance, observability, and the rest of the stack, seeNIST&#x27;s project on AI agent identity and authorization, thesix-agency guidance on adopting agentic AIled by Australia&#x27;s ACSC with CISA and the UK&#x27;s NCSC, andISO/IEC 42001, the AI management standard. Our Glasswing initiative is one contribution, but we look forward to working with both partners and competitors on this critical issue.</p>
+<h2>Summary</h2>
+<p>In short, there are a few principles we keep returning to:
+Design for containment at the environment layer first, then steer behavior at the model layer.Two of the incidents that taught us the most—the employee phish and the third-party allowlist disclosure—were both cases of egress, in which data left through a permitted path. In each, the model layer couldn&#x27;t help; there was nothing anomalous for it to catch. The deterministic boundary is what gets hit when everything probabilistic misses.
+Match isolation strength to the user&#x27;s capacity for oversight.A developer who can read bash and a knowledge worker who can&#x27;t are not running the same threat model. The question of whether a user can evaluate what an agent is about to do should help determine the containment strategy, and answering it wrong in either direction—too much friction for experts, too much trust for non-experts—is its own failure.
+Be wary of custom components.Battle-tested hypervisors, syscall filters, and container runtimes have survived more adversarial attention than anything you&#x27;ll build. Across every deployment described here, the standard primitives held while our own work around them exposed flaws.
+Ultimately, while agents may be a new category of software, their system-level interactions are not. They still read files, open sockets, and spawn processes; this makes containment with mature tooling a crucially viable defense. The risk-reward balance of deployments will keep shifting as AI develops, but placing a hard limit on blast radius often forces that balance into the right direction.</p>
+<h3>Acknowledgements</h3>
+<p>Written by Max McGuinness, Mikaela Grace, Jiri De Jonghe, Jake Eaton, and Abel Ribbink.
+We&#x27;re also grateful to Hanah Ho, Hasnain Lakhani, Pedram Navid, Molly Villagra, Maya Nielan, Akila Srinivasan, Travis Szucs, Sam Attard, Alfred Xing, Mohamad El Hajj, Gabby Curtis, David Dworken, Adam Jones, Amie Rotherham, Christian Ryan, Lucas Smedley, Brett Andrews, and others for their contributions.
+Special thanks to our security and product engineering teams, and to the individuals and organizations that have reported vulnerabilities in Claude products.</p>
+<h4>Footnotes</h4>
+<ul>
+<li>Claude Code auto mode delegates command approvals to a model-based classifier; it minimizes friction (roughly 0.4% of benign commands blocked) at the cost of missing a fraction of risky ones (~17% of overeager actions get through), so it&#x27;s one layer of defense-in-depth inside a sandbox, not a substitute for one.</li>
+</ul></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/how-we-contain-claude" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anthropic 工程博客 - 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .header-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Hero ────────────────────────────────────────────── */
+        .hero {
+            text-align: center;
+            padding: 4rem 2rem 2rem;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        .hero h1 {
+            font-size: 2.6rem;
+            font-weight: 400;
+            letter-spacing: 3px;
+            margin-bottom: 0.6rem;
+        }
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        .hero-divider {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+        .hero-divider hr {
+            border: none;
+            border-top: 1px solid var(--border);
+        }
+
+        /* ── Article list ───────────────────────────────────── */
+        .grid {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 1.2rem 2rem;
+        }
+        .card {
+            display: block;
+            text-decoration: none;
+            color: var(--text);
+            padding: 1.5rem 0;
+            border-bottom: 1px solid var(--border);
+            transition: padding-left 0.15s ease;
+        }
+        .card:first-child { border-top: 1px solid var(--border); }
+        .card:hover { padding-left: 0.6rem; color: var(--accent); }
+        .card:hover .en-title { color: var(--accent); }
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 0.3rem;
+            line-height: 1.45;
+            font-weight: 400;
+            letter-spacing: 1px;
+        }
+        .card .date {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 0.25rem;
+        }
+        .card .en-title {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            font-style: italic;
+        }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .hero { padding: 2.5rem 1.2rem 1.2rem; }
+            .hero h1 { font-size: 1.8rem; }
+            .grid { padding: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="header-right">
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+    <div class="hero">
+        <h1>Anthropic 工程博客</h1>
+        <p>中英双语 · 共 25 篇文章 · 支持对照阅读</p>
+    </div>
+    <div class="hero-divider"><hr></div>
+    <div class="grid">
+        
+        <a href="how-we-contain-claude.html" class="card">
+            <div class="date">2026</div>
+            <h2>我们如何在各产品中对 Claude 进行隔离管控</h2>
+            <p class="en-title">How we contain Claude across products</p>
+        </a>
+        <a href="april-23-postmortem.html" class="card">
+            <div class="date">2026-04-23</div>
+            <h2>关于近期 Claude Code 质量问题的说明</h2>
+            <p class="en-title">An update on recent Claude Code quality reports</p>
+        </a>
+        <a href="managed-agents.html" class="card">
+            <div class="date">2026-04-08</div>
+            <h2>扩展托管智能体：将大脑与双手解耦</h2>
+            <p class="en-title">Scaling Managed Agents: Decoupling the brain from the hands</p>
+        </a>
+        <a href="claude-code-auto-mode.html" class="card">
+            <div class="date">2026-03-25</div>
+            <h2>我们如何构建 Claude Code 自动模式：一种更安全的权限跳过方式</h2>
+            <p class="en-title">How we built Claude Code auto mode: a safer way to skip permissions</p>
+        </a>
+        <a href="harness-design-long-running-apps.html" class="card">
+            <div class="date">2026-03-24</div>
+            <h2>长时间运行应用开发的框架设计</h2>
+            <p class="en-title">Harness design for long-running application development</p>
+        </a>
+        <a href="eval-awareness-browsecomp.html" class="card">
+            <div class="date">2026-03-06</div>
+            <h2>Claude Opus 4.6 在 BrowseComp 测试中的评估意识（Eval Awareness）</h2>
+            <p class="en-title">Eval awareness in Claude Opus 4.6’s BrowseComp performance</p>
+        </a>
+        <a href="infrastructure-noise.html" class="card">
+            <div class="date">2026-02-05</div>
+            <h2>量化智能体编码评测中的基础设施噪声</h2>
+            <p class="en-title">Quantifying infrastructure noise in agentic coding evals</p>
+        </a>
+        <a href="building-c-compiler.html" class="card">
+            <div class="date">2026-02-05</div>
+            <h2>用并行Claude智能体（Agent）团队构建C编译器</h2>
+            <p class="en-title">Building a C compiler with a team of parallel Claudes</p>
+        </a>
+        <a href="AI-resistant-technical-evaluations.html" class="card">
+            <div class="date">2026-01-21</div>
+            <h2>设计抗AI的技术评估</h2>
+            <p class="en-title">Designing AI-resistant technical evaluations</p>
+        </a>
+        <a href="demystifying-evals-for-ai-agents.html" class="card">
+            <div class="date">2026-01-09</div>
+            <h2>揭开 AI 智能体评估的神秘面纱</h2>
+            <p class="en-title">Demystifying evals for AI agents</p>
+        </a>
+        <a href="effective-harnesses-for-long-running-agents.html" class="card">
+            <div class="date">2025-11-26</div>
+            <h2>长时间运行智能体的有效运行框架</h2>
+            <p class="en-title">Effective harnesses for long-running agents</p>
+        </a>
+        <a href="advanced-tool-use.html" class="card">
+            <div class="date">2025-11-24</div>
+            <h2>Claude 开发者平台推出高级工具使用功能</h2>
+            <p class="en-title">Introducing advanced tool use on the Claude Developer Platform</p>
+        </a>
+        <a href="code-execution-with-mcp.html" class="card">
+            <div class="date">2025-11-04</div>
+            <h2>通过 MCP 执行代码：构建更高效的智能体</h2>
+            <p class="en-title">Code execution with MCP: Building more efficient agents</p>
+        </a>
+        <a href="claude-code-sandboxing.html" class="card">
+            <div class="date">2025-10-20</div>
+            <h2>超越权限提示：让 Claude Code 更安全、更自主</h2>
+            <p class="en-title">Beyond permission prompts: making Claude Code more secure and autonomous</p>
+        </a>
+        <a href="equipping-agents-for-the-real-world-with-agent-skills.html" class="card">
+            <div class="date">2025-10-16</div>
+            <h2>通过智能体技能（Agent Skills）赋能智能体应对真实世界</h2>
+            <p class="en-title">Equipping agents for the real world with Agent Skills</p>
+        </a>
+        <a href="effective-context-engineering-for-ai-agents.html" class="card">
+            <div class="date">2025-09-29</div>
+            <h2>AI 智能体的高效上下文工程</h2>
+            <p class="en-title">Effective context engineering for AI agents</p>
+        </a>
+        <a href="a-postmortem-of-three-recent-issues.html" class="card">
+            <div class="date">2025-09-17</div>
+            <h2>三次近期故障的复盘报告</h2>
+            <p class="en-title">A postmortem of three recent issues</p>
+        </a>
+        <a href="writing-tools-for-agents.html" class="card">
+            <div class="date">2025-09-11</div>
+            <h2>为智能体编写高效工具——与智能体协作</h2>
+            <p class="en-title">Writing effective tools for agents — with agents</p>
+        </a>
+        <a href="desktop-extensions.html" class="card">
+            <div class="date">2025-06-26</div>
+            <h2>桌面扩展（Desktop Extensions）：Claude Desktop 一键安装 MCP 服务器</h2>
+            <p class="en-title">Desktop Extensions: One-click MCP server installation for Claude Desktop</p>
+        </a>
+        <a href="multi-agent-research-system.html" class="card">
+            <div class="date">2025-06-13</div>
+            <h2>我们如何构建多智能体研究系统</h2>
+            <p class="en-title">How we built our multi-agent research system</p>
+        </a>
+        <a href="claude-code-best-practices.html" class="card">
+            <div class="date">2025-04-18</div>
+            <h2>Claude Code 最佳实践</h2>
+            <p class="en-title">Best practices for Claude Code</p>
+        </a>
+        <a href="claude-think-tool.html" class="card">
+            <div class="date">2025-03-20</div>
+            <h2>&quot;思考&quot;工具：让Claude在复杂工具使用场景中停下来思考</h2>
+            <p class="en-title">The &quot;think&quot; tool: Enabling Claude to stop and think in complex tool use situations</p>
+        </a>
+        <a href="swe-bench-sonnet.html" class="card">
+            <div class="date">2025-01-06</div>
+            <h2>通过 Claude 3.5 Sonnet 在 SWE-bench Verified 上刷新纪录</h2>
+            <p class="en-title">Raising the bar on SWE-bench Verified with Claude 3.5 Sonnet</p>
+        </a>
+        <a href="building-effective-agents.html" class="card">
+            <div class="date">2024-12-19</div>
+            <h2>构建有效的智能体（Agent）</h2>
+            <p class="en-title">Building effective agents</p>
+        </a>
+        <a href="contextual-retrieval.html" class="card">
+            <div class="date">2024-09-19</div>
+            <h2>上下文检索（Contextual Retrieval）介绍</h2>
+            <p class="en-title">Introducing Contextual Retrieval</p>
+        </a>
+    </div>
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+    </div>
+    <script>
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    </script>
+</body>
+</html>

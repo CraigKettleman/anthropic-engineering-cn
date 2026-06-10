@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>为智能体编写高效工具——与智能体协作 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">什么是工具？</a>
+<a class="toc-h2" href="#heading-2">如何编写工具</a>
+<a class="toc-h3" href="#heading-3">构建原型</a>
+<a class="toc-h3" href="#heading-4">运行评估</a>
+<a class="toc-h3" href="#heading-5">与智能体协作</a>
+<a class="toc-h2" href="#heading-6">编写高效工具的原则</a>
+<a class="toc-h3" href="#heading-7">为智能体选择正确的工具</a>
+<a class="toc-h3" href="#heading-8">为工具使用命名空间</a>
+<a class="toc-h3" href="#heading-9">从工具返回有意义的上下文</a>
+<a class="toc-h3" href="#heading-10">针对Token效率优化工具响应</a>
+<a class="toc-h3" href="#heading-11">对工具描述进行提示词工程</a>
+<a class="toc-h2" href="#heading-12">展望未来</a>
+<a class="toc-h2" href="#heading-13">致谢</a>
+<a class="toc-h3" href="#heading-14">想了解更多？</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">What is a tool?</a>
+<a class="toc-h2" href="#heading-2">How to write tools</a>
+<a class="toc-h3" href="#heading-3">Building a prototype</a>
+<a class="toc-h3" href="#heading-4">Running an evaluation</a>
+<a class="toc-h3" href="#heading-5">Collaborating with agents</a>
+<a class="toc-h2" href="#heading-6">Principles for writing effective tools</a>
+<a class="toc-h3" href="#heading-7">Choosing the right tools for agents</a>
+<a class="toc-h3" href="#heading-8">Namespacing your tools</a>
+<a class="toc-h3" href="#heading-9">Returning meaningful context from your tools</a>
+<a class="toc-h3" href="#heading-10">Optimizing tool responses for token efficiency</a>
+<a class="toc-h3" href="#heading-11">Prompt-engineering your tool descriptions</a>
+<a class="toc-h2" href="#heading-12">Looking ahead</a>
+<a class="toc-h2" href="#heading-13">Acknowledgements</a>
+<a class="toc-h3" href="#heading-14">Looking to learn more?</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-09-11</div>
+            <div class="title-block">
+                <h1 class="cn">为智能体编写高效工具——与智能体协作</h1>
+                <h1 class="en">Writing effective tools for agents — with agents</h1>
+                <div class="en-title">Writing effective tools for agents — with agents</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>TheModel Context Protocol (MCP)can empower LLM agents with potentially hundreds of tools to solve real-world tasks. But how do we make those tools maximally effective?
+In this post, we describe our most effective techniques for improving performance in a variety of agentic AI systems1.
+We begin by covering how you can:</p></div><div class="lang-cn-block"><p>模型上下文协议（MCP）可以赋予大语言模型（LLM）智能体（Agent）多达数百种工具来解决现实世界中的任务。但我们如何才能让这些工具发挥最大效能？
+在这篇文章中，我们将介绍我们在各种智能体AI系统中提升性能的最有效技术¹。
+首先，我们将介绍如何：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Build and test prototypes of your tools</li><li>Create and run comprehensive evaluations of your tools with agents</li><li>Collaborate with agents like Claude Code to automatically increase the performance of your tools</li></ul></div><div class="lang-cn-block"><ul><li>构建和测试工具的原型</li><li>使用智能体创建并运行全面的工具评估</li><li>与 Claude Code 等智能体协作，自动提升工具性能</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We conclude with key principles for writing high-quality tools we’ve identified along the way:</p></div><div class="lang-cn-block"><p>最后，我们将总结在这一过程中总结出的编写高质量工具的关键原则：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Choosing the right tools to implement (and not to implement)</li><li>Namespacing tools to define clear boundaries in functionality</li><li>Returning meaningful context from tools back to agents</li><li>Optimizing tool responses for token efficiency</li><li>Prompt-engineering tool descriptions and specs</li></ul></div><div class="lang-cn-block"><ul><li>选择正确的工具来实现（以及不实现）</li><li>使用命名空间划分工具，定义清晰的功能边界</li><li>从工具向智能体返回有意义的上下文</li><li>针对Token效率优化工具响应</li><li>对工具描述和规范进行提示词工程</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>What is a tool?</h2></div><div class="lang-cn-block"><h2 id="heading-1">什么是工具？</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In computing, deterministic systems produce the same output every time given identical inputs, whilenon-deterministicsystems—like agents—can generate varied responses even with the same starting conditions.
+When we traditionally write software, we’re establishing a contract between deterministic systems. For instance, a function call likegetWeather(“NYC”)will always fetch the weather in New York City in the exact same manner every time it is called.
+getWeather(“NYC”)
+Tools are a new kind of software which reflects a contract between deterministic systems and non-deterministic agents. When a user asks &quot;Should I bring an umbrella today?,” an agent might call the weather tool, answer from general knowledge, or even ask a clarifying question about location first. Occasionally, an agent might hallucinate or even fail to grasp how to use a tool.
+This means fundamentally rethinking our approach when writing software for agents: instead of writing tools andMCP serversthe way we’d write functions and APIs for other developers or systems, we need to design them for agents.
+Our goal is to increase the surface area over which agents can be effective in solving a wide range of tasks by using tools to pursue a variety of successful strategies. Fortunately, in our experience, the tools that are most “ergonomic” for agents also end up being surprisingly intuitive to grasp as humans.</p></div><div class="lang-cn-block"><p>在计算机领域，确定性系统在输入相同的情况下每次都会产生相同的输出，而非确定性系统——如智能体——即使在相同的起始条件下也可能产生不同的响应。
+在传统软件开发中，我们建立的是确定性系统之间的契约。例如，像 <code class="inline">getWeather(&quot;NYC&quot;)</code> 这样的函数调用，每次被调用时都会以完全相同的方式获取纽约市的天气。
+工具是一种新型软件，它反映了确定性系统与非确定性智能体之间的契约。当用户问&quot;今天需要带伞吗？&quot;时，智能体可能会调用天气工具，也可能从通用知识中回答，甚至可能先询问关于位置的澄清问题。偶尔，智能体可能会产生幻觉，甚至无法理解如何使用工具。
+这意味着在为智能体编写软件时，我们需要从根本上重新思考我们的方法：我们不再像为其他开发者或系统编写函数和API那样来编写工具和MCP服务器，而是需要为智能体来设计它们。
+我们的目标是扩大智能体通过使用工具来追求各种成功策略，从而有效解决广泛任务的范围。幸运的是，根据我们的经验，对智能体最&quot;符合人体工学&quot;的工具，最终对人类来说也出奇地直观易懂。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>How to write tools</h2></div><div class="lang-cn-block"><h2 id="heading-2">如何编写工具</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In this section, we describe how you can collaborate with agents both to write and to improve the tools you give them. Start by standing up a quick prototype of your tools and testing them locally. Next, run a comprehensive evaluation to measure subsequent changes. Working alongside agents, you can repeat the process of evaluating and improving your tools until your agents achieve strong performance on real-world tasks.</p></div><div class="lang-cn-block"><p>在本节中，我们将介绍如何与智能体协作来编写和改进你提供给它们的工具。首先搭建一个工具的快速原型并在本地进行测试。其次运行全面的评估来衡量后续的改进。与智能体并肩工作，你可以重复评估和改进工具的过程，直到你的智能体在现实任务上取得出色表现。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Building a prototype</h3></div><div class="lang-cn-block"><h3 id="heading-3">构建原型</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>It can be difficult to anticipate which tools agents will find ergonomic and which tools they won’t without getting hands-on yourself. Start by standing up a quick prototype of your tools. If you’re usingClaude Codeto write your tools (potentially in one-shot), it helps to give Claude documentation for any software libraries, APIs, or SDKs (including potentially theMCP SDK) your tools will rely on. LLM-friendly documentation can commonly be found in flatllms.txtfiles on official documentation sites (here’s ourAPI’s).
+llms.txt
+Wrapping your tools in alocal MCP serverorDesktop extension(DXT) will allow you to connect and test your tools in Claude Code or the Claude Desktop app.
+To connect your local MCP server to Claude Code, runclaude mcp add &lt;name&gt; &lt;command&gt; [args...].
+claude mcp add &lt;name&gt; &lt;command&gt; [args...]
+To connect your local MCP server or DXT to the Claude Desktop app, navigate toSettings &gt; DeveloperorSettings &gt; Extensions, respectively.
+Settings &gt; Developer
+Settings &gt; Extensions
+Tools can also be passed directly intoAnthropic APIcalls for programmatic testing.
+Test the tools yourself to identify any rough edges. Collect feedback from your users to build an intuition around the use-cases and prompts you expect your tools to enable.</p></div><div class="lang-cn-block"><p>如果不亲自上手实践，很难预判哪些工具对智能体来说是好用的，哪些不是。首先搭建一个工具的快速原型。如果你使用 Claude Code 来编写工具（可能是一次性完成的），向 Claude 提供你的工具所依赖的任何软件库、API或SDK（可能包括MCP SDK）的文档会很有帮助。面向大语言模型的文档通常可以在官方文档站点的扁平 <code class="inline">llms.txt</code> 文件中找到（这是我们的API文档）。
+将你的工具封装在本地MCP服务器或桌面扩展（DXT）中，将允许你在 Claude Code 或 Claude 桌面应用中连接和测试你的工具。
+要将本地MCP服务器连接到 Claude Code，请运行 <code class="inline">claude mcp add &lt;name&gt; &lt;command&gt; [args...]</code>。
+要将本地MCP服务器或DXT连接到 Claude 桌面应用，请分别导航到 <code class="inline">Settings &gt; Developer</code> 或 <code class="inline">Settings &gt; Extensions</code>。
+工具也可以直接传递给 Anthropic API 调用进行编程测试。
+亲自测试工具以发现任何不足之处。收集用户的反馈，对你期望工具支持的使用场景和提示词建立直觉。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Running an evaluation</h3></div><div class="lang-cn-block"><h3 id="heading-4">运行评估</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Next, you need to measure how well Claude uses your tools by running an evaluation. Start by generating lots of evaluation tasks, grounded in real world uses. We recommend collaborating with an agent to help analyze your results and determine how to improve your tools. See this process end-to-end in ourtool evaluation cookbook.
+Generating evaluation tasks
+With your early prototype, Claude Code can quickly explore your tools and create dozens of prompt and response pairs. Prompts should be inspired by real-world uses and be based on realistic data sources and services (for example, internal knowledge bases and microservices). We recommend you avoid overly simplistic or superficial “sandbox” environments that don’t stress-test your tools with sufficient complexity. Strong evaluation tasks might require multiple tool calls—potentially dozens.
+Here are some examples of strong tasks:</p></div><div class="lang-cn-block"><p>接下来，你需要通过运行评估来衡量 Claude 使用你的工具的效果。首先生成大量基于现实世界用途的评估任务。我们建议与智能体协作来帮助分析结果并确定如何改进你的工具。可以在我们的工具评估手册中查看这一端到端的过程。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Schedule a meeting with Jane next week to discuss our latest Acme Corp project. Attach the notes from our last project planning meeting and reserve a conference room.</li><li>Customer ID 9182 reported that they were charged three times for a single purchase attempt. Find all relevant log entries and determine if any other customers were affected by the same issue.</li><li>Customer Sarah Chen just submitted a cancellation request. Prepare a retention offer. Determine: (1) why they&#x27;re leaving, (2) what retention offer would be most compelling, and (3) any risk factors we should be aware of before making an offer.</li></ul></div><div class="lang-cn-block"><p><strong>生成评估任务</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>And here are some weaker tasks:</p></div><div class="lang-cn-block"><p>使用你的早期原型，Claude Code 可以快速探索你的工具并创建数十个提示词和响应对。提示词应受到现实世界用途的启发，并基于真实的数据源和服务（例如内部知识库和微服务）。我们建议你避免使用过于简单或表面的&quot;沙箱&quot;环境，这些环境无法以足够的复杂性对你的工具进行压力测试。优秀的评估任务可能需要多次工具调用——甚至可能达到数十次。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Schedule a meeting with jane@acme.corp next week.</li><li>Search the payment logs forpurchase_completeandcustomer_id=9182.</li></ul></div><div class="lang-cn-block"><p>以下是一些优秀任务的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>purchase_complete
+customer_id=9182</p></div><div class="lang-cn-block"><ul><li>下周与Jane安排一次会议，讨论我们最新的Acme Corp项目。附上我们上次项目规划会议的笔记并预订一间会议室。</li><li>客户ID 9182报告称，他们的一次购买尝试被扣款三次。查找所有相关日志条目，并确定是否有其他客户受到相同问题的影响。</li><li>客户Sarah Chen刚刚提交了取消请求。准备一份挽留方案。确定：(1) 他们离开的原因，(2) 什么样的挽留方案最具吸引力，以及 (3) 在提出方案之前我们应该了解的任何风险因素。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Find the cancellation request by Customer ID 45892.</li></ul></div><div class="lang-cn-block"><p>以下是一些较弱的任务：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Each evaluation prompt should be paired with a verifiable response or outcome. Your verifier can be as simple as an exact string comparison between ground truth and sampled responses, or as advanced as enlisting Claude to judge the response. Avoid overly strict verifiers that reject correct responses due to spurious differences like formatting, punctuation, or valid alternative phrasings.
+For each prompt-response pair, you can optionally also specify the tools you expect an agent to call in solving the task, to measure whether or not agents are successful in grasping each tool’s purpose during evaluation. However, because there might be multiple valid paths to solving tasks correctly, try to avoid overspecifying or overfitting to strategies.
+Running the evaluation
+We recommend running your evaluation programmatically with direct LLM API calls. Use simple agentic loops (while-loops wrapping alternating LLM API and tool calls): one loop for each evaluation task. Each evaluation agent should be given a single task prompt and your tools.
+while
+In your evaluation agents’ system prompts, we recommend instructing agents to output not just structured response blocks (for verification), but also reasoning and feedback blocks. Instructing agents to output thesebeforetool call and response blocks may increase LLMs’ effective intelligence by triggering chain-of-thought (CoT) behaviors.
+If you’re running your evaluation with Claude, you can turn oninterleaved thinkingfor similar functionality “off-the-shelf”. This will help you probe why agents do or don’t call certain tools and highlight specific areas of improvement in tool descriptions and specs.
+As well as top-level accuracy, we recommend collecting other metrics like the total runtime of individual tool calls and tasks, the total number of tool calls, the total token consumption, and tool errors. Tracking tool calls can help reveal common workflows that agents pursue and offer some opportunities for tools to consolidate.
+Analyzing resultsAgents are your helpful partners in spotting issues and providing feedback on everything from contradictory tool descriptions to inefficient tool implementations and confusing tool schemas. However, keep in mind that what agents omit in their feedback and responses can often be more important than what they include. LLMs don’t alwayssay what they mean.
+Observe where your agents get stumped or confused. Read through your evaluation agents’ reasoning and feedback (or CoT) to identify rough edges. Review the raw transcripts (including tool calls and tool responses) to catch any behavior not explicitly described in the agent’s CoT. Read between the lines; remember that your evaluation agents don’t necessarily know the correct answers and strategies.
+Analyze your tool calling metrics. Lots of redundant tool calls might suggest some rightsizing of pagination or token limit parameters is warranted; lots of tool errors for invalid parameters might suggest tools could use clearer descriptions or better examples. When we launched Claude’sweb search tool, we identified that Claude was needlessly appending2025to the tool’squeryparameter, biasing search results and degrading performance (we steered Claude in the right direction by improving the tool description).
+2025
+query</p></div><div class="lang-cn-block"><ul><li>下周与jane@acme.corp安排一次会议。</li><li>在支付日志中搜索 <code class="inline">purchase_complete</code> 和 <code class="inline">customer_id=9182</code>。</li><li>查找客户ID 45892的取消请求。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Collaborating with agents</h3></div><div class="lang-cn-block"><p>每个评估提示词应与一个可验证的响应或结果配对。验证器可以简单到将标准答案与采样响应进行精确字符串比较，也可以高级到使用 Claude 来评判响应。避免使用过于严格的验证器，因为它们可能由于格式、标点或有效的替代表述等虚假差异而拒绝正确的响应。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>You can even let agents analyze your results and improve your tools for you. Simply concatenate the transcripts from your evaluation agents and paste them into Claude Code. Claude is an expert at analyzing transcripts and refactoring lots of tools all at once—for example, to ensure tool implementations and descriptions remain self-consistent when new changes are made.
+In fact, most of the advice in this post came from repeatedly optimizing our internal tool implementations with Claude Code. Our evaluations were created on top of our internal workspace, mirroring the complexity of our internal workflows, including real projects, documents, and messages.
+We relied on held-out test sets to ensure we did not overfit to our “training” evaluations. These test sets revealed that we could extract additional performance improvements even beyond what we achieved with &quot;expert&quot; tool implementations—whether those tools were manually written by our researchers or generated by Claude itself.
+In the next section, we’ll share some of what we learned from this process.</p></div><div class="lang-cn-block"><p>对于每个提示词-响应对，你还可以选择性地指定你期望智能体在解决任务时调用的工具，以衡量智能体在评估过程中是否成功理解了每个工具的用途。然而，由于解决任务可能存在多条有效路径，尽量避免过度指定或过度拟合到特定策略。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Principles for writing effective tools</h2></div><div class="lang-cn-block"><p><strong>运行评估</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In this section, we distill our learnings into a few guiding principles for writing effective tools.</p></div><div class="lang-cn-block"><p>我们建议使用直接的大语言模型API调用以编程方式运行你的评估。使用简单的智能体循环（用while循环交替调用大语言模型API和工具）：每个评估任务一个循环。每个评估智能体应被给予单个任务提示词和你的工具。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Choosing the right tools for agents</h3></div><div class="lang-cn-block"><p>在评估智能体的系统提示词中，我们建议指示智能体不仅输出结构化的响应块（用于验证），还要输出推理和反馈块。指示智能体在工具调用和响应块之前输出这些内容，可能通过触发思维链（CoT）行为来提高大语言模型的有效智能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>More tools don’t always lead to better outcomes. A common error we’ve observed is tools that merely wrap existing software functionality or API endpoints—whether or not the tools are appropriate for agents. This is because agents have distinct “affordances” to traditional software—that is, they have different ways of perceiving the potential actions they can take with those tools
+LLM agents have limited &quot;context&quot; (that is, there are limits to how much information they can process at once), whereas computer memory is cheap and abundant. Consider the task of searching for a contact in an address book. Traditional software programs can efficiently store and process a list of contacts one at a time, checking each one before moving on.
+However, if an LLM agent uses a tool that returns ALL contacts and then has to read through each one token-by-token, it&#x27;s wasting its limited context space on irrelevant information (imagine searching for a contact in your address book by reading each page from top-to-bottom—that is, via brute-force search). The better and more natural approach (for agents and humans alike) is to skip to the relevant page first (perhaps finding it alphabetically).
+We recommend building a few thoughtful tools targeting specific high-impact workflows, which match your evaluation tasks and scaling up from there. In the address book case, you might choose to implement asearch_contactsormessage_contacttool instead of alist_contactstool.
+search_contacts
+message_contact
+list_contacts
+Tools can consolidate functionality, handling potentiallymultiplediscrete operations (or API calls) under the hood. For example, tools can enrich tool responses with related metadata or handle frequently chained, multi-step tasks in a single tool call.
+Here are some examples:</p></div><div class="lang-cn-block"><p>如果你使用 Claude 运行评估，你可以开启交错思考（interleaved thinking）来获得类似的&quot;开箱即用&quot;功能。这将帮助你探究智能体为何调用或不调用某些工具，并突出工具描述和规范中需要改进的具体领域。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Instead of implementing alist_users,list_events, andcreate_eventtools, consider implementing aschedule_eventtool which finds availability and schedules an event.</li></ul></div><div class="lang-cn-block"><p>除了顶层准确率，我们还建议收集其他指标，如单个工具调用和任务的总运行时间、工具调用总次数、总Token消耗和工具错误。跟踪工具调用可以帮助揭示智能体追求的常见工作流，并为工具整合提供机会。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>list_users
+list_events
+create_event
+schedule_event</p></div><div class="lang-cn-block"><p><strong>分析结果</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Instead of implementing aread_logstool, consider implementing asearch_logstool which only returns relevant log lines and some surrounding context.</li></ul></div><div class="lang-cn-block"><p>智能体是你发现问题和提供反馈的得力伙伴，从相互矛盾的工具描述到低效的工具实现和令人困惑的工具模式。然而，请记住，智能体在反馈和响应中省略的内容往往比包含的内容更重要。大语言模型并不总是言为心声。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>read_logs
+search_logs</p></div><div class="lang-cn-block"><p>观察你的智能体在哪里遇到了困难或困惑。仔细阅读评估智能体的推理和反馈（或思维链）以发现不足之处。审查原始记录（包括工具调用和工具响应）以捕捉智能体思维链中未明确描述的任何行为。学会解读弦外之音；记住你的评估智能体不一定知道正确的答案和策略。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Instead of implementingget_customer_by_id,list_transactions, andlist_notestools, implement aget_customer_contexttool which compiles all of a customer’s recent &amp; relevant information all at once.</li></ul></div><div class="lang-cn-block"><p>分析你的工具调用指标。大量冗余的工具调用可能表明需要对分页或Token限制参数进行适当调整；大量因无效参数导致的工具错误可能表明工具需要更清晰的描述或更好的示例。当我们推出 Claude 的网页搜索工具时，我们发现 Claude 不必要地在工具的 <code class="inline">query</code> 参数中附加了 <code class="inline">2025</code>，从而偏向搜索结果并降低了性能（我们通过改进工具描述来引导 Claude 走向正确的方向）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>get_customer_by_id
+list_transactions
+list_notes
+get_customer_context
+Make sure each tool you build has a clear, distinct purpose. Tools should enable agents to subdivide and solve tasks in much the same way that a human would, given access to the same underlying resources, and simultaneously reduce the context that would have otherwise been consumed by intermediate outputs.
+Too many tools or overlapping tools can also distract agents from pursuing efficient strategies. Careful, selective planning of the tools you build (or don’t build) can really pay off.</p></div><div class="lang-cn-block"><h3 id="heading-5">与智能体协作</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Namespacing your tools</h3></div><div class="lang-cn-block"><p>你甚至可以让智能体分析你的结果并为你改进工具。只需将评估智能体的记录拼接起来并粘贴到 Claude Code 中。Claude 是分析记录和一次性重构大量工具的专家——例如，确保在进行新更改时工具实现和描述保持自洽。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Your AI agents will potentially gain access to dozens of MCP servers and hundreds of different tools–including those by other developers. When tools overlap in function or have a vague purpose, agents can get confused about which ones to use.
+Namespacing (grouping related tools under common prefixes) can help delineate boundaries between lots of tools; MCP clients sometimes do this by default. For example, namespacing tools by service (e.g.,asana_search,jira_search) and by resource (e.g.,asana_projects_search,asana_users_search), can help agents select the right tools at the right time.
+asana_search
+jira_search
+asana_projects_search
+asana_users_search
+We have found selecting between prefix- and suffix-based namespacing to have non-trivial effects on our tool-use evaluations. Effects vary by LLM and we encourage you to choose a naming scheme according to your own evaluations.
+Agents might call the wrong tools, call the right tools with the wrong parameters, call too few tools, or process tool responses incorrectly. By selectively implementing tools whose names reflect natural subdivisions of tasks, you simultaneously reduce the number of tools and tool descriptions loaded into the agent’s context and offload agentic computation from the agent’s context back into the tool calls themselves. This reduces an agent’s overall risk of making mistakes.</p></div><div class="lang-cn-block"><p>事实上，这篇文章中的大部分建议来自于使用 Claude Code 反复优化我们内部工具实现的经验。我们的评估是基于内部工作区构建的，反映了内部工作流的复杂性，包括真实的项目、文档和消息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Returning meaningful context from your tools</h3></div><div class="lang-cn-block"><p>我们依赖留出的测试集来确保我们没有过度拟合到&quot;训练&quot;评估。这些测试集表明，即使在&quot;专家&quot;工具实现的基础上——无论这些工具是由我们的研究人员手动编写的还是由 Claude 自身生成的——我们仍能获得额外的性能提升。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In the same vein, tool implementations should take care to return only high signal information back to agents. They should prioritize contextual relevance over flexibility, and eschew low-level technical identifiers (for example:uuid,256px_image_url,mime_type). Fields likename,image_url, andfile_typeare much more likely to directly inform agents’ downstream actions and responses.
+uuid
+256px_image_url
+mime_type
+name
+image_url
+file_type
+Agents also tend to grapple with natural language names, terms, or identifiers significantly more successfully than they do with cryptic identifiers. We’ve found that merely resolving arbitrary alphanumeric UUIDs to more semantically meaningful and interpretable language (or even a 0-indexed ID scheme) significantly improves Claude’s precision in retrieval tasks by reducing hallucinations.
+In some instances, agents may require the flexibility to interact with both natural language and technical identifiers outputs, if only to trigger downstream tool calls (for example,search_user(name=’jane’)→send_message(id=12345)). You can enable both by exposing a simpleresponse_formatenum parameter in your tool, allowing your agent to control whether tools return“concise”or“detailed”responses (images below).
+search_user(name=’jane’)
+send_message(id=12345)
+response_format
+“concise”
+“detailed”
+You can add more formats for even greater flexibility, similar to GraphQL where you can choose exactly which pieces of information you want to receive. Here is an example ResponseFormat enum to control tool response verbosity:</p></div><div class="lang-cn-block"><p>在下一节中，我们将分享我们从这个过程中学到的一些经验。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}
+Here’s an example of a detailed tool response (206 tokens):
+Here’s an example of a concise tool response (72 tokens):
+thread_ts
+thread_ts
+channel_id
+user_id
+“detailed”
+“concise”
+“concise”
+Even your tool response structure—for example XML, JSON, or Markdown—can have an impact on evaluation performance: there is no one-size-fits-all solution. This is because LLMs are trained on next-token prediction and tend to perform better with formats that match their training data. The optimal response structure will vary widely by task and agent. We encourage you to select the best response structure based on your own evaluation.</p></div><div class="lang-cn-block"><p>在本节中，我们将经验提炼为几条编写高效工具的指导原则。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Optimizing tool responses for token efficiency</h3></div><div class="lang-cn-block"><h3 id="heading-7">为智能体选择正确的工具</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Optimizing the quality of context is important. But so is optimizing thequantityof context returned back to agents in tool responses.
+We suggest implementing some combination of pagination, range selection, filtering, and/or truncation with sensible default parameter values for any tool responses that could use up lots of context. For Claude Code, we restrict tool responses to 25,000 tokens by default. We expect the effective context length of agents to grow over time, but the need for context-efficient tools to remain.
+If you choose to truncate responses, be sure to steer agents with helpful instructions. You can directly encourage agents to pursue more token-efficient strategies, like making many small and targeted searches instead of a single, broad search for a knowledge retrieval task. Similarly, if a tool call raises an error (for example, during input validation), you can prompt-engineer your error responses to clearly communicate specific and actionable improvements, rather than opaque error codes or tracebacks.
+Here’s an example of a truncated tool response:
+Here’s an example of an unhelpful error response:
+Here’s an example of a helpful error response:</p></div><div class="lang-cn-block"><p>更多的工具并不总是带来更好的结果。我们观察到的一个常见错误是，工具仅仅是现有软件功能或API端点的封装——无论这些工具是否适合智能体。这是因为智能体与传统软件有着不同的&quot;可供性&quot;（affordances）——也就是说，它们感知可以使用这些工具采取的潜在行动的方式不同。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Prompt-engineering your tool descriptions</h3></div><div class="lang-cn-block"><p>大语言模型智能体的&quot;上下文&quot;是有限的（即它们一次能处理的信息量是有限的），而计算机内存是廉价且充裕的。考虑在通讯录中搜索联系人的任务。传统软件程序可以高效地存储和逐个处理联系人列表，逐一检查每个联系人。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We now come to one of the most effective methods for improving tools: prompt-engineering your tool descriptions and specs. Because these are loaded into your agents’ context, they can collectively steer agents toward effective tool-calling behaviors.
+When writing tool descriptions and specs, think of how you would describe your tool to a new hire on your team. Consider the context that you might implicitly bring—specialized query formats, definitions of niche terminology, relationships between underlying resources—and make it explicit. Avoid ambiguity by clearly describing (and enforcing with strict data models) expected inputs and outputs. In particular, input parameters should be unambiguously named: instead of a parameter nameduser, try a parameter nameduser_id.
+user
+user_id
+With your evaluation you can measure the impact of your prompt engineering with greater confidence. Even small refinements to tool descriptions can yield dramatic improvements. Claude Sonnet 3.5 achieved state-of-the-art performance on theSWE-bench Verifiedevaluation after we made precise refinements to tool descriptions, dramatically reducing error rates and improving task completion.
+You can find other best practices for tool definitions in ourDeveloper Guide. If you’re building tools for Claude, we also recommend reading about how tools are dynamically loaded into Claude’ssystem prompt. Lastly, if you’re writing tools for an MCP server,tool annotationshelp disclose which tools require open-world access or make destructive changes.</p></div><div class="lang-cn-block"><p>然而，如果大语言模型智能体使用一个返回所有联系人的工具，然后不得不逐Token地阅读每一个，它就在将有限的上下文空间浪费在无关信息上（想象一下通过从上到下阅读每一页来搜索通讯录中的联系人——即通过暴力搜索）。更好、更自然的方法（对智能体和人类都是如此）是直接跳转到相关页面（也许按字母顺序找到它）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Looking ahead</h2></div><div class="lang-cn-block"><p>我们建议构建少量针对特定高影响力工作流的深思熟虑的工具，这些工具与你的评估任务相匹配，然后再逐步扩展。在通讯录的例子中，你可能会选择实现 <code class="inline">search_contacts</code> 或 <code class="inline">message_contact</code> 工具，而不是 <code class="inline">list_contacts</code> 工具。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>To build effective tools for agents, we need to re-orient our software development practices from predictable, deterministic patterns to non-deterministic ones.
+Through the iterative, evaluation-driven process we’ve described in this post, we&#x27;ve identified consistent patterns in what makes tools successful: Effective tools are intentionally and clearly defined, use agent context judiciously, can be combined together in diverse workflows, and enable agents to intuitively solve real-world tasks.
+In the future, we expect the specific mechanisms through which agents interact with the world to evolve—from updates to the MCP protocol to upgrades to the underlying LLMs themselves. With a systematic, evaluation-driven approach to improving tools for agents, we can ensure that as agents become more capable, the tools they use will evolve alongside them.</p></div><div class="lang-cn-block"><p>工具可以整合功能，在底层处理潜在的多个离散操作（或API调用）。例如，工具可以用相关元数据丰富工具响应，或者在单次工具调用中处理经常串联执行的多步骤任务。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Acknowledgements</h2></div><div class="lang-cn-block"><p>以下是一些示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Ken Aizawa with valuable contributions from colleagues across Research (Barry Zhang, Zachary Witten, Daniel Jiang, Sami Al-Sheikh, Matt Bell, Maggie Vo), MCP (Theodora Chu, John Welsh, David Soria Parra, Adam Jones), Product Engineering (Santiago Seira), Marketing (Molly Vorwerck), Design (Drew Roper), and Applied AI (Christian Ryan, Alexander Bricken).
+1Beyond training the underlying LLMs themselves.</p></div><div class="lang-cn-block"><ul><li>不要实现 <code class="inline">list_users</code>、<code class="inline">list_events</code> 和 <code class="inline">create_event</code> 工具，而是考虑实现一个 <code class="inline">schedule_event</code> 工具，它能查找可用时间并安排事件。</li><li>不要实现 <code class="inline">read_logs</code> 工具，而是考虑实现一个 <code class="inline">search_logs</code> 工具，它只返回相关的日志行和一些上下文。</li><li>不要实现 <code class="inline">get_customer_by_id</code>、<code class="inline">list_transactions</code> 和 <code class="inline">list_notes</code> 工具，而是实现一个 <code class="inline">get_customer_context</code> 工具，它能一次性编译客户的最近相关信息。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Looking to learn more?</h3></div><div class="lang-cn-block"><p>确保你构建的每个工具都有清晰、独特的用途。工具应该使智能体能够以与人类相似的方式来细分和解决任务——在拥有相同底层资源的情况下——同时减少原本会被中间输出消耗的上下文。</p></div></div>
+<div class="lang-cn-block"><p>过多的工具或重叠的工具也会分散智能体追求高效策略的注意力。对你构建（或不构建）的工具进行精心、有选择性的规划，会真正带来回报。</p></div>
+<div class="lang-cn-block"><h3 id="heading-8">为工具使用命名空间</h3></div>
+<div class="lang-cn-block"><p>你的AI智能体可能会获得对数十个MCP服务器和数百种不同工具的访问权限——包括其他开发者的工具。当工具功能重叠或目的模糊时，智能体可能会对使用哪个工具感到困惑。</p></div>
+<div class="lang-cn-block"><p>命名空间（将相关工具分组到公共前缀下）可以帮助界定大量工具之间的边界；MCP客户端有时会默认这样做。例如，按服务（如 <code class="inline">asana_search</code>、<code class="inline">jira_search</code>）和按资源（如 <code class="inline">asana_projects_search</code>、<code class="inline">asana_users_search</code>）对工具进行命名空间划分，可以帮助智能体在正确的时间选择正确的工具。</p></div>
+<div class="lang-cn-block"><p>我们发现，在基于前缀和基于后缀的命名空间之间选择，对我们的工具使用评估有显著的影响。效果因大语言模型而异，我们鼓励你根据自己的评估选择命名方案。</p></div>
+<div class="lang-cn-block"><p>智能体可能会调用错误的工具、用错误的参数调用正确的工具、调用太少的工具，或者错误地处理工具响应。通过有选择性地实现那些名称反映任务自然细分的工具，你可以同时减少加载到智能体上下文中的工具和工具描述的数量，并将智能体计算从智能体的上下文卸载回工具调用本身。这降低了智能体犯错的整体风险。</p></div>
+<div class="lang-cn-block"><h3 id="heading-9">从工具返回有意义的上下文</h3></div>
+<div class="lang-cn-block"><p>同样，工具实现应注意只向智能体返回高信号信息。它们应优先考虑上下文相关性而非灵活性，并避免使用低级技术标识符（例如：<code class="inline">uuid</code>、<code class="inline">256px_image_url</code>、<code class="inline">mime_type</code>）。像 <code class="inline">name</code>、<code class="inline">image_url</code> 和 <code class="inline">file_type</code> 这样的字段更有可能直接影响智能体的下游行动和响应。</p></div>
+<div class="lang-cn-block"><p>智能体在处理自然语言名称、术语或标识符方面往往比处理晦涩的标识符要成功得多。我们发现，仅仅将任意的字母数字UUID解析为更有语义意义和可解释性的语言（甚至是从0开始的索引方案），就能通过减少幻觉显著提高 Claude 在检索任务中的精确度。</p></div>
+<div class="lang-cn-block"><p>在某些情况下，智能体可能需要灵活地与自然语言和技术标识符输出进行交互，哪怕只是为了触发下游工具调用（例如，<code class="inline">search_user(name=&#x27;jane&#x27;)</code> → <code class="inline">send_message(id=12345)</code>）。你可以通过在工具中暴露一个简单的 <code class="inline">response_format</code> 枚举参数来实现这一点，允许你的智能体控制工具返回&quot;简洁&quot;还是&quot;详细&quot;的响应（见下方图片）。</p></div>
+<div class="lang-cn-block"><p>你可以添加更多格式以获得更大的灵活性，类似于 GraphQL，你可以精确选择想要接收的信息片段。以下是一个控制工具响应详细程度的 ResponseFormat 枚举示例：</p></div>
+<div class="lang-cn-block"><pre><code class="language-">enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}</code></pre></div>
+<div class="lang-cn-block"><p>以下是详细工具响应的示例（206个Token）。
+以下是简洁工具响应的示例（72个Token）。</p></div>
+<div class="lang-cn-block"><p>即使是工具响应的结构——例如 XML、JSON 或 Markdown——也会对评估性能产生影响：没有放之四海而皆准的解决方案。这是因为大语言模型是基于下一个Token预测训练的，往往在与训练数据匹配的格式上表现更好。最优的响应结构因任务和智能体而异。我们鼓励你根据自己的评估选择最佳的响应结构。</p></div>
+<div class="lang-cn-block"><h3 id="heading-10">针对Token效率优化工具响应</h3></div>
+<div class="lang-cn-block"><p>优化上下文质量很重要。但优化工具响应中返回给智能体的上下文数量也同样重要。</p></div>
+<div class="lang-cn-block"><p>我们建议对任何可能消耗大量上下文的工具响应，实施分页、范围选择、过滤和/或截断的某种组合，并设置合理的默认参数值。对于 Claude Code，我们将工具响应限制在默认25,000个Token。我们预计智能体的有效上下文长度会随时间增长，但对上下文高效工具的需求将长期存在。</p></div>
+<div class="lang-cn-block"><p>如果你选择截断响应，请务必用有用的指令引导智能体。你可以直接鼓励智能体追求更节省Token的策略，例如进行多次小范围的定向搜索，而不是对知识检索任务进行单一的广泛搜索。类似地，如果工具调用引发错误（例如在输入验证期间），你可以对错误响应进行提示词工程，清晰地传达具体且可操作的改进信息，而不是不透明的错误代码或堆栈跟踪。</p></div>
+<div class="lang-cn-block"><p>以下是截断工具响应的示例。
+以下是无用错误响应的示例。
+以下是有用错误响应的示例。</p></div>
+<div class="lang-cn-block"><h3 id="heading-11">对工具描述进行提示词工程</h3></div>
+<div class="lang-cn-block"><p>现在我们来到改进工具最有效的方法之一：对工具描述和规范进行提示词工程。因为这些内容会加载到智能体的上下文中，它们可以共同引导智能体走向高效的工具调用行为。</p></div>
+<div class="lang-cn-block"><p>在编写工具描述和规范时，想象一下你会如何向团队中的新人描述你的工具。考虑你可能隐含带来的上下文——专业查询格式、小众术语的定义、底层资源之间的关系——并将其明确化。通过清晰描述（并用严格的数据模型强制执行）预期的输入和输出来避免歧义。特别是，输入参数应该有明确的命名：不要使用名为 <code class="inline">user</code> 的参数，而是尝试使用名为 <code class="inline">user_id</code> 的参数。</p></div>
+<div class="lang-cn-block"><p>通过你的评估，你可以更有信心地衡量提示词工程的影响。即使是工具描述的微小改进也能带来显著的提升。在我们对工具描述进行了精确的改进后，Claude Sonnet 3.5 在 SWE-bench Verified 评估上达到了最先进的性能，大幅降低了错误率并提高了任务完成率。</p></div>
+<div class="lang-cn-block"><p>你可以在我们的开发者指南中找到工具定义的其他最佳实践。如果你是为 Claude 构建工具，我们还建议阅读工具是如何动态加载到 Claude 的系统提示词中的。最后，如果你是为MCP服务器编写工具，工具注解（tool annotations）有助于披露哪些工具需要开放世界访问或进行破坏性更改。</p></div>
+<div class="lang-cn-block"><h2 id="heading-12">展望未来</h2></div>
+<div class="lang-cn-block"><p>要为智能体构建有效的工具，我们需要将软件开发实践从可预测的确定性模式重新定位到非确定性模式。</p></div>
+<div class="lang-cn-block"><p>通过我们在本文中描述的迭代、评估驱动的过程，我们发现了工具成功的几个一致模式：有效的工具是经过精心和明确定义的，审慎地使用智能体上下文，可以组合在一起形成多样化的工作流，并使智能体能够直观地解决现实世界的任务。</p></div>
+<div class="lang-cn-block"><p>在未来，我们期望智能体与世界交互的具体机制会不断演进——从MCP协议的更新到底层大语言模型本身的升级。通过系统的、评估驱动的方法来改进智能体工具，我们可以确保随着智能体变得越来越强大，它们使用的工具也会随之演进。</p></div>
+<div class="lang-cn-block"><h2 id="heading-13">致谢</h2></div>
+<div class="lang-cn-block"><p>由 Ken Aizawa 撰写，感谢来自以下部门同事的宝贵贡献：研究部（Barry Zhang、Zachary Witten、Daniel Jiang、Sami Al-Sheikh、Matt Bell、Maggie Vo）、MCP（Theodora Chu、John Welsh、David Soria Parra、Adam Jones）、产品工程部（Santiago Seira）、市场部（Molly Vorwerck）、设计部（Drew Roper）和应用AI部（Christian Ryan、Alexander Bricken）。</p></div>
+<div class="lang-cn-block"><p>¹除了训练底层大语言模型本身之外。</p></div>
+<div class="lang-cn-block"><h3 id="heading-14">想了解更多？</h3></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>模型上下文协议（MCP）可以赋予大语言模型（LLM）智能体（Agent）多达数百种工具来解决现实世界中的任务。但我们如何才能让这些工具发挥最大效能？
+在这篇文章中，我们将介绍我们在各种智能体AI系统中提升性能的最有效技术¹。
+首先，我们将介绍如何：</p>
+<ul>
+<li>构建和测试工具的原型</li>
+<li>使用智能体创建并运行全面的工具评估</li>
+<li>与 Claude Code 等智能体协作，自动提升工具性能</li>
+</ul>
+<p>最后，我们将总结在这一过程中总结出的编写高质量工具的关键原则：</p>
+<ul>
+<li>选择正确的工具来实现（以及不实现）</li>
+<li>使用命名空间划分工具，定义清晰的功能边界</li>
+<li>从工具向智能体返回有意义的上下文</li>
+<li>针对Token效率优化工具响应</li>
+<li>对工具描述和规范进行提示词工程</li>
+</ul>
+<h2>什么是工具？</h2>
+<p>在计算机领域，确定性系统在输入相同的情况下每次都会产生相同的输出，而非确定性系统——如智能体——即使在相同的起始条件下也可能产生不同的响应。
+在传统软件开发中，我们建立的是确定性系统之间的契约。例如，像 <code class="inline">getWeather(&quot;NYC&quot;)</code> 这样的函数调用，每次被调用时都会以完全相同的方式获取纽约市的天气。
+工具是一种新型软件，它反映了确定性系统与非确定性智能体之间的契约。当用户问&quot;今天需要带伞吗？&quot;时，智能体可能会调用天气工具，也可能从通用知识中回答，甚至可能先询问关于位置的澄清问题。偶尔，智能体可能会产生幻觉，甚至无法理解如何使用工具。
+这意味着在为智能体编写软件时，我们需要从根本上重新思考我们的方法：我们不再像为其他开发者或系统编写函数和API那样来编写工具和MCP服务器，而是需要为智能体来设计它们。
+我们的目标是扩大智能体通过使用工具来追求各种成功策略，从而有效解决广泛任务的范围。幸运的是，根据我们的经验，对智能体最&quot;符合人体工学&quot;的工具，最终对人类来说也出奇地直观易懂。</p>
+<h2>如何编写工具</h2>
+<p>在本节中，我们将介绍如何与智能体协作来编写和改进你提供给它们的工具。首先搭建一个工具的快速原型并在本地进行测试。其次运行全面的评估来衡量后续的改进。与智能体并肩工作，你可以重复评估和改进工具的过程，直到你的智能体在现实任务上取得出色表现。</p>
+<h3>构建原型</h3>
+<p>如果不亲自上手实践，很难预判哪些工具对智能体来说是好用的，哪些不是。首先搭建一个工具的快速原型。如果你使用 Claude Code 来编写工具（可能是一次性完成的），向 Claude 提供你的工具所依赖的任何软件库、API或SDK（可能包括MCP SDK）的文档会很有帮助。面向大语言模型的文档通常可以在官方文档站点的扁平 <code class="inline">llms.txt</code> 文件中找到（这是我们的API文档）。
+将你的工具封装在本地MCP服务器或桌面扩展（DXT）中，将允许你在 Claude Code 或 Claude 桌面应用中连接和测试你的工具。
+要将本地MCP服务器连接到 Claude Code，请运行 <code class="inline">claude mcp add &lt;name&gt; &lt;command&gt; [args...]</code>。
+要将本地MCP服务器或DXT连接到 Claude 桌面应用，请分别导航到 <code class="inline">Settings &gt; Developer</code> 或 <code class="inline">Settings &gt; Extensions</code>。
+工具也可以直接传递给 Anthropic API 调用进行编程测试。
+亲自测试工具以发现任何不足之处。收集用户的反馈，对你期望工具支持的使用场景和提示词建立直觉。</p>
+<h3>运行评估</h3>
+<p>接下来，你需要通过运行评估来衡量 Claude 使用你的工具的效果。首先生成大量基于现实世界用途的评估任务。我们建议与智能体协作来帮助分析结果并确定如何改进你的工具。可以在我们的工具评估手册中查看这一端到端的过程。</p>
+<p><strong>生成评估任务</strong></p>
+<p>使用你的早期原型，Claude Code 可以快速探索你的工具并创建数十个提示词和响应对。提示词应受到现实世界用途的启发，并基于真实的数据源和服务（例如内部知识库和微服务）。我们建议你避免使用过于简单或表面的&quot;沙箱&quot;环境，这些环境无法以足够的复杂性对你的工具进行压力测试。优秀的评估任务可能需要多次工具调用——甚至可能达到数十次。</p>
+<p>以下是一些优秀任务的示例：</p>
+<ul>
+<li>下周与Jane安排一次会议，讨论我们最新的Acme Corp项目。附上我们上次项目规划会议的笔记并预订一间会议室。</li>
+<li>客户ID 9182报告称，他们的一次购买尝试被扣款三次。查找所有相关日志条目，并确定是否有其他客户受到相同问题的影响。</li>
+<li>客户Sarah Chen刚刚提交了取消请求。准备一份挽留方案。确定：(1) 他们离开的原因，(2) 什么样的挽留方案最具吸引力，以及 (3) 在提出方案之前我们应该了解的任何风险因素。</li>
+</ul>
+<p>以下是一些较弱的任务：</p>
+<ul>
+<li>下周与jane@acme.corp安排一次会议。</li>
+<li>在支付日志中搜索 <code class="inline">purchase_complete</code> 和 <code class="inline">customer_id=9182</code>。</li>
+<li>查找客户ID 45892的取消请求。</li>
+</ul>
+<p>每个评估提示词应与一个可验证的响应或结果配对。验证器可以简单到将标准答案与采样响应进行精确字符串比较，也可以高级到使用 Claude 来评判响应。避免使用过于严格的验证器，因为它们可能由于格式、标点或有效的替代表述等虚假差异而拒绝正确的响应。</p>
+<p>对于每个提示词-响应对，你还可以选择性地指定你期望智能体在解决任务时调用的工具，以衡量智能体在评估过程中是否成功理解了每个工具的用途。然而，由于解决任务可能存在多条有效路径，尽量避免过度指定或过度拟合到特定策略。</p>
+<p><strong>运行评估</strong></p>
+<p>我们建议使用直接的大语言模型API调用以编程方式运行你的评估。使用简单的智能体循环（用while循环交替调用大语言模型API和工具）：每个评估任务一个循环。每个评估智能体应被给予单个任务提示词和你的工具。</p>
+<p>在评估智能体的系统提示词中，我们建议指示智能体不仅输出结构化的响应块（用于验证），还要输出推理和反馈块。指示智能体在工具调用和响应块之前输出这些内容，可能通过触发思维链（CoT）行为来提高大语言模型的有效智能。</p>
+<p>如果你使用 Claude 运行评估，你可以开启交错思考（interleaved thinking）来获得类似的&quot;开箱即用&quot;功能。这将帮助你探究智能体为何调用或不调用某些工具，并突出工具描述和规范中需要改进的具体领域。</p>
+<p>除了顶层准确率，我们还建议收集其他指标，如单个工具调用和任务的总运行时间、工具调用总次数、总Token消耗和工具错误。跟踪工具调用可以帮助揭示智能体追求的常见工作流，并为工具整合提供机会。</p>
+<p><strong>分析结果</strong></p>
+<p>智能体是你发现问题和提供反馈的得力伙伴，从相互矛盾的工具描述到低效的工具实现和令人困惑的工具模式。然而，请记住，智能体在反馈和响应中省略的内容往往比包含的内容更重要。大语言模型并不总是言为心声。</p>
+<p>观察你的智能体在哪里遇到了困难或困惑。仔细阅读评估智能体的推理和反馈（或思维链）以发现不足之处。审查原始记录（包括工具调用和工具响应）以捕捉智能体思维链中未明确描述的任何行为。学会解读弦外之音；记住你的评估智能体不一定知道正确的答案和策略。</p>
+<p>分析你的工具调用指标。大量冗余的工具调用可能表明需要对分页或Token限制参数进行适当调整；大量因无效参数导致的工具错误可能表明工具需要更清晰的描述或更好的示例。当我们推出 Claude 的网页搜索工具时，我们发现 Claude 不必要地在工具的 <code class="inline">query</code> 参数中附加了 <code class="inline">2025</code>，从而偏向搜索结果并降低了性能（我们通过改进工具描述来引导 Claude 走向正确的方向）。</p>
+<h3>与智能体协作</h3>
+<p>你甚至可以让智能体分析你的结果并为你改进工具。只需将评估智能体的记录拼接起来并粘贴到 Claude Code 中。Claude 是分析记录和一次性重构大量工具的专家——例如，确保在进行新更改时工具实现和描述保持自洽。</p>
+<p>事实上，这篇文章中的大部分建议来自于使用 Claude Code 反复优化我们内部工具实现的经验。我们的评估是基于内部工作区构建的，反映了内部工作流的复杂性，包括真实的项目、文档和消息。</p>
+<p>我们依赖留出的测试集来确保我们没有过度拟合到&quot;训练&quot;评估。这些测试集表明，即使在&quot;专家&quot;工具实现的基础上——无论这些工具是由我们的研究人员手动编写的还是由 Claude 自身生成的——我们仍能获得额外的性能提升。</p>
+<p>在下一节中，我们将分享我们从这个过程中学到的一些经验。</p>
+<h2>编写高效工具的原则</h2>
+<p>在本节中，我们将经验提炼为几条编写高效工具的指导原则。</p>
+<h3>为智能体选择正确的工具</h3>
+<p>更多的工具并不总是带来更好的结果。我们观察到的一个常见错误是，工具仅仅是现有软件功能或API端点的封装——无论这些工具是否适合智能体。这是因为智能体与传统软件有着不同的&quot;可供性&quot;（affordances）——也就是说，它们感知可以使用这些工具采取的潜在行动的方式不同。</p>
+<p>大语言模型智能体的&quot;上下文&quot;是有限的（即它们一次能处理的信息量是有限的），而计算机内存是廉价且充裕的。考虑在通讯录中搜索联系人的任务。传统软件程序可以高效地存储和逐个处理联系人列表，逐一检查每个联系人。</p>
+<p>然而，如果大语言模型智能体使用一个返回所有联系人的工具，然后不得不逐Token地阅读每一个，它就在将有限的上下文空间浪费在无关信息上（想象一下通过从上到下阅读每一页来搜索通讯录中的联系人——即通过暴力搜索）。更好、更自然的方法（对智能体和人类都是如此）是直接跳转到相关页面（也许按字母顺序找到它）。</p>
+<p>我们建议构建少量针对特定高影响力工作流的深思熟虑的工具，这些工具与你的评估任务相匹配，然后再逐步扩展。在通讯录的例子中，你可能会选择实现 <code class="inline">search_contacts</code> 或 <code class="inline">message_contact</code> 工具，而不是 <code class="inline">list_contacts</code> 工具。</p>
+<p>工具可以整合功能，在底层处理潜在的多个离散操作（或API调用）。例如，工具可以用相关元数据丰富工具响应，或者在单次工具调用中处理经常串联执行的多步骤任务。</p>
+<p>以下是一些示例：</p>
+<ul>
+<li>不要实现 <code class="inline">list_users</code>、<code class="inline">list_events</code> 和 <code class="inline">create_event</code> 工具，而是考虑实现一个 <code class="inline">schedule_event</code> 工具，它能查找可用时间并安排事件。</li>
+<li>不要实现 <code class="inline">read_logs</code> 工具，而是考虑实现一个 <code class="inline">search_logs</code> 工具，它只返回相关的日志行和一些上下文。</li>
+<li>不要实现 <code class="inline">get_customer_by_id</code>、<code class="inline">list_transactions</code> 和 <code class="inline">list_notes</code> 工具，而是实现一个 <code class="inline">get_customer_context</code> 工具，它能一次性编译客户的最近相关信息。</li>
+</ul>
+<p>确保你构建的每个工具都有清晰、独特的用途。工具应该使智能体能够以与人类相似的方式来细分和解决任务——在拥有相同底层资源的情况下——同时减少原本会被中间输出消耗的上下文。</p>
+<p>过多的工具或重叠的工具也会分散智能体追求高效策略的注意力。对你构建（或不构建）的工具进行精心、有选择性的规划，会真正带来回报。</p>
+<h3>为工具使用命名空间</h3>
+<p>你的AI智能体可能会获得对数十个MCP服务器和数百种不同工具的访问权限——包括其他开发者的工具。当工具功能重叠或目的模糊时，智能体可能会对使用哪个工具感到困惑。</p>
+<p>命名空间（将相关工具分组到公共前缀下）可以帮助界定大量工具之间的边界；MCP客户端有时会默认这样做。例如，按服务（如 <code class="inline">asana_search</code>、<code class="inline">jira_search</code>）和按资源（如 <code class="inline">asana_projects_search</code>、<code class="inline">asana_users_search</code>）对工具进行命名空间划分，可以帮助智能体在正确的时间选择正确的工具。</p>
+<p>我们发现，在基于前缀和基于后缀的命名空间之间选择，对我们的工具使用评估有显著的影响。效果因大语言模型而异，我们鼓励你根据自己的评估选择命名方案。</p>
+<p>智能体可能会调用错误的工具、用错误的参数调用正确的工具、调用太少的工具，或者错误地处理工具响应。通过有选择性地实现那些名称反映任务自然细分的工具，你可以同时减少加载到智能体上下文中的工具和工具描述的数量，并将智能体计算从智能体的上下文卸载回工具调用本身。这降低了智能体犯错的整体风险。</p>
+<h3>从工具返回有意义的上下文</h3>
+<p>同样，工具实现应注意只向智能体返回高信号信息。它们应优先考虑上下文相关性而非灵活性，并避免使用低级技术标识符（例如：<code class="inline">uuid</code>、<code class="inline">256px_image_url</code>、<code class="inline">mime_type</code>）。像 <code class="inline">name</code>、<code class="inline">image_url</code> 和 <code class="inline">file_type</code> 这样的字段更有可能直接影响智能体的下游行动和响应。</p>
+<p>智能体在处理自然语言名称、术语或标识符方面往往比处理晦涩的标识符要成功得多。我们发现，仅仅将任意的字母数字UUID解析为更有语义意义和可解释性的语言（甚至是从0开始的索引方案），就能通过减少幻觉显著提高 Claude 在检索任务中的精确度。</p>
+<p>在某些情况下，智能体可能需要灵活地与自然语言和技术标识符输出进行交互，哪怕只是为了触发下游工具调用（例如，<code class="inline">search_user(name=&#x27;jane&#x27;)</code> → <code class="inline">send_message(id=12345)</code>）。你可以通过在工具中暴露一个简单的 <code class="inline">response_format</code> 枚举参数来实现这一点，允许你的智能体控制工具返回&quot;简洁&quot;还是&quot;详细&quot;的响应（见下方图片）。</p>
+<p>你可以添加更多格式以获得更大的灵活性，类似于 GraphQL，你可以精确选择想要接收的信息片段。以下是一个控制工具响应详细程度的 ResponseFormat 枚举示例：</p>
+<pre><code class="language-">enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}</code></pre>
+<p>以下是详细工具响应的示例（206个Token）。
+以下是简洁工具响应的示例（72个Token）。</p>
+<p>即使是工具响应的结构——例如 XML、JSON 或 Markdown——也会对评估性能产生影响：没有放之四海而皆准的解决方案。这是因为大语言模型是基于下一个Token预测训练的，往往在与训练数据匹配的格式上表现更好。最优的响应结构因任务和智能体而异。我们鼓励你根据自己的评估选择最佳的响应结构。</p>
+<h3>针对Token效率优化工具响应</h3>
+<p>优化上下文质量很重要。但优化工具响应中返回给智能体的上下文数量也同样重要。</p>
+<p>我们建议对任何可能消耗大量上下文的工具响应，实施分页、范围选择、过滤和/或截断的某种组合，并设置合理的默认参数值。对于 Claude Code，我们将工具响应限制在默认25,000个Token。我们预计智能体的有效上下文长度会随时间增长，但对上下文高效工具的需求将长期存在。</p>
+<p>如果你选择截断响应，请务必用有用的指令引导智能体。你可以直接鼓励智能体追求更节省Token的策略，例如进行多次小范围的定向搜索，而不是对知识检索任务进行单一的广泛搜索。类似地，如果工具调用引发错误（例如在输入验证期间），你可以对错误响应进行提示词工程，清晰地传达具体且可操作的改进信息，而不是不透明的错误代码或堆栈跟踪。</p>
+<p>以下是截断工具响应的示例。
+以下是无用错误响应的示例。
+以下是有用错误响应的示例。</p>
+<h3>对工具描述进行提示词工程</h3>
+<p>现在我们来到改进工具最有效的方法之一：对工具描述和规范进行提示词工程。因为这些内容会加载到智能体的上下文中，它们可以共同引导智能体走向高效的工具调用行为。</p>
+<p>在编写工具描述和规范时，想象一下你会如何向团队中的新人描述你的工具。考虑你可能隐含带来的上下文——专业查询格式、小众术语的定义、底层资源之间的关系——并将其明确化。通过清晰描述（并用严格的数据模型强制执行）预期的输入和输出来避免歧义。特别是，输入参数应该有明确的命名：不要使用名为 <code class="inline">user</code> 的参数，而是尝试使用名为 <code class="inline">user_id</code> 的参数。</p>
+<p>通过你的评估，你可以更有信心地衡量提示词工程的影响。即使是工具描述的微小改进也能带来显著的提升。在我们对工具描述进行了精确的改进后，Claude Sonnet 3.5 在 SWE-bench Verified 评估上达到了最先进的性能，大幅降低了错误率并提高了任务完成率。</p>
+<p>你可以在我们的开发者指南中找到工具定义的其他最佳实践。如果你是为 Claude 构建工具，我们还建议阅读工具是如何动态加载到 Claude 的系统提示词中的。最后，如果你是为MCP服务器编写工具，工具注解（tool annotations）有助于披露哪些工具需要开放世界访问或进行破坏性更改。</p>
+<h2>展望未来</h2>
+<p>要为智能体构建有效的工具，我们需要将软件开发实践从可预测的确定性模式重新定位到非确定性模式。</p>
+<p>通过我们在本文中描述的迭代、评估驱动的过程，我们发现了工具成功的几个一致模式：有效的工具是经过精心和明确定义的，审慎地使用智能体上下文，可以组合在一起形成多样化的工作流，并使智能体能够直观地解决现实世界的任务。</p>
+<p>在未来，我们期望智能体与世界交互的具体机制会不断演进——从MCP协议的更新到底层大语言模型本身的升级。通过系统的、评估驱动的方法来改进智能体工具，我们可以确保随着智能体变得越来越强大，它们使用的工具也会随之演进。</p>
+<h2>致谢</h2>
+<p>由 Ken Aizawa 撰写，感谢来自以下部门同事的宝贵贡献：研究部（Barry Zhang、Zachary Witten、Daniel Jiang、Sami Al-Sheikh、Matt Bell、Maggie Vo）、MCP（Theodora Chu、John Welsh、David Soria Parra、Adam Jones）、产品工程部（Santiago Seira）、市场部（Molly Vorwerck）、设计部（Drew Roper）和应用AI部（Christian Ryan、Alexander Bricken）。</p>
+<p>¹除了训练底层大语言模型本身之外。</p>
+<h3>想了解更多？</h3></div>
+                <div class="lang-en"><p>TheModel Context Protocol (MCP)can empower LLM agents with potentially hundreds of tools to solve real-world tasks. But how do we make those tools maximally effective?
+In this post, we describe our most effective techniques for improving performance in a variety of agentic AI systems1.
+We begin by covering how you can:</p>
+<ul>
+<li>Build and test prototypes of your tools</li>
+<li>Create and run comprehensive evaluations of your tools with agents</li>
+<li>Collaborate with agents like Claude Code to automatically increase the performance of your tools</li>
+</ul>
+<p>We conclude with key principles for writing high-quality tools we’ve identified along the way:</p>
+<ul>
+<li>Choosing the right tools to implement (and not to implement)</li>
+<li>Namespacing tools to define clear boundaries in functionality</li>
+<li>Returning meaningful context from tools back to agents</li>
+<li>Optimizing tool responses for token efficiency</li>
+<li>Prompt-engineering tool descriptions and specs</li>
+</ul>
+<h2>What is a tool?</h2>
+<p>In computing, deterministic systems produce the same output every time given identical inputs, whilenon-deterministicsystems—like agents—can generate varied responses even with the same starting conditions.
+When we traditionally write software, we’re establishing a contract between deterministic systems. For instance, a function call likegetWeather(“NYC”)will always fetch the weather in New York City in the exact same manner every time it is called.
+getWeather(“NYC”)
+Tools are a new kind of software which reflects a contract between deterministic systems and non-deterministic agents. When a user asks &quot;Should I bring an umbrella today?,” an agent might call the weather tool, answer from general knowledge, or even ask a clarifying question about location first. Occasionally, an agent might hallucinate or even fail to grasp how to use a tool.
+This means fundamentally rethinking our approach when writing software for agents: instead of writing tools andMCP serversthe way we’d write functions and APIs for other developers or systems, we need to design them for agents.
+Our goal is to increase the surface area over which agents can be effective in solving a wide range of tasks by using tools to pursue a variety of successful strategies. Fortunately, in our experience, the tools that are most “ergonomic” for agents also end up being surprisingly intuitive to grasp as humans.</p>
+<h2>How to write tools</h2>
+<p>In this section, we describe how you can collaborate with agents both to write and to improve the tools you give them. Start by standing up a quick prototype of your tools and testing them locally. Next, run a comprehensive evaluation to measure subsequent changes. Working alongside agents, you can repeat the process of evaluating and improving your tools until your agents achieve strong performance on real-world tasks.</p>
+<h3>Building a prototype</h3>
+<p>It can be difficult to anticipate which tools agents will find ergonomic and which tools they won’t without getting hands-on yourself. Start by standing up a quick prototype of your tools. If you’re usingClaude Codeto write your tools (potentially in one-shot), it helps to give Claude documentation for any software libraries, APIs, or SDKs (including potentially theMCP SDK) your tools will rely on. LLM-friendly documentation can commonly be found in flatllms.txtfiles on official documentation sites (here’s ourAPI’s).
+llms.txt
+Wrapping your tools in alocal MCP serverorDesktop extension(DXT) will allow you to connect and test your tools in Claude Code or the Claude Desktop app.
+To connect your local MCP server to Claude Code, runclaude mcp add &lt;name&gt; &lt;command&gt; [args...].
+claude mcp add &lt;name&gt; &lt;command&gt; [args...]
+To connect your local MCP server or DXT to the Claude Desktop app, navigate toSettings &gt; DeveloperorSettings &gt; Extensions, respectively.
+Settings &gt; Developer
+Settings &gt; Extensions
+Tools can also be passed directly intoAnthropic APIcalls for programmatic testing.
+Test the tools yourself to identify any rough edges. Collect feedback from your users to build an intuition around the use-cases and prompts you expect your tools to enable.</p>
+<h3>Running an evaluation</h3>
+<p>Next, you need to measure how well Claude uses your tools by running an evaluation. Start by generating lots of evaluation tasks, grounded in real world uses. We recommend collaborating with an agent to help analyze your results and determine how to improve your tools. See this process end-to-end in ourtool evaluation cookbook.
+Generating evaluation tasks
+With your early prototype, Claude Code can quickly explore your tools and create dozens of prompt and response pairs. Prompts should be inspired by real-world uses and be based on realistic data sources and services (for example, internal knowledge bases and microservices). We recommend you avoid overly simplistic or superficial “sandbox” environments that don’t stress-test your tools with sufficient complexity. Strong evaluation tasks might require multiple tool calls—potentially dozens.
+Here are some examples of strong tasks:</p>
+<ul>
+<li>Schedule a meeting with Jane next week to discuss our latest Acme Corp project. Attach the notes from our last project planning meeting and reserve a conference room.</li>
+<li>Customer ID 9182 reported that they were charged three times for a single purchase attempt. Find all relevant log entries and determine if any other customers were affected by the same issue.</li>
+<li>Customer Sarah Chen just submitted a cancellation request. Prepare a retention offer. Determine: (1) why they&#x27;re leaving, (2) what retention offer would be most compelling, and (3) any risk factors we should be aware of before making an offer.</li>
+</ul>
+<p>And here are some weaker tasks:</p>
+<ul>
+<li>Schedule a meeting with jane@acme.corp next week.</li>
+<li>Search the payment logs forpurchase_completeandcustomer_id=9182.</li>
+</ul>
+<p>purchase_complete
+customer_id=9182</p>
+<ul>
+<li>Find the cancellation request by Customer ID 45892.</li>
+</ul>
+<p>Each evaluation prompt should be paired with a verifiable response or outcome. Your verifier can be as simple as an exact string comparison between ground truth and sampled responses, or as advanced as enlisting Claude to judge the response. Avoid overly strict verifiers that reject correct responses due to spurious differences like formatting, punctuation, or valid alternative phrasings.
+For each prompt-response pair, you can optionally also specify the tools you expect an agent to call in solving the task, to measure whether or not agents are successful in grasping each tool’s purpose during evaluation. However, because there might be multiple valid paths to solving tasks correctly, try to avoid overspecifying or overfitting to strategies.
+Running the evaluation
+We recommend running your evaluation programmatically with direct LLM API calls. Use simple agentic loops (while-loops wrapping alternating LLM API and tool calls): one loop for each evaluation task. Each evaluation agent should be given a single task prompt and your tools.
+while
+In your evaluation agents’ system prompts, we recommend instructing agents to output not just structured response blocks (for verification), but also reasoning and feedback blocks. Instructing agents to output thesebeforetool call and response blocks may increase LLMs’ effective intelligence by triggering chain-of-thought (CoT) behaviors.
+If you’re running your evaluation with Claude, you can turn oninterleaved thinkingfor similar functionality “off-the-shelf”. This will help you probe why agents do or don’t call certain tools and highlight specific areas of improvement in tool descriptions and specs.
+As well as top-level accuracy, we recommend collecting other metrics like the total runtime of individual tool calls and tasks, the total number of tool calls, the total token consumption, and tool errors. Tracking tool calls can help reveal common workflows that agents pursue and offer some opportunities for tools to consolidate.
+Analyzing resultsAgents are your helpful partners in spotting issues and providing feedback on everything from contradictory tool descriptions to inefficient tool implementations and confusing tool schemas. However, keep in mind that what agents omit in their feedback and responses can often be more important than what they include. LLMs don’t alwayssay what they mean.
+Observe where your agents get stumped or confused. Read through your evaluation agents’ reasoning and feedback (or CoT) to identify rough edges. Review the raw transcripts (including tool calls and tool responses) to catch any behavior not explicitly described in the agent’s CoT. Read between the lines; remember that your evaluation agents don’t necessarily know the correct answers and strategies.
+Analyze your tool calling metrics. Lots of redundant tool calls might suggest some rightsizing of pagination or token limit parameters is warranted; lots of tool errors for invalid parameters might suggest tools could use clearer descriptions or better examples. When we launched Claude’sweb search tool, we identified that Claude was needlessly appending2025to the tool’squeryparameter, biasing search results and degrading performance (we steered Claude in the right direction by improving the tool description).
+2025
+query</p>
+<h3>Collaborating with agents</h3>
+<p>You can even let agents analyze your results and improve your tools for you. Simply concatenate the transcripts from your evaluation agents and paste them into Claude Code. Claude is an expert at analyzing transcripts and refactoring lots of tools all at once—for example, to ensure tool implementations and descriptions remain self-consistent when new changes are made.
+In fact, most of the advice in this post came from repeatedly optimizing our internal tool implementations with Claude Code. Our evaluations were created on top of our internal workspace, mirroring the complexity of our internal workflows, including real projects, documents, and messages.
+We relied on held-out test sets to ensure we did not overfit to our “training” evaluations. These test sets revealed that we could extract additional performance improvements even beyond what we achieved with &quot;expert&quot; tool implementations—whether those tools were manually written by our researchers or generated by Claude itself.
+In the next section, we’ll share some of what we learned from this process.</p>
+<h2>Principles for writing effective tools</h2>
+<p>In this section, we distill our learnings into a few guiding principles for writing effective tools.</p>
+<h3>Choosing the right tools for agents</h3>
+<p>More tools don’t always lead to better outcomes. A common error we’ve observed is tools that merely wrap existing software functionality or API endpoints—whether or not the tools are appropriate for agents. This is because agents have distinct “affordances” to traditional software—that is, they have different ways of perceiving the potential actions they can take with those tools
+LLM agents have limited &quot;context&quot; (that is, there are limits to how much information they can process at once), whereas computer memory is cheap and abundant. Consider the task of searching for a contact in an address book. Traditional software programs can efficiently store and process a list of contacts one at a time, checking each one before moving on.
+However, if an LLM agent uses a tool that returns ALL contacts and then has to read through each one token-by-token, it&#x27;s wasting its limited context space on irrelevant information (imagine searching for a contact in your address book by reading each page from top-to-bottom—that is, via brute-force search). The better and more natural approach (for agents and humans alike) is to skip to the relevant page first (perhaps finding it alphabetically).
+We recommend building a few thoughtful tools targeting specific high-impact workflows, which match your evaluation tasks and scaling up from there. In the address book case, you might choose to implement asearch_contactsormessage_contacttool instead of alist_contactstool.
+search_contacts
+message_contact
+list_contacts
+Tools can consolidate functionality, handling potentiallymultiplediscrete operations (or API calls) under the hood. For example, tools can enrich tool responses with related metadata or handle frequently chained, multi-step tasks in a single tool call.
+Here are some examples:</p>
+<ul>
+<li>Instead of implementing alist_users,list_events, andcreate_eventtools, consider implementing aschedule_eventtool which finds availability and schedules an event.</li>
+</ul>
+<p>list_users
+list_events
+create_event
+schedule_event</p>
+<ul>
+<li>Instead of implementing aread_logstool, consider implementing asearch_logstool which only returns relevant log lines and some surrounding context.</li>
+</ul>
+<p>read_logs
+search_logs</p>
+<ul>
+<li>Instead of implementingget_customer_by_id,list_transactions, andlist_notestools, implement aget_customer_contexttool which compiles all of a customer’s recent &amp; relevant information all at once.</li>
+</ul>
+<p>get_customer_by_id
+list_transactions
+list_notes
+get_customer_context
+Make sure each tool you build has a clear, distinct purpose. Tools should enable agents to subdivide and solve tasks in much the same way that a human would, given access to the same underlying resources, and simultaneously reduce the context that would have otherwise been consumed by intermediate outputs.
+Too many tools or overlapping tools can also distract agents from pursuing efficient strategies. Careful, selective planning of the tools you build (or don’t build) can really pay off.</p>
+<h3>Namespacing your tools</h3>
+<p>Your AI agents will potentially gain access to dozens of MCP servers and hundreds of different tools–including those by other developers. When tools overlap in function or have a vague purpose, agents can get confused about which ones to use.
+Namespacing (grouping related tools under common prefixes) can help delineate boundaries between lots of tools; MCP clients sometimes do this by default. For example, namespacing tools by service (e.g.,asana_search,jira_search) and by resource (e.g.,asana_projects_search,asana_users_search), can help agents select the right tools at the right time.
+asana_search
+jira_search
+asana_projects_search
+asana_users_search
+We have found selecting between prefix- and suffix-based namespacing to have non-trivial effects on our tool-use evaluations. Effects vary by LLM and we encourage you to choose a naming scheme according to your own evaluations.
+Agents might call the wrong tools, call the right tools with the wrong parameters, call too few tools, or process tool responses incorrectly. By selectively implementing tools whose names reflect natural subdivisions of tasks, you simultaneously reduce the number of tools and tool descriptions loaded into the agent’s context and offload agentic computation from the agent’s context back into the tool calls themselves. This reduces an agent’s overall risk of making mistakes.</p>
+<h3>Returning meaningful context from your tools</h3>
+<p>In the same vein, tool implementations should take care to return only high signal information back to agents. They should prioritize contextual relevance over flexibility, and eschew low-level technical identifiers (for example:uuid,256px_image_url,mime_type). Fields likename,image_url, andfile_typeare much more likely to directly inform agents’ downstream actions and responses.
+uuid
+256px_image_url
+mime_type
+name
+image_url
+file_type
+Agents also tend to grapple with natural language names, terms, or identifiers significantly more successfully than they do with cryptic identifiers. We’ve found that merely resolving arbitrary alphanumeric UUIDs to more semantically meaningful and interpretable language (or even a 0-indexed ID scheme) significantly improves Claude’s precision in retrieval tasks by reducing hallucinations.
+In some instances, agents may require the flexibility to interact with both natural language and technical identifiers outputs, if only to trigger downstream tool calls (for example,search_user(name=’jane’)→send_message(id=12345)). You can enable both by exposing a simpleresponse_formatenum parameter in your tool, allowing your agent to control whether tools return“concise”or“detailed”responses (images below).
+search_user(name=’jane’)
+send_message(id=12345)
+response_format
+“concise”
+“detailed”
+You can add more formats for even greater flexibility, similar to GraphQL where you can choose exactly which pieces of information you want to receive. Here is an example ResponseFormat enum to control tool response verbosity:</p>
+<pre><code class="language-">enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}</code></pre>
+<p>enum ResponseFormat {
+   DETAILED = &quot;detailed&quot;,
+   CONCISE = &quot;concise&quot;
+}
+Here’s an example of a detailed tool response (206 tokens):
+Here’s an example of a concise tool response (72 tokens):
+thread_ts
+thread_ts
+channel_id
+user_id
+“detailed”
+“concise”
+“concise”
+Even your tool response structure—for example XML, JSON, or Markdown—can have an impact on evaluation performance: there is no one-size-fits-all solution. This is because LLMs are trained on next-token prediction and tend to perform better with formats that match their training data. The optimal response structure will vary widely by task and agent. We encourage you to select the best response structure based on your own evaluation.</p>
+<h3>Optimizing tool responses for token efficiency</h3>
+<p>Optimizing the quality of context is important. But so is optimizing thequantityof context returned back to agents in tool responses.
+We suggest implementing some combination of pagination, range selection, filtering, and/or truncation with sensible default parameter values for any tool responses that could use up lots of context. For Claude Code, we restrict tool responses to 25,000 tokens by default. We expect the effective context length of agents to grow over time, but the need for context-efficient tools to remain.
+If you choose to truncate responses, be sure to steer agents with helpful instructions. You can directly encourage agents to pursue more token-efficient strategies, like making many small and targeted searches instead of a single, broad search for a knowledge retrieval task. Similarly, if a tool call raises an error (for example, during input validation), you can prompt-engineer your error responses to clearly communicate specific and actionable improvements, rather than opaque error codes or tracebacks.
+Here’s an example of a truncated tool response:
+Here’s an example of an unhelpful error response:
+Here’s an example of a helpful error response:</p>
+<h3>Prompt-engineering your tool descriptions</h3>
+<p>We now come to one of the most effective methods for improving tools: prompt-engineering your tool descriptions and specs. Because these are loaded into your agents’ context, they can collectively steer agents toward effective tool-calling behaviors.
+When writing tool descriptions and specs, think of how you would describe your tool to a new hire on your team. Consider the context that you might implicitly bring—specialized query formats, definitions of niche terminology, relationships between underlying resources—and make it explicit. Avoid ambiguity by clearly describing (and enforcing with strict data models) expected inputs and outputs. In particular, input parameters should be unambiguously named: instead of a parameter nameduser, try a parameter nameduser_id.
+user
+user_id
+With your evaluation you can measure the impact of your prompt engineering with greater confidence. Even small refinements to tool descriptions can yield dramatic improvements. Claude Sonnet 3.5 achieved state-of-the-art performance on theSWE-bench Verifiedevaluation after we made precise refinements to tool descriptions, dramatically reducing error rates and improving task completion.
+You can find other best practices for tool definitions in ourDeveloper Guide. If you’re building tools for Claude, we also recommend reading about how tools are dynamically loaded into Claude’ssystem prompt. Lastly, if you’re writing tools for an MCP server,tool annotationshelp disclose which tools require open-world access or make destructive changes.</p>
+<h2>Looking ahead</h2>
+<p>To build effective tools for agents, we need to re-orient our software development practices from predictable, deterministic patterns to non-deterministic ones.
+Through the iterative, evaluation-driven process we’ve described in this post, we&#x27;ve identified consistent patterns in what makes tools successful: Effective tools are intentionally and clearly defined, use agent context judiciously, can be combined together in diverse workflows, and enable agents to intuitively solve real-world tasks.
+In the future, we expect the specific mechanisms through which agents interact with the world to evolve—from updates to the MCP protocol to upgrades to the underlying LLMs themselves. With a systematic, evaluation-driven approach to improving tools for agents, we can ensure that as agents become more capable, the tools they use will evolve alongside them.</p>
+<h2>Acknowledgements</h2>
+<p>Written by Ken Aizawa with valuable contributions from colleagues across Research (Barry Zhang, Zachary Witten, Daniel Jiang, Sami Al-Sheikh, Matt Bell, Maggie Vo), MCP (Theodora Chu, John Welsh, David Soria Parra, Adam Jones), Product Engineering (Santiago Seira), Marketing (Molly Vorwerck), Design (Drew Roper), and Applied AI (Christian Ryan, Alexander Bricken).
+1Beyond training the underlying LLMs themselves.</p>
+<h3>Looking to learn more?</h3></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/writing-tools-for-agents" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,2377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>桌面扩展（Desktop Extensions）：Claude Desktop 一键安装 MCP 服务器 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h3" href="#heading-1">解决 MCP 安装难题</a>
+<a class="toc-h3" href="#heading-2">桌面扩展介绍</a>
+<a class="toc-h2" href="#heading-3">架构概述</a>
+<a class="toc-h3" href="#heading-4">构建你的第一个扩展</a>
+<a class="toc-h3" href="#heading-5">高级功能</a>
+<a class="toc-h3" href="#heading-6">扩展目录</a>
+<a class="toc-h3" href="#heading-7">构建开放生态系统</a>
+<a class="toc-h3" href="#heading-8">安全性和企业考量</a>
+<a class="toc-h3" href="#heading-9">开始使用</a>
+<a class="toc-h3" href="#heading-10">使用 Claude Code 构建</a>
+<a class="toc-h3" href="#heading-11">结语</a>
+<a class="toc-h3" href="#heading-12">想了解更多？</a></div>
+            <div class="toc-en"><a class="toc-h3" href="#heading-1">Addressing the MCP installation problem</a>
+<a class="toc-h3" href="#heading-2">Introducing Desktop Extensions</a>
+<a class="toc-h2" href="#heading-3">Architecture overview</a>
+<a class="toc-h3" href="#heading-4">Building your first extension</a>
+<a class="toc-h3" href="#heading-5">Advanced features</a>
+<a class="toc-h3" href="#heading-6">The extension directory</a>
+<a class="toc-h3" href="#heading-7">Building an open ecosystem</a>
+<a class="toc-h3" href="#heading-8">Security and enterprise considerations</a>
+<a class="toc-h3" href="#heading-9">Getting started</a>
+<a class="toc-h3" href="#heading-10">Building with Claude Code</a>
+<a class="toc-h3" href="#heading-11">Conclusion</a>
+<a class="toc-h3" href="#heading-12">Looking to learn more?</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-06-26</div>
+            <div class="title-block">
+                <h1 class="cn">桌面扩展（Desktop Extensions）：Claude Desktop 一键安装 MCP 服务器</h1>
+                <h1 class="en">Desktop Extensions: One-click MCP server installation for Claude Desktop</h1>
+                <div class="en-title">Desktop Extensions: One-click MCP server installation for Claude Desktop</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><ul><li>File extension updateSep 11, 2025Claude Desktop Extensions now use the .mcpb (MCP Bundle) file extension instead of .dxt. Existing .dxt extensions will continue to work, but we recommend developers use .mcpb for new extensions going forward. All functionality remains the same - this is purely a naming convention update.</li></ul></div><div class="lang-cn-block"><ul><li>文件扩展名更新Sep 11, 2025Claude 桌面扩展现在使用 .mcpb（MCP Bundle）文件扩展名代替 .dxt。现有的 .dxt 扩展将继续工作，但我们建议开发者今后使用 .mcpb 创建新扩展。所有功能保持不变——这纯粹是命名约定的更新。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>File extension update
+Sep 11, 2025
+Claude Desktop Extensions now use the .mcpb (MCP Bundle) file extension instead of .dxt. Existing .dxt extensions will continue to work, but we recommend developers use .mcpb for new extensions going forward. All functionality remains the same - this is purely a naming convention update.
+—
+When we released the Model Context Protocol (MCP) last year, we saw developers build amazing local servers that gave Claude access to everything from file systems to databases. But we kept hearing the same feedback: installation was too complex. Users needed developer tools, had to manually edit configuration files, and often got stuck on dependency issues.
+Today, we&#x27;re introducing Desktop Extensions—a new packaging format that makes installing MCP servers as simple as clicking a button.</p></div><div class="lang-cn-block"><p>文件扩展名更新
+Sep 11, 2025
+Claude 桌面扩展现在使用 .mcpb（MCP Bundle）文件扩展名代替 .dxt。现有的 .dxt 扩展将继续工作，但我们建议开发者今后使用 .mcpb 创建新扩展。所有功能保持不变——这纯粹是命名约定的更新。
+—
+去年我们发布模型上下文协议（Model Context Protocol，MCP）时，看到开发者构建了出色的本地服务器，让 Claude 能够访问从文件系统到数据库的一切资源。但我们不断收到相同的反馈：安装过程太复杂了。用户需要开发者工具，必须手动编辑配置文件，而且经常在依赖问题上卡住。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Addressing the MCP installation problem</h3></div><div class="lang-cn-block"><p>今天，我们推出桌面扩展（Desktop Extensions）——一种全新的打包格式，让安装 MCP 服务器变得像点击按钮一样简单。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Local MCP servers unlock powerful capabilities for Claude Desktop users. They can interact with local applications, access private data, and integrate with development tools—all while keeping data on the user&#x27;s machine. However, the current installation process creates significant barriers:</p></div><div class="lang-cn-block"><h3 id="heading-1">解决 MCP 安装难题</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Developer tools required: Users need Node.js, Python, or other runtimes installed</li><li>Manual configuration: Each server requires editing JSON configuration files</li><li>Dependency management: Users must resolve package conflicts and version mismatches</li><li>No discovery mechanism: Finding useful MCP servers requires searching GitHub</li><li>Update complexity: Keeping servers current means manual reinstallation</li></ul></div><div class="lang-cn-block"><p>本地 MCP 服务器为 Claude Desktop 用户解锁了强大的功能。它们可以与本地应用程序交互、访问私有数据，并与开发工具集成——同时数据始终保留在用户自己的机器上。然而，当前的安装过程存在显著障碍：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>These friction points meant that MCP servers, despite their power, remained largely inaccessible to non-technical users.</p></div><div class="lang-cn-block"><ul><li>需要开发者工具：用户需要安装 Node.js、Python 或其他运行时</li><li>手动配置：每个服务器都需要编辑 JSON 配置文件</li><li>依赖管理：用户必须解决包冲突和版本不匹配问题</li><li>缺少发现机制：查找有用的 MCP 服务器需要在 GitHub 上搜索</li><li>更新复杂：保持服务器最新意味着需要手动重新安装</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Introducing Desktop Extensions</h3></div><div class="lang-cn-block"><p>这些摩擦点意味着，尽管 MCP 服务器功能强大，但对非技术用户来说基本上无法使用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Desktop Extensions (.mcpbfiles) solve these problems by bundling an entire MCP server—including all dependencies—into a single installable package. Here&#x27;s what changes for users:
+.mcpb
+Before:</p></div><div class="lang-cn-block"><h3 id="heading-2">桌面扩展介绍</h3></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-"># Install Node.js first 
+npm install -g @example/mcp-server 
+# Edit ~/.claude/claude_desktop_config.json manually 
+# Restart Claude Desktop 
+# Hope it works</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Install Node.js first</h1></div><div class="lang-cn-block"><p>安装前：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>npm install -g @example/mcp-server</p></div><div class="lang-cn-block"><pre><code class="language-"># 首先安装 Node.js
+npm install -g @example/mcp-server
+# 手动编辑 ~/.claude/claude_desktop_config.json
+# 重启 Claude Desktop
+# 祈祷它能正常工作</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Edit ~/.claude/claude_desktop_config.json manually</h1></div><div class="lang-cn-block"><p>安装后：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Restart Claude Desktop</h1></div><div class="lang-cn-block"><ul><li>下载一个 .mcpb 文件</li><li>双击用 Claude Desktop 打开</li><li>点击&quot;安装&quot;</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Hope it works</h1></div><div class="lang-cn-block"><p>就这么简单。无需终端、无需配置文件、无依赖冲突。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>After:</p></div><div class="lang-cn-block"><h2 id="heading-3">架构概述</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Download a.mcpbfile</li></ul></div><div class="lang-cn-block"><p>桌面扩展是一个 ZIP 压缩包，包含本地 MCP 服务器以及一个 manifest.json 文件，该文件描述了 Claude Desktop 和其他支持桌面扩展的应用程序需要了解的所有信息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>.mcpb</p></div><div class="lang-cn-block"><pre><code class="language-">extension.mcpb (ZIP 压缩包)
+├── manifest.json         # 扩展元数据和配置
+├── server/               # MCP 服务器实现
+│   └── [服务器文件]
+├── dependencies/         # 所有必需的包/库
+└── icon.png             # 可选：扩展图标
+
+# 示例：Node.js 扩展
+extension.mcpb
+├── manifest.json         # 必需：扩展元数据和配置
+├── server/               # 服务器文件
+│   └── index.js          # 主入口文件
+├── node_modules/         # 捆绑的依赖项
+├── package.json          # 可选：NPM 包定义
+└── icon.png              # 可选：扩展图标
+
+# 示例：Python 扩展
+extension.mcpb (ZIP 文件)
+├── manifest.json         # 必需：扩展元数据和配置
+├── server/               # 服务器文件
+│   ├── main.py           # 主入口文件
+│   └── utils.py          # 附加模块
+├── lib/                  # 捆绑的 Python 包
+├── requirements.txt      # 可选：Python 依赖列表
+└── icon.png              # 可选：扩展图标</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Double-click to open with Claude Desktop</li><li>Click &quot;Install&quot;</li></ul></div><div class="lang-cn-block"><p>桌面扩展中唯一必需的文件是 manifest.json。Claude Desktop 处理了所有复杂性：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>That&#x27;s it. No terminal, no configuration files, no dependency conflicts.</p></div><div class="lang-cn-block"><ul><li>内置运行时：我们在 Claude Desktop 中内置了 Node.js，消除了外部依赖</li><li>自动更新：扩展在新版本可用时自动更新</li><li>安全的密钥管理：敏感配置（如 API 密钥）存储在操作系统密钥链中</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Architecture overview</h2></div><div class="lang-cn-block"><p>该清单包含人类可读的信息（如名称、描述、作者）、功能声明（工具、提示词）、用户配置和运行时要求。大多数字段是可选的，因此最简版本相当短，但实际中，我们期望所有三种支持的扩展类型（Node.js、Python 和经典二进制文件/可执行文件）都包含以下文件：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>A Desktop Extension is a zip archive containing the local MCP server as well as amanifest.json, which describes everything Claude Desktop and other apps supporting desktop extensions need to know.
+manifest.json</p></div><div class="lang-cn-block"><pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // 此清单遵循的 MCPB 规范版本
+  &quot;name&quot;: &quot;my-extension&quot;,                   // 机器可读名称（用于 CLI、API）
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // 扩展的语义化版本号
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // 扩展功能的简要描述
+  &quot;author&quot;: {                               // 作者信息（必需）
+    &quot;name&quot;: &quot;Extension Author&quot;              // 作者姓名（必填字段）
+  },
+  &quot;server&quot;: {                               // 服务器配置（必需）
+    &quot;type&quot;: &quot;node&quot;,                         // 服务器类型：&quot;node&quot;、&quot;python&quot; 或 &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // 主服务器文件的路径
+    &quot;mcp_config&quot;: {                         // MCP 服务器配置
+      &quot;command&quot;: &quot;node&quot;,                    // 运行服务器的命令
+      &quot;args&quot;: [                             // 传递给命令的参数
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} 会被替换为扩展的目录路径
+      ]
+    }
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">extension.mcpb (ZIP archive)
+├── manifest.json         # Extension metadata and configuration
+├── server/               # MCP server implementation
+│   └── [server files]    
+├── dependencies/         # All required packages/libraries
+└── icon.png             # Optional: Extension icon
+
+# Example: Node.js Extension
+extension.mcpb
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   └── index.js          # Main entry point
+├── node_modules/         # Bundled dependencies
+├── package.json          # Optional: NPM package definition
+└── icon.png              # Optional: Extension icon
+
+# Example: Python Extension
+extension.mcpb (ZIP file)
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   ├── main.py           # Main entry point
+│   └── utils.py          # Additional modules
+├── lib/                  # Bundled Python packages
+├── requirements.txt      # Optional: Python dependencies list
+└── icon.png              # Optional: Extension icon</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>extension.mcpb (ZIP archive)
+├── manifest.json         # Extension metadata and configuration
+├── server/               # MCP server implementation
+│   └── [server files]    
+├── dependencies/         # All required packages/libraries
+└── icon.png             # Optional: Extension icon</p></div><div class="lang-cn-block"><p>让我们看一个具体的例子，了解清单如何辅助配置。在下面的清单中，开发者声明用户需要提供一个 api_key。Claude 在用户提供该值之前不会启用扩展，自动将其保存在操作系统的安全存储中，并在启动服务器时透明地将 ${user_config.api_key} 替换为用户提供的值。类似地，${__dirname} 将被替换为扩展解压目录的完整路径。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Example: Node.js Extension</h1></div><div class="lang-cn-block"><pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>extension.mcpb
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   └── index.js          # Main entry point
+├── node_modules/         # Bundled dependencies
+├── package.json          # Optional: NPM package definition
+└── icon.png              # Optional: Extension icon</p></div><div class="lang-cn-block"><p>一个包含大多数可选字段的完整 manifest.json 可能如下所示：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h1>Example: Python Extension</h1></div><div class="lang-cn-block"><pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>extension.mcpb (ZIP file)
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   ├── main.py           # Main entry point
+│   └── utils.py          # Additional modules
+├── lib/                  # Bundled Python packages
+├── requirements.txt      # Optional: Python dependencies list
+└── icon.png              # Optional: Extension icon
+The only required file in a Desktop Extension is a manifest.json. Claude Desktop handles all the complexity:</p></div><div class="lang-cn-block"><p>要查看扩展和清单示例，请参阅 MCPB 仓库中的示例。
+manifest.json 中所有必需和可选字段的完整规范可作为我们开源工具链的一部分找到。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Built-in runtime: We ship Node.js with Claude Desktop, eliminating external dependencies</li><li>Automatic updates: Extensions update automatically when new versions are available</li><li>Secure secrets: Sensitive configuration like API keys are stored in the OS keychain</li></ul></div><div class="lang-cn-block"><h3 id="heading-4">构建你的第一个扩展</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The manifest contains human-readable information (like the name, description, or author), a declaration of features (tools, prompts), user configuration, and runtime requirements. Most fields are optional, so the minimal version is quite short, although in practice, we expect all three supported extension types (Node.js, Python, and classic binaries/executables) to include files:</p></div><div class="lang-cn-block"><p>让我们通过一个示例，逐步将现有 MCP 服务器打包为桌面扩展。我们将使用一个简单的文件系统服务器作为示例。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // MCPB spec version this manifest conforms to
+  &quot;name&quot;: &quot;my-extension&quot;,                   // Machine-readable name (used for CLI, APIs)
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // Semantic version of your extension
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // Brief description of what the extension does
+  &quot;author&quot;: {                               // Author information (required)
+    &quot;name&quot;: &quot;Extension Author&quot;              // Author&#x27;s name (required field)
+  },
+  &quot;server&quot;: {                               // Server configuration (required)
+    &quot;type&quot;: &quot;node&quot;,                         // Server type: &quot;node&quot;, &quot;python&quot;, or &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // Path to the main server file
+    &quot;mcp_config&quot;: {                         // MCP server configuration
+      &quot;command&quot;: &quot;node&quot;,                    // Command to run the server
+      &quot;args&quot;: [                             // Arguments passed to the command
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} is replaced with the extension&#x27;s directory
+      ]                              
+    }
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // MCPB spec version this manifest conforms to
+  &quot;name&quot;: &quot;my-extension&quot;,                   // Machine-readable name (used for CLI, APIs)
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // Semantic version of your extension
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // Brief description of what the extension does
+  &quot;author&quot;: {                               // Author information (required)
+    &quot;name&quot;: &quot;Extension Author&quot;              // Author&#x27;s name (required field)
+  },
+  &quot;server&quot;: {                               // Server configuration (required)
+    &quot;type&quot;: &quot;node&quot;,                         // Server type: &quot;node&quot;, &quot;python&quot;, or &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // Path to the main server file
+    &quot;mcp_config&quot;: {                         // MCP server configuration
+      &quot;command&quot;: &quot;node&quot;,                    // Command to run the server
+      &quot;args&quot;: [                             // Arguments passed to the command
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} is replaced with the extension&#x27;s directory
+      ]                              
+    }
+  }
+}
+There are a number of convenience optionsavailable in the manifest specthat aim to make the installation and configuration of local MCP servers easier. The server configuration object can be defined in a way that makes room both for user-defined configuration in the form of template literals as well as platform-specific overrides. Extension developers can define, in detail, what kind of configuration they want to collect from users.
+Let’s take a look at a concrete example of how the manifest aids with configuration. In the manifest below, the developer declares that the user needs to supply anapi_key. Claude will not enable the extension until the user has supplied that value, keep it automatically in the operating system’s secret vault, and transparently replace the${user_config.api_key}with the user-supplied value when launching the server. Similarly,${__dirname}will be replaced with the full path to the extension’s unpacked directory.
+api_key
+${user_config.api_key}
+${__dirname}</p></div><div class="lang-cn-block"><p>首先，为你的服务器初始化一个清单：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}
+A fullmanifest.jsonwith most of the optional fields might look like this:
+manifest.json</p></div><div class="lang-cn-block"><p>这个交互式工具会询问你的服务器信息，并生成完整的 manifest.json。如果你想快速生成最基本的 manifest.json，可以使用 --yes 参数运行该命令。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}
+To see an extension and manifest, please referto the examples in the MCPB repository.
+The full specification for all required and optional fields in themanifest.jsoncan be found as part of ouropen-source toolchain.
+manifest.json</p></div><div class="lang-cn-block"><p>如果你的服务器需要用户输入（如 API 密钥或允许的目录），在清单中声明它：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Building your first extension</h3></div><div class="lang-cn-block"><pre><code class="language-json">&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Let&#x27;s walk through packaging an existing MCP server as a Desktop Extension. We&#x27;ll use a simple file system server as an example.</p></div><div class="lang-cn-block"><p>Claude Desktop 将：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Step 1: Create the manifest</h4></div><div class="lang-cn-block"><ul><li>显示用户友好的配置界面</li><li>在启用扩展之前验证输入</li><li>安全存储敏感值</li><li>根据开发者配置，将配置作为参数或环境变量传递给你的服务器</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>First, initialize a manifest for your server:</p></div><div class="lang-cn-block"><p>在下面的示例中，我们将用户配置作为环境变量传递，但也可以作为参数传递。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">npx @anthropic-ai/mcpb init</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>npx @anthropic-ai/mcpb init
+This interactive tool asks about your server and generates a complete manifest.json. If you want to speed-run your way to the most basic manifest.json, you can run the command with a --yes parameter.</p></div><div class="lang-cn-block"><h4>第三步：打包扩展</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Step 2: Handle user configuration</h4></div><div class="lang-cn-block"><p>将所有内容打包为 .mcpb 文件：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>If your server needs user input (like API keys or allowed directories), declare it in the manifest:</p></div><div class="lang-cn-block"><pre><code class="language-">npx @anthropic-ai/mcpb pack</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}
+Claude Desktop will:</p></div><div class="lang-cn-block"><ul><li>验证你的清单</li><li>生成 .mcpb 压缩包</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Display a user-friendly configuration UI</li><li>Validate inputs before enabling the extension</li><li>Securely store sensitive values</li><li>Pass configuration to your server either as arguments or environment variables, depending on developer configuration</li></ul></div><div class="lang-cn-block"><h4>第四步：本地测试</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In the example below, we’re passing the user configuration as an environment variable, but it could also be an argument.</p></div><div class="lang-cn-block"><p>将你的 .mcpb 文件拖入 Claude Desktop 的设置窗口。你将看到：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">&quot;server&quot;: {
+   &quot;type&quot;: &quot;node&quot;,
+   &quot;entry_point&quot;: &quot;server/index.js&quot;,
+   &quot;mcp_config&quot;: {
+   &quot;command&quot;: &quot;node&quot;,
+   &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+   &quot;env&quot;: {
+      &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+   }
+   }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;server&quot;: {
+   &quot;type&quot;: &quot;node&quot;,
+   &quot;entry_point&quot;: &quot;server/index.js&quot;,
+   &quot;mcp_config&quot;: {
+   &quot;command&quot;: &quot;node&quot;,
+   &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+   &quot;env&quot;: {
+      &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+   }
+   }
+}</p></div><div class="lang-cn-block"><h3 id="heading-5">高级功能</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Step 3: Package the extension</h4></div><div class="lang-cn-block"><h4>跨平台支持</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Bundle everything into a.mcpbfile:
+.mcpb</p></div><div class="lang-cn-block"><p>扩展可以适配不同的操作系统：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">npx @anthropic-ai/mcpb pack</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>npx @anthropic-ai/mcpb pack
+This command:</p></div><div class="lang-cn-block"><h4>动态配置</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Validates your manifest</li><li>Generates the.mcpbarchive</li></ul></div><div class="lang-cn-block"><p>使用模板字面量获取运行时值：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>.mcpb</p></div><div class="lang-cn-block"><ul><li>${__dirname}：扩展的安装目录</li><li>${user_config.key}：用户提供的配置</li><li>${HOME}、${TEMP}：系统环境变量</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Step 4: Test locally</h4></div><div class="lang-cn-block"><h4>功能声明</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Drag your.mcpbfile into Claude Desktop&#x27;s Settings window. You&#x27;ll see:
+.mcpb</p></div><div class="lang-cn-block"><p>帮助用户提前了解功能：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Human-readable information about your extension</li><li>Required permissions and configuration</li><li>A simple &quot;Install&quot; button</li></ul></div><div class="lang-cn-block"><pre><code class="language-json">&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Advanced features</h3></div><div class="lang-cn-block"><h3 id="heading-6">扩展目录</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Cross-platform support</h4></div><div class="lang-cn-block"><p>我们推出时在 Claude Desktop 中内置了一个精选的扩展目录。用户可以浏览、搜索并一键安装——无需在 GitHub 上搜索或审查代码。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Extensions can adapt to different operating systems:</p></div><div class="lang-cn-block"><p>虽然我们预计桌面扩展规范和 Claude 在 macOS 及 Windows 上的实现会随时间演变，但我们期待看到扩展能以各种创意方式扩展 Claude 的功能。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">&quot;server&quot;: {
+  &quot;type&quot;: &quot;node&quot;,
+  &quot;entry_point&quot;: &quot;server/index.js&quot;,
+  &quot;mcp_config&quot;: {
+    &quot;command&quot;: &quot;node&quot;,
+    &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+    &quot;platforms&quot;: {
+      &quot;win32&quot;: {
+        &quot;command&quot;: &quot;node.exe&quot;,
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TEMP}&quot;
+        }
+      },
+      &quot;darwin&quot;: {
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TMPDIR}&quot;
+        }
+      }
+    }
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;server&quot;: {
+  &quot;type&quot;: &quot;node&quot;,
+  &quot;entry_point&quot;: &quot;server/index.js&quot;,
+  &quot;mcp_config&quot;: {
+    &quot;command&quot;: &quot;node&quot;,
+    &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+    &quot;platforms&quot;: {
+      &quot;win32&quot;: {
+        &quot;command&quot;: &quot;node.exe&quot;,
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TEMP}&quot;
+        }
+      },
+      &quot;darwin&quot;: {
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TMPDIR}&quot;
+        }
+      }
+    }
+  }
+}</p></div><div class="lang-cn-block"><ul><li>确保遵循提交表单中的指南</li><li>在 Windows 和 macOS 上进行测试</li><li>提交你的扩展</li><li>我们的团队将审核质量和安全性</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Dynamic configuration</h4></div><div class="lang-cn-block"><h3 id="heading-7">构建开放生态系统</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Use template literals for runtime values:</p></div><div class="lang-cn-block"><p>我们致力于围绕 MCP 服务器构建开放生态系统，并相信其被多个应用程序和服务普遍采用的能力已经惠及社区。秉承这一承诺，我们将桌面扩展规范、工具链以及 Claude 在 macOS 和 Windows 上实现桌面扩展支持所使用的架构和关键功能开源。我们希望 MCPB 格式不仅能让本地 MCP 服务器对 Claude 更具可移植性，也能为其他 AI 桌面应用程序所用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>${__dirname}: Extension&#x27;s installation directory</li></ul></div><div class="lang-cn-block"><p>我们开源的内容：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>${__dirname}</p></div><div class="lang-cn-block"><ul><li>完整的 MCPB 规范</li><li>打包和验证工具</li><li>参考实现代码</li><li>TypeScript 类型和架构定义</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>${user_config.key}: User-provided configuration</li></ul></div><div class="lang-cn-block"><p>这意味着：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>${user_config.key}</p></div><div class="lang-cn-block"><ul><li>对于 MCP 服务器开发者：一次打包，即可在任何支持 MCPB 的平台上运行</li><li>对于应用开发者：无需从零开始即可添加扩展支持</li><li>对于用户：在所有支持 MCP 的应用程序中获得一致的体验</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>${HOME}, ${TEMP}: System environment variables</li></ul></div><div class="lang-cn-block"><p>规范和工具链特意以 0.1 版本发布，因为我们期待与更广泛的社区合作来发展和改进该格式。我们期待听到你的反馈。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>${HOME}, ${TEMP}</p></div><div class="lang-cn-block"><h3 id="heading-8">安全性和企业考量</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Feature declaration</h4></div><div class="lang-cn-block"><p>我们理解扩展引入了新的安全考量，特别是对企业用户而言。我们在桌面扩展的预览版本中内置了多项安全保障：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Help users understand capabilities upfront:</p></div><div class="lang-cn-block"><h4>面向用户</h4></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</p></div><div class="lang-cn-block"><h4>面向企业</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>The extension directory</h3></div><div class="lang-cn-block"><ul><li>组策略（Windows）和 MDM（macOS）支持</li><li>预安装已批准扩展的能力</li><li>封禁特定扩展或发布者</li><li>完全禁用扩展目录</li><li>部署私有扩展目录</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We&#x27;re launching with a curated directory of extensions built into Claude Desktop. Users can browse, search, and install with one click—no searching GitHub or vetting code.
+While we expect both the Desktop Extension specification and the implementation in Claude for macOS and Windows to evolve over time, we look forward to seeing the many ways in which extensions can be used to expand the capabilities of Claude in creative ways.
+To submit your extension:</p></div><div class="lang-cn-block"><p>有关如何在组织中管理扩展的更多信息，请参阅我们的文档。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Ensure it follows the guidelines found in the submission form</li><li>Test across Windows and macOS</li><li>Submit your extension</li><li>Our team reviews for quality and security</li></ul></div><div class="lang-cn-block"><h3 id="heading-9">开始使用</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Building an open ecosystem</h3></div><div class="lang-cn-block"><p>准备好构建你自己的扩展了吗？以下是入门方法：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We are committed to the open ecosystem around MCP servers and believe that its ability to be universally adopted by multiple applications and services has benefitted the community. In line with this commitment, we’re open-sourcing the Desktop Extension specification, toolchain, and the schemas and key functions used by Claude for macOS and Windows to implement its own support of Desktop Extensions. It is our hope that the MCPB format doesn’t just make local MCP servers more portable for Claude, but other AI desktop applications, too.
+We&#x27;re open-sourcing:</p></div><div class="lang-cn-block"><p>对于 MCP 服务器开发者：查阅我们的开发者文档——或者直接在本地 MCP 服务器目录中运行以下命令开始：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>The complete MCPB specification</li><li>Packaging and validation tools</li><li>Reference implementation code</li><li>TypeScript types and schemas</li></ul></div><div class="lang-cn-block"><pre><code class="language-">npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>This means:</p></div><div class="lang-cn-block"><p>对于 Claude Desktop 用户：更新到最新版本，并在设置中查找&quot;扩展&quot;部分</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>For MCP server developers: Package once, run anywhere that supports MCPB</li><li>For app developers: Add extension support without building from scratch</li><li>For users: Consistent experience across all MCP-enabled applications</li></ul></div><div class="lang-cn-block"><p>对于企业用户：查阅我们的企业文档了解部署选项</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The specification and toolchain is on purpose versioned as 0.1, as we are looking forward to working with the greater community on evolving and changing the format. We look forward to hearing from you.</p></div><div class="lang-cn-block"><h3 id="heading-10">使用 Claude Code 构建</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Security and enterprise considerations</h3></div><div class="lang-cn-block"><p>在 Anthropic 内部，我们发现 Claude 能够在极少干预的情况下出色地构建扩展。如果你也想使用 Claude Code，我们建议你简要说明你希望扩展做什么，然后将以下上下文添加到提示词中：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We understand that extensions introduce new security considerations, particularly for enterprises. We&#x27;ve built in several safeguards with the preview release of Desktop Extensions:</p></div><div class="lang-cn-block"><pre><code class="language-">I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:
+
+1. **Read the specifications thoroughly:**
+   - https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns
+   - https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions
+   - https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example
+
+2. **Create a proper extension structure:**
+   - Generate a valid manifest.json following the MANIFEST.md spec
+   - Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions
+   - Include proper error handling and timeout management
+
+3. **Follow best development practices:**
+   - Implement proper MCP protocol communication via stdio transport
+   - Structure tools with clear schemas, validation, and consistent JSON responses
+   - Make use of the fact that this extension will be running locally
+   - Add appropriate logging and debugging capabilities
+   - Include proper documentation and setup instructions
+
+4. **Test considerations:**
+   - Validate that all tool calls return properly structured responses
+   - Verify manifest loads correctly and host integration works
+
+Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>For users</h4></div><div class="lang-cn-block"><h3 id="heading-11">结语</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Sensitive data stays in the OS keychain</li><li>Automatic updates</li><li>Ability to audit what extensions are installed</li></ul></div><div class="lang-cn-block"><p>桌面扩展代表了用户与本地 AI 工具交互方式的根本性转变。通过消除安装摩擦，我们将强大的 MCP 服务器变得人人可用——而不仅仅是开发者。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>For enterprises</h4></div><div class="lang-cn-block"><p>在内部，我们使用桌面扩展来分享高度实验性的 MCP 服务器——有些很有趣，有些很实用。一个团队尝试将模型直接连接到 GameBoy 看看能走多远，类似于我们的&quot;Claude 玩宝可梦&quot;研究。我们使用桌面扩展打包了一个单独的扩展，打开了流行的 PyBoy GameBoy 模拟器并让 Claude 接管控制。我们相信，将模型的能力与用户本地机器上已有的工具、数据和应用程序连接起来，存在着无数的机会。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Group Policy (Windows) and MDM (macOS) support</li><li>Ability to pre-install approved extensions</li><li>Blocklist specific extensions or publishers</li><li>Disable the extension directory entirely</li><li>Deploy private extension directories</li></ul></div><div class="lang-cn-block"><p>我们迫不及待地想看到你的作品。那些为我们带来数千个 MCP 服务器的创造力，现在只需一次点击就能触达数百万用户。准备好分享你的 MCP 服务器了吗？提交你的扩展以供审核。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>For more information about how to manage extensions within your organization, see ourdocumentation.</p></div><div class="lang-cn-block"><h3 id="heading-12">想了解更多？</h3></div></div>
+<div class="lang-en-block"><h3>Getting started</h3></div>
+<div class="lang-en-block"><p>Ready to build your own extension? Here&#x27;s how to start:
+For MCP server developers: Review ourdeveloper documentation– or dive right in by running the following commands in your local MCP servers’ directory:</p></div>
+<div class="lang-en-block"><pre><code class="language-">npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack</code></pre></div>
+<div class="lang-en-block"><p>npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack
+For Claude Desktop users: Update to the latest version and look for the Extensions section in Settings
+For enterprises: Review our enterprise documentation for deployment options</p></div>
+<div class="lang-en-block"><h3>Building with Claude Code</h3></div>
+<div class="lang-en-block"><p>Internally at Anthropic, we have found that Claude is great at building extensions with minimal intervention. If you too want to use Claude Code, we recommend that you briefly explain what you want your extension to do and then add the following context to the prompt:</p></div>
+<div class="lang-en-block"><pre><code class="language-">I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:
+
+1. **Read the specifications thoroughly:**
+   - https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns
+   - https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions
+   - https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example
+
+2. **Create a proper extension structure:**
+   - Generate a valid manifest.json following the MANIFEST.md spec
+   - Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions
+   - Include proper error handling and timeout management
+
+3. **Follow best development practices:**
+   - Implement proper MCP protocol communication via stdio transport
+   - Structure tools with clear schemas, validation, and consistent JSON responses
+   - Make use of the fact that this extension will be running locally
+   - Add appropriate logging and debugging capabilities
+   - Include proper documentation and setup instructions
+
+4. **Test considerations:**
+   - Validate that all tool calls return properly structured responses
+   - Verify manifest loads correctly and host integration works
+
+Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</code></pre></div>
+<div class="lang-en-block"><p>I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:</p></div>
+<div class="lang-en-block"><ol><li><strong>Read the specifications thoroughly:</strong></li></ol></div>
+<div class="lang-en-block"><ul><li>https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns</li></ul></div>
+<div class="lang-en-block"><ul><li>https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions</li></ul></div>
+<div class="lang-en-block"><ul><li>https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example</li></ul></div>
+<div class="lang-en-block"><ol><li><strong>Create a proper extension structure:</strong></li></ol></div>
+<div class="lang-en-block"><ul><li>Generate a valid manifest.json following the MANIFEST.md spec</li></ul></div>
+<div class="lang-en-block"><ul><li>Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions</li></ul></div>
+<div class="lang-en-block"><ul><li>Include proper error handling and timeout management</li></ul></div>
+<div class="lang-en-block"><ol><li><strong>Follow best development practices:</strong></li></ol></div>
+<div class="lang-en-block"><ul><li>Implement proper MCP protocol communication via stdio transport</li></ul></div>
+<div class="lang-en-block"><ul><li>Structure tools with clear schemas, validation, and consistent JSON responses</li></ul></div>
+<div class="lang-en-block"><ul><li>Make use of the fact that this extension will be running locally</li></ul></div>
+<div class="lang-en-block"><ul><li>Add appropriate logging and debugging capabilities</li></ul></div>
+<div class="lang-en-block"><ul><li>Include proper documentation and setup instructions</li></ul></div>
+<div class="lang-en-block"><ol><li><strong>Test considerations:</strong></li></ol></div>
+<div class="lang-en-block"><ul><li>Validate that all tool calls return properly structured responses</li></ul></div>
+<div class="lang-en-block"><ul><li>Verify manifest loads correctly and host integration works</li></ul></div>
+<div class="lang-en-block"><p>Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</p></div>
+<div class="lang-en-block"><h3>Conclusion</h3></div>
+<div class="lang-en-block"><p>Desktop Extensions represent a fundamental shift in how users interact with local AI tools. By removing installation friction, we&#x27;re making powerful MCP servers accessible to everyone—not just developers.
+Internally, we’re using desktop extensions to share highly experimental MCP servers - some fun, some useful.. One team experimented to see how far our models could make it when directly connected to a GameBoy, similar to our“Claude plays Pokémon” research. We used Desktop Extensions to package a single extension that opens up the popularPyBoyGameBoy emulator and lets Claude take control. We believe that countless opportunities exist to connect the model’s capabilities to the tools, data, and applications users already have on their local machines.
+We can&#x27;t wait to see what you build. The same creativity that brought us thousands of MCP servers can now reach millions of users with just one click. Ready to share your MCP server?Submit your extension for review.</p></div>
+<div class="lang-en-block"><h3>Looking to learn more?</h3></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><ul>
+<li>文件扩展名更新Sep 11, 2025Claude 桌面扩展现在使用 .mcpb（MCP Bundle）文件扩展名代替 .dxt。现有的 .dxt 扩展将继续工作，但我们建议开发者今后使用 .mcpb 创建新扩展。所有功能保持不变——这纯粹是命名约定的更新。</li>
+</ul>
+<p>文件扩展名更新
+Sep 11, 2025
+Claude 桌面扩展现在使用 .mcpb（MCP Bundle）文件扩展名代替 .dxt。现有的 .dxt 扩展将继续工作，但我们建议开发者今后使用 .mcpb 创建新扩展。所有功能保持不变——这纯粹是命名约定的更新。
+—
+去年我们发布模型上下文协议（Model Context Protocol，MCP）时，看到开发者构建了出色的本地服务器，让 Claude 能够访问从文件系统到数据库的一切资源。但我们不断收到相同的反馈：安装过程太复杂了。用户需要开发者工具，必须手动编辑配置文件，而且经常在依赖问题上卡住。</p>
+<p>今天，我们推出桌面扩展（Desktop Extensions）——一种全新的打包格式，让安装 MCP 服务器变得像点击按钮一样简单。</p>
+<h3>解决 MCP 安装难题</h3>
+<p>本地 MCP 服务器为 Claude Desktop 用户解锁了强大的功能。它们可以与本地应用程序交互、访问私有数据，并与开发工具集成——同时数据始终保留在用户自己的机器上。然而，当前的安装过程存在显著障碍：</p>
+<ul>
+<li>需要开发者工具：用户需要安装 Node.js、Python 或其他运行时</li>
+<li>手动配置：每个服务器都需要编辑 JSON 配置文件</li>
+<li>依赖管理：用户必须解决包冲突和版本不匹配问题</li>
+<li>缺少发现机制：查找有用的 MCP 服务器需要在 GitHub 上搜索</li>
+<li>更新复杂：保持服务器最新意味着需要手动重新安装</li>
+</ul>
+<p>这些摩擦点意味着，尽管 MCP 服务器功能强大，但对非技术用户来说基本上无法使用。</p>
+<h3>桌面扩展介绍</h3>
+<p>桌面扩展（.mcpb 文件）通过将整个 MCP 服务器——包括所有依赖项——打包到一个可安装的包中来解决这些问题。以下是用户体验的变化：</p>
+<p>安装前：</p>
+<pre><code class="language-"># 首先安装 Node.js
+npm install -g @example/mcp-server
+# 手动编辑 ~/.claude/claude_desktop_config.json
+# 重启 Claude Desktop
+# 祈祷它能正常工作</code></pre>
+<p>安装后：</p>
+<ul>
+<li>下载一个 .mcpb 文件</li>
+<li>双击用 Claude Desktop 打开</li>
+<li>点击&quot;安装&quot;</li>
+</ul>
+<p>就这么简单。无需终端、无需配置文件、无依赖冲突。</p>
+<h2>架构概述</h2>
+<p>桌面扩展是一个 ZIP 压缩包，包含本地 MCP 服务器以及一个 manifest.json 文件，该文件描述了 Claude Desktop 和其他支持桌面扩展的应用程序需要了解的所有信息。</p>
+<pre><code class="language-">extension.mcpb (ZIP 压缩包)
+├── manifest.json         # 扩展元数据和配置
+├── server/               # MCP 服务器实现
+│   └── [服务器文件]
+├── dependencies/         # 所有必需的包/库
+└── icon.png             # 可选：扩展图标
+
+# 示例：Node.js 扩展
+extension.mcpb
+├── manifest.json         # 必需：扩展元数据和配置
+├── server/               # 服务器文件
+│   └── index.js          # 主入口文件
+├── node_modules/         # 捆绑的依赖项
+├── package.json          # 可选：NPM 包定义
+└── icon.png              # 可选：扩展图标
+
+# 示例：Python 扩展
+extension.mcpb (ZIP 文件)
+├── manifest.json         # 必需：扩展元数据和配置
+├── server/               # 服务器文件
+│   ├── main.py           # 主入口文件
+│   └── utils.py          # 附加模块
+├── lib/                  # 捆绑的 Python 包
+├── requirements.txt      # 可选：Python 依赖列表
+└── icon.png              # 可选：扩展图标</code></pre>
+<p>桌面扩展中唯一必需的文件是 manifest.json。Claude Desktop 处理了所有复杂性：</p>
+<ul>
+<li>内置运行时：我们在 Claude Desktop 中内置了 Node.js，消除了外部依赖</li>
+<li>自动更新：扩展在新版本可用时自动更新</li>
+<li>安全的密钥管理：敏感配置（如 API 密钥）存储在操作系统密钥链中</li>
+</ul>
+<p>该清单包含人类可读的信息（如名称、描述、作者）、功能声明（工具、提示词）、用户配置和运行时要求。大多数字段是可选的，因此最简版本相当短，但实际中，我们期望所有三种支持的扩展类型（Node.js、Python 和经典二进制文件/可执行文件）都包含以下文件：</p>
+<pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // 此清单遵循的 MCPB 规范版本
+  &quot;name&quot;: &quot;my-extension&quot;,                   // 机器可读名称（用于 CLI、API）
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // 扩展的语义化版本号
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // 扩展功能的简要描述
+  &quot;author&quot;: {                               // 作者信息（必需）
+    &quot;name&quot;: &quot;Extension Author&quot;              // 作者姓名（必填字段）
+  },
+  &quot;server&quot;: {                               // 服务器配置（必需）
+    &quot;type&quot;: &quot;node&quot;,                         // 服务器类型：&quot;node&quot;、&quot;python&quot; 或 &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // 主服务器文件的路径
+    &quot;mcp_config&quot;: {                         // MCP 服务器配置
+      &quot;command&quot;: &quot;node&quot;,                    // 运行服务器的命令
+      &quot;args&quot;: [                             // 传递给命令的参数
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} 会被替换为扩展的目录路径
+      ]
+    }
+  }
+}</code></pre>
+<p>清单规范中提供了许多便利选项，旨在简化本地 MCP 服务器的安装和配置。服务器配置对象可以定义为既支持以模板字面量形式的用户自定义配置，也支持平台特定的覆盖。扩展开发者可以详细定义他们希望从用户那里收集的配置类型。</p>
+<p>让我们看一个具体的例子，了解清单如何辅助配置。在下面的清单中，开发者声明用户需要提供一个 api_key。Claude 在用户提供该值之前不会启用扩展，自动将其保存在操作系统的安全存储中，并在启动服务器时透明地将 ${user_config.api_key} 替换为用户提供的值。类似地，${__dirname} 将被替换为扩展解压目录的完整路径。</p>
+<pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}</code></pre>
+<p>一个包含大多数可选字段的完整 manifest.json 可能如下所示：</p>
+<pre><code class="language-json">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}</code></pre>
+<p>要查看扩展和清单示例，请参阅 MCPB 仓库中的示例。
+manifest.json 中所有必需和可选字段的完整规范可作为我们开源工具链的一部分找到。</p>
+<h3>构建你的第一个扩展</h3>
+<p>让我们通过一个示例，逐步将现有 MCP 服务器打包为桌面扩展。我们将使用一个简单的文件系统服务器作为示例。</p>
+<h4>第一步：创建清单</h4>
+<p>首先，为你的服务器初始化一个清单：</p>
+<pre><code class="language-">npx @anthropic-ai/mcpb init</code></pre>
+<p>这个交互式工具会询问你的服务器信息，并生成完整的 manifest.json。如果你想快速生成最基本的 manifest.json，可以使用 --yes 参数运行该命令。</p>
+<h4>第二步：处理用户配置</h4>
+<p>如果你的服务器需要用户输入（如 API 密钥或允许的目录），在清单中声明它：</p>
+<pre><code class="language-json">&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}</code></pre>
+<p>Claude Desktop 将：</p>
+<ul>
+<li>显示用户友好的配置界面</li>
+<li>在启用扩展之前验证输入</li>
+<li>安全存储敏感值</li>
+<li>根据开发者配置，将配置作为参数或环境变量传递给你的服务器</li>
+</ul>
+<p>在下面的示例中，我们将用户配置作为环境变量传递，但也可以作为参数传递。</p>
+<pre><code class="language-json">&quot;server&quot;: {
+   &quot;type&quot;: &quot;node&quot;,
+   &quot;entry_point&quot;: &quot;server/index.js&quot;,
+   &quot;mcp_config&quot;: {
+   &quot;command&quot;: &quot;node&quot;,
+   &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+   &quot;env&quot;: {
+      &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+   }
+   }
+}</code></pre>
+<h4>第三步：打包扩展</h4>
+<p>将所有内容打包为 .mcpb 文件：</p>
+<pre><code class="language-">npx @anthropic-ai/mcpb pack</code></pre>
+<p>此命令：</p>
+<ul>
+<li>验证你的清单</li>
+<li>生成 .mcpb 压缩包</li>
+</ul>
+<h4>第四步：本地测试</h4>
+<p>将你的 .mcpb 文件拖入 Claude Desktop 的设置窗口。你将看到：</p>
+<ul>
+<li>扩展的人类可读信息</li>
+<li>所需权限和配置</li>
+<li>一个简单的&quot;安装&quot;按钮</li>
+</ul>
+<h3>高级功能</h3>
+<h4>跨平台支持</h4>
+<p>扩展可以适配不同的操作系统：</p>
+<pre><code class="language-json">&quot;server&quot;: {
+  &quot;type&quot;: &quot;node&quot;,
+  &quot;entry_point&quot;: &quot;server/index.js&quot;,
+  &quot;mcp_config&quot;: {
+    &quot;command&quot;: &quot;node&quot;,
+    &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+    &quot;platforms&quot;: {
+      &quot;win32&quot;: {
+        &quot;command&quot;: &quot;node.exe&quot;,
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TEMP}&quot;
+        }
+      },
+      &quot;darwin&quot;: {
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TMPDIR}&quot;
+        }
+      }
+    }
+  }
+}</code></pre>
+<h4>动态配置</h4>
+<p>使用模板字面量获取运行时值：</p>
+<ul>
+<li>${__dirname}：扩展的安装目录</li>
+<li>${user_config.key}：用户提供的配置</li>
+<li>${HOME}、${TEMP}：系统环境变量</li>
+</ul>
+<h4>功能声明</h4>
+<p>帮助用户提前了解功能：</p>
+<pre><code class="language-json">&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</code></pre>
+<h3>扩展目录</h3>
+<p>我们推出时在 Claude Desktop 中内置了一个精选的扩展目录。用户可以浏览、搜索并一键安装——无需在 GitHub 上搜索或审查代码。</p>
+<p>虽然我们预计桌面扩展规范和 Claude 在 macOS 及 Windows 上的实现会随时间演变，但我们期待看到扩展能以各种创意方式扩展 Claude 的功能。</p>
+<p>提交你的扩展：</p>
+<ul>
+<li>确保遵循提交表单中的指南</li>
+<li>在 Windows 和 macOS 上进行测试</li>
+<li>提交你的扩展</li>
+<li>我们的团队将审核质量和安全性</li>
+</ul>
+<h3>构建开放生态系统</h3>
+<p>我们致力于围绕 MCP 服务器构建开放生态系统，并相信其被多个应用程序和服务普遍采用的能力已经惠及社区。秉承这一承诺，我们将桌面扩展规范、工具链以及 Claude 在 macOS 和 Windows 上实现桌面扩展支持所使用的架构和关键功能开源。我们希望 MCPB 格式不仅能让本地 MCP 服务器对 Claude 更具可移植性，也能为其他 AI 桌面应用程序所用。</p>
+<p>我们开源的内容：</p>
+<ul>
+<li>完整的 MCPB 规范</li>
+<li>打包和验证工具</li>
+<li>参考实现代码</li>
+<li>TypeScript 类型和架构定义</li>
+</ul>
+<p>这意味着：</p>
+<ul>
+<li>对于 MCP 服务器开发者：一次打包，即可在任何支持 MCPB 的平台上运行</li>
+<li>对于应用开发者：无需从零开始即可添加扩展支持</li>
+<li>对于用户：在所有支持 MCP 的应用程序中获得一致的体验</li>
+</ul>
+<p>规范和工具链特意以 0.1 版本发布，因为我们期待与更广泛的社区合作来发展和改进该格式。我们期待听到你的反馈。</p>
+<h3>安全性和企业考量</h3>
+<p>我们理解扩展引入了新的安全考量，特别是对企业用户而言。我们在桌面扩展的预览版本中内置了多项安全保障：</p>
+<h4>面向用户</h4>
+<ul>
+<li>敏感数据保存在操作系统密钥链中</li>
+<li>自动更新</li>
+<li>审查已安装扩展的能力</li>
+</ul>
+<h4>面向企业</h4>
+<ul>
+<li>组策略（Windows）和 MDM（macOS）支持</li>
+<li>预安装已批准扩展的能力</li>
+<li>封禁特定扩展或发布者</li>
+<li>完全禁用扩展目录</li>
+<li>部署私有扩展目录</li>
+</ul>
+<p>有关如何在组织中管理扩展的更多信息，请参阅我们的文档。</p>
+<h3>开始使用</h3>
+<p>准备好构建你自己的扩展了吗？以下是入门方法：</p>
+<p>对于 MCP 服务器开发者：查阅我们的开发者文档——或者直接在本地 MCP 服务器目录中运行以下命令开始：</p>
+<pre><code class="language-">npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack</code></pre>
+<p>对于 Claude Desktop 用户：更新到最新版本，并在设置中查找&quot;扩展&quot;部分</p>
+<p>对于企业用户：查阅我们的企业文档了解部署选项</p>
+<h3>使用 Claude Code 构建</h3>
+<p>在 Anthropic 内部，我们发现 Claude 能够在极少干预的情况下出色地构建扩展。如果你也想使用 Claude Code，我们建议你简要说明你希望扩展做什么，然后将以下上下文添加到提示词中：</p>
+<pre><code class="language-">I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:
+
+1. **Read the specifications thoroughly:**
+   - https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns
+   - https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions
+   - https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example
+
+2. **Create a proper extension structure:**
+   - Generate a valid manifest.json following the MANIFEST.md spec
+   - Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions
+   - Include proper error handling and timeout management
+
+3. **Follow best development practices:**
+   - Implement proper MCP protocol communication via stdio transport
+   - Structure tools with clear schemas, validation, and consistent JSON responses
+   - Make use of the fact that this extension will be running locally
+   - Add appropriate logging and debugging capabilities
+   - Include proper documentation and setup instructions
+
+4. **Test considerations:**
+   - Validate that all tool calls return properly structured responses
+   - Verify manifest loads correctly and host integration works
+
+Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</code></pre>
+<h3>结语</h3>
+<p>桌面扩展代表了用户与本地 AI 工具交互方式的根本性转变。通过消除安装摩擦，我们将强大的 MCP 服务器变得人人可用——而不仅仅是开发者。</p>
+<p>在内部，我们使用桌面扩展来分享高度实验性的 MCP 服务器——有些很有趣，有些很实用。一个团队尝试将模型直接连接到 GameBoy 看看能走多远，类似于我们的&quot;Claude 玩宝可梦&quot;研究。我们使用桌面扩展打包了一个单独的扩展，打开了流行的 PyBoy GameBoy 模拟器并让 Claude 接管控制。我们相信，将模型的能力与用户本地机器上已有的工具、数据和应用程序连接起来，存在着无数的机会。</p>
+<p>我们迫不及待地想看到你的作品。那些为我们带来数千个 MCP 服务器的创造力，现在只需一次点击就能触达数百万用户。准备好分享你的 MCP 服务器了吗？提交你的扩展以供审核。</p>
+<h3>想了解更多？</h3></div>
+                <div class="lang-en"><ul>
+<li>File extension updateSep 11, 2025Claude Desktop Extensions now use the .mcpb (MCP Bundle) file extension instead of .dxt. Existing .dxt extensions will continue to work, but we recommend developers use .mcpb for new extensions going forward. All functionality remains the same - this is purely a naming convention update.</li>
+</ul>
+<p>File extension update
+Sep 11, 2025
+Claude Desktop Extensions now use the .mcpb (MCP Bundle) file extension instead of .dxt. Existing .dxt extensions will continue to work, but we recommend developers use .mcpb for new extensions going forward. All functionality remains the same - this is purely a naming convention update.
+—
+When we released the Model Context Protocol (MCP) last year, we saw developers build amazing local servers that gave Claude access to everything from file systems to databases. But we kept hearing the same feedback: installation was too complex. Users needed developer tools, had to manually edit configuration files, and often got stuck on dependency issues.
+Today, we&#x27;re introducing Desktop Extensions—a new packaging format that makes installing MCP servers as simple as clicking a button.</p>
+<h3>Addressing the MCP installation problem</h3>
+<p>Local MCP servers unlock powerful capabilities for Claude Desktop users. They can interact with local applications, access private data, and integrate with development tools—all while keeping data on the user&#x27;s machine. However, the current installation process creates significant barriers:</p>
+<ul>
+<li>Developer tools required: Users need Node.js, Python, or other runtimes installed</li>
+<li>Manual configuration: Each server requires editing JSON configuration files</li>
+<li>Dependency management: Users must resolve package conflicts and version mismatches</li>
+<li>No discovery mechanism: Finding useful MCP servers requires searching GitHub</li>
+<li>Update complexity: Keeping servers current means manual reinstallation</li>
+</ul>
+<p>These friction points meant that MCP servers, despite their power, remained largely inaccessible to non-technical users.</p>
+<h3>Introducing Desktop Extensions</h3>
+<p>Desktop Extensions (.mcpbfiles) solve these problems by bundling an entire MCP server—including all dependencies—into a single installable package. Here&#x27;s what changes for users:
+.mcpb
+Before:</p>
+<pre><code class="language-"># Install Node.js first 
+npm install -g @example/mcp-server 
+# Edit ~/.claude/claude_desktop_config.json manually 
+# Restart Claude Desktop 
+# Hope it works</code></pre>
+<h1>Install Node.js first</h1>
+<p>npm install -g @example/mcp-server</p>
+<h1>Edit ~/.claude/claude_desktop_config.json manually</h1>
+<h1>Restart Claude Desktop</h1>
+<h1>Hope it works</h1>
+<p>After:</p>
+<ul>
+<li>Download a.mcpbfile</li>
+</ul>
+<p>.mcpb</p>
+<ul>
+<li>Double-click to open with Claude Desktop</li>
+<li>Click &quot;Install&quot;</li>
+</ul>
+<p>That&#x27;s it. No terminal, no configuration files, no dependency conflicts.</p>
+<h2>Architecture overview</h2>
+<p>A Desktop Extension is a zip archive containing the local MCP server as well as amanifest.json, which describes everything Claude Desktop and other apps supporting desktop extensions need to know.
+manifest.json</p>
+<pre><code class="language-">extension.mcpb (ZIP archive)
+├── manifest.json         # Extension metadata and configuration
+├── server/               # MCP server implementation
+│   └── [server files]    
+├── dependencies/         # All required packages/libraries
+└── icon.png             # Optional: Extension icon
+
+# Example: Node.js Extension
+extension.mcpb
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   └── index.js          # Main entry point
+├── node_modules/         # Bundled dependencies
+├── package.json          # Optional: NPM package definition
+└── icon.png              # Optional: Extension icon
+
+# Example: Python Extension
+extension.mcpb (ZIP file)
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   ├── main.py           # Main entry point
+│   └── utils.py          # Additional modules
+├── lib/                  # Bundled Python packages
+├── requirements.txt      # Optional: Python dependencies list
+└── icon.png              # Optional: Extension icon</code></pre>
+<p>extension.mcpb (ZIP archive)
+├── manifest.json         # Extension metadata and configuration
+├── server/               # MCP server implementation
+│   └── [server files]    
+├── dependencies/         # All required packages/libraries
+└── icon.png             # Optional: Extension icon</p>
+<h1>Example: Node.js Extension</h1>
+<p>extension.mcpb
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   └── index.js          # Main entry point
+├── node_modules/         # Bundled dependencies
+├── package.json          # Optional: NPM package definition
+└── icon.png              # Optional: Extension icon</p>
+<h1>Example: Python Extension</h1>
+<p>extension.mcpb (ZIP file)
+├── manifest.json         # Required: Extension metadata and configuration
+├── server/               # Server files
+│   ├── main.py           # Main entry point
+│   └── utils.py          # Additional modules
+├── lib/                  # Bundled Python packages
+├── requirements.txt      # Optional: Python dependencies list
+└── icon.png              # Optional: Extension icon
+The only required file in a Desktop Extension is a manifest.json. Claude Desktop handles all the complexity:</p>
+<ul>
+<li>Built-in runtime: We ship Node.js with Claude Desktop, eliminating external dependencies</li>
+<li>Automatic updates: Extensions update automatically when new versions are available</li>
+<li>Secure secrets: Sensitive configuration like API keys are stored in the OS keychain</li>
+</ul>
+<p>The manifest contains human-readable information (like the name, description, or author), a declaration of features (tools, prompts), user configuration, and runtime requirements. Most fields are optional, so the minimal version is quite short, although in practice, we expect all three supported extension types (Node.js, Python, and classic binaries/executables) to include files:</p>
+<pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // MCPB spec version this manifest conforms to
+  &quot;name&quot;: &quot;my-extension&quot;,                   // Machine-readable name (used for CLI, APIs)
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // Semantic version of your extension
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // Brief description of what the extension does
+  &quot;author&quot;: {                               // Author information (required)
+    &quot;name&quot;: &quot;Extension Author&quot;              // Author&#x27;s name (required field)
+  },
+  &quot;server&quot;: {                               // Server configuration (required)
+    &quot;type&quot;: &quot;node&quot;,                         // Server type: &quot;node&quot;, &quot;python&quot;, or &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // Path to the main server file
+    &quot;mcp_config&quot;: {                         // MCP server configuration
+      &quot;command&quot;: &quot;node&quot;,                    // Command to run the server
+      &quot;args&quot;: [                             // Arguments passed to the command
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} is replaced with the extension&#x27;s directory
+      ]                              
+    }
+  }
+}</code></pre>
+<p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,                    // MCPB spec version this manifest conforms to
+  &quot;name&quot;: &quot;my-extension&quot;,                   // Machine-readable name (used for CLI, APIs)
+  &quot;version&quot;: &quot;1.0.0&quot;,                       // Semantic version of your extension
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,  // Brief description of what the extension does
+  &quot;author&quot;: {                               // Author information (required)
+    &quot;name&quot;: &quot;Extension Author&quot;              // Author&#x27;s name (required field)
+  },
+  &quot;server&quot;: {                               // Server configuration (required)
+    &quot;type&quot;: &quot;node&quot;,                         // Server type: &quot;node&quot;, &quot;python&quot;, or &quot;binary&quot;
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,       // Path to the main server file
+    &quot;mcp_config&quot;: {                         // MCP server configuration
+      &quot;command&quot;: &quot;node&quot;,                    // Command to run the server
+      &quot;args&quot;: [                             // Arguments passed to the command
+        &quot;${__dirname}/server/index.js&quot;      // ${__dirname} is replaced with the extension&#x27;s directory
+      ]                              
+    }
+  }
+}
+There are a number of convenience optionsavailable in the manifest specthat aim to make the installation and configuration of local MCP servers easier. The server configuration object can be defined in a way that makes room both for user-defined configuration in the form of template literals as well as platform-specific overrides. Extension developers can define, in detail, what kind of configuration they want to collect from users.
+Let’s take a look at a concrete example of how the manifest aids with configuration. In the manifest below, the developer declares that the user needs to supply anapi_key. Claude will not enable the extension until the user has supplied that value, keep it automatically in the operating system’s secret vault, and transparently replace the${user_config.api_key}with the user-supplied value when launching the server. Similarly,${__dirname}will be replaced with the full path to the extension’s unpacked directory.
+api_key
+${user_config.api_key}
+${__dirname}</p>
+<pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}</code></pre>
+<p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;my-extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A simple MCP extension&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Extension Author&quot;
+  },
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;API_KEY&quot;: &quot;${user_config.api_key}&quot;
+      }
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: true
+    }
+  }
+}
+A fullmanifest.jsonwith most of the optional fields might look like this:
+manifest.json</p>
+<pre><code class="language-">{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}</code></pre>
+<p>{
+  &quot;mcpb_version&quot;: &quot;0.1&quot;,
+  &quot;name&quot;: &quot;My MCP Extension&quot;,
+  &quot;display_name&quot;: &quot;My Awesome MCP Extension&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;description&quot;: &quot;A brief description of what this extension does&quot;,
+  &quot;long_description&quot;: &quot;A detailed description that can include multiple paragraphs explaining the extension&#x27;s functionality, use cases, and features. It supports basic markdown.&quot;,
+  &quot;author&quot;: {
+    &quot;name&quot;: &quot;Your Name&quot;,
+    &quot;email&quot;: &quot;yourname@example.com&quot;,
+    &quot;url&quot;: &quot;https://your-website.com&quot;
+  },
+  &quot;repository&quot;: {
+    &quot;type&quot;: &quot;git&quot;,
+    &quot;url&quot;: &quot;https://github.com/your-username/my-mcp-extension&quot;
+  },
+  &quot;homepage&quot;: &quot;https://example.com/my-extension&quot;,
+  &quot;documentation&quot;: &quot;https://docs.example.com/my-extension&quot;,
+  &quot;support&quot;: &quot;https://github.com/your-username/my-extension/issues&quot;,
+  &quot;icon&quot;: &quot;icon.png&quot;,
+  &quot;screenshots&quot;: [
+    &quot;assets/screenshots/screenshot1.png&quot;,
+    &quot;assets/screenshots/screenshot2.png&quot;
+  ],
+  &quot;server&quot;: {
+    &quot;type&quot;: &quot;node&quot;,
+    &quot;entry_point&quot;: &quot;server/index.js&quot;,
+    &quot;mcp_config&quot;: {
+      &quot;command&quot;: &quot;node&quot;,
+      &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+      &quot;env&quot;: {
+        &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+      }
+    }
+  },
+  &quot;tools&quot;: [
+    {
+      &quot;name&quot;: &quot;search_files&quot;,
+      &quot;description&quot;: &quot;Search for files in a directory&quot;
+    }
+  ],
+  &quot;prompts&quot;: [
+    {
+      &quot;name&quot;: &quot;poetry&quot;,
+      &quot;description&quot;: &quot;Have the LLM write poetry&quot;,
+      &quot;arguments&quot;: [&quot;topic&quot;],
+      &quot;text&quot;: &quot;Write a creative poem about the following topic: ${arguments.topic}&quot;
+    }
+  ],
+  &quot;tools_generated&quot;: true,
+  &quot;keywords&quot;: [&quot;api&quot;, &quot;automation&quot;, &quot;productivity&quot;],
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;compatibility&quot;: {
+    &quot;claude_desktop&quot;: &quot;&gt;=1.0.0&quot;,
+    &quot;platforms&quot;: [&quot;darwin&quot;, &quot;win32&quot;, &quot;linux&quot;],
+    &quot;runtimes&quot;: {
+      &quot;node&quot;: &quot;&gt;=16.0.0&quot;
+    }
+  },
+  &quot;user_config&quot;: {
+    &quot;allowed_directories&quot;: {
+      &quot;type&quot;: &quot;directory&quot;,
+      &quot;title&quot;: &quot;Allowed Directories&quot;,
+      &quot;description&quot;: &quot;Directories the server can access&quot;,
+      &quot;multiple&quot;: true,
+      &quot;required&quot;: true,
+      &quot;default&quot;: [&quot;${HOME}/Desktop&quot;]
+    },
+    &quot;api_key&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;title&quot;: &quot;API Key&quot;,
+      &quot;description&quot;: &quot;Your API key for authentication&quot;,
+      &quot;sensitive&quot;: true,
+      &quot;required&quot;: false
+    },
+    &quot;max_file_size&quot;: {
+      &quot;type&quot;: &quot;number&quot;,
+      &quot;title&quot;: &quot;Maximum File Size (MB)&quot;,
+      &quot;description&quot;: &quot;Maximum file size to process&quot;,
+      &quot;default&quot;: 10,
+      &quot;min&quot;: 1,
+      &quot;max&quot;: 100
+    }
+  }
+}
+To see an extension and manifest, please referto the examples in the MCPB repository.
+The full specification for all required and optional fields in themanifest.jsoncan be found as part of ouropen-source toolchain.
+manifest.json</p>
+<h3>Building your first extension</h3>
+<p>Let&#x27;s walk through packaging an existing MCP server as a Desktop Extension. We&#x27;ll use a simple file system server as an example.</p>
+<h4>Step 1: Create the manifest</h4>
+<p>First, initialize a manifest for your server:</p>
+<pre><code class="language-">npx @anthropic-ai/mcpb init</code></pre>
+<p>npx @anthropic-ai/mcpb init
+This interactive tool asks about your server and generates a complete manifest.json. If you want to speed-run your way to the most basic manifest.json, you can run the command with a --yes parameter.</p>
+<h4>Step 2: Handle user configuration</h4>
+<p>If your server needs user input (like API keys or allowed directories), declare it in the manifest:</p>
+<pre><code class="language-">&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}</code></pre>
+<p>&quot;user_config&quot;: {
+  &quot;allowed_directories&quot;: {
+    &quot;type&quot;: &quot;directory&quot;,
+    &quot;title&quot;: &quot;Allowed Directories&quot;,
+    &quot;description&quot;: &quot;Directories the server can access&quot;,
+    &quot;multiple&quot;: true,
+    &quot;required&quot;: true,
+    &quot;default&quot;: [&quot;${HOME}/Documents&quot;]
+  }
+}
+Claude Desktop will:</p>
+<ul>
+<li>Display a user-friendly configuration UI</li>
+<li>Validate inputs before enabling the extension</li>
+<li>Securely store sensitive values</li>
+<li>Pass configuration to your server either as arguments or environment variables, depending on developer configuration</li>
+</ul>
+<p>In the example below, we’re passing the user configuration as an environment variable, but it could also be an argument.</p>
+<pre><code class="language-">&quot;server&quot;: {
+   &quot;type&quot;: &quot;node&quot;,
+   &quot;entry_point&quot;: &quot;server/index.js&quot;,
+   &quot;mcp_config&quot;: {
+   &quot;command&quot;: &quot;node&quot;,
+   &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+   &quot;env&quot;: {
+      &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+   }
+   }
+}</code></pre>
+<p>&quot;server&quot;: {
+   &quot;type&quot;: &quot;node&quot;,
+   &quot;entry_point&quot;: &quot;server/index.js&quot;,
+   &quot;mcp_config&quot;: {
+   &quot;command&quot;: &quot;node&quot;,
+   &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+   &quot;env&quot;: {
+      &quot;ALLOWED_DIRECTORIES&quot;: &quot;${user_config.allowed_directories}&quot;
+   }
+   }
+}</p>
+<h4>Step 3: Package the extension</h4>
+<p>Bundle everything into a.mcpbfile:
+.mcpb</p>
+<pre><code class="language-">npx @anthropic-ai/mcpb pack</code></pre>
+<p>npx @anthropic-ai/mcpb pack
+This command:</p>
+<ul>
+<li>Validates your manifest</li>
+<li>Generates the.mcpbarchive</li>
+</ul>
+<p>.mcpb</p>
+<h4>Step 4: Test locally</h4>
+<p>Drag your.mcpbfile into Claude Desktop&#x27;s Settings window. You&#x27;ll see:
+.mcpb</p>
+<ul>
+<li>Human-readable information about your extension</li>
+<li>Required permissions and configuration</li>
+<li>A simple &quot;Install&quot; button</li>
+</ul>
+<h3>Advanced features</h3>
+<h4>Cross-platform support</h4>
+<p>Extensions can adapt to different operating systems:</p>
+<pre><code class="language-">&quot;server&quot;: {
+  &quot;type&quot;: &quot;node&quot;,
+  &quot;entry_point&quot;: &quot;server/index.js&quot;,
+  &quot;mcp_config&quot;: {
+    &quot;command&quot;: &quot;node&quot;,
+    &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+    &quot;platforms&quot;: {
+      &quot;win32&quot;: {
+        &quot;command&quot;: &quot;node.exe&quot;,
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TEMP}&quot;
+        }
+      },
+      &quot;darwin&quot;: {
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TMPDIR}&quot;
+        }
+      }
+    }
+  }
+}</code></pre>
+<p>&quot;server&quot;: {
+  &quot;type&quot;: &quot;node&quot;,
+  &quot;entry_point&quot;: &quot;server/index.js&quot;,
+  &quot;mcp_config&quot;: {
+    &quot;command&quot;: &quot;node&quot;,
+    &quot;args&quot;: [&quot;${__dirname}/server/index.js&quot;],
+    &quot;platforms&quot;: {
+      &quot;win32&quot;: {
+        &quot;command&quot;: &quot;node.exe&quot;,
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TEMP}&quot;
+        }
+      },
+      &quot;darwin&quot;: {
+        &quot;env&quot;: {
+          &quot;TEMP_DIR&quot;: &quot;${TMPDIR}&quot;
+        }
+      }
+    }
+  }
+}</p>
+<h4>Dynamic configuration</h4>
+<p>Use template literals for runtime values:</p>
+<ul>
+<li>${__dirname}: Extension&#x27;s installation directory</li>
+</ul>
+<p>${__dirname}</p>
+<ul>
+<li>${user_config.key}: User-provided configuration</li>
+</ul>
+<p>${user_config.key}</p>
+<ul>
+<li>${HOME}, ${TEMP}: System environment variables</li>
+</ul>
+<p>${HOME}, ${TEMP}</p>
+<h4>Feature declaration</h4>
+<p>Help users understand capabilities upfront:</p>
+<pre><code class="language-">&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</code></pre>
+<p>&quot;tools&quot;: [
+  {
+    &quot;name&quot;: &quot;read_file&quot;,
+    &quot;description&quot;: &quot;Read contents of a file&quot;
+  }
+],
+&quot;prompts&quot;: [
+  {
+    &quot;name&quot;: &quot;code_review&quot;,
+    &quot;description&quot;: &quot;Review code for best practices&quot;,
+    &quot;arguments&quot;: [&quot;file_path&quot;]
+  }
+]</p>
+<h3>The extension directory</h3>
+<p>We&#x27;re launching with a curated directory of extensions built into Claude Desktop. Users can browse, search, and install with one click—no searching GitHub or vetting code.
+While we expect both the Desktop Extension specification and the implementation in Claude for macOS and Windows to evolve over time, we look forward to seeing the many ways in which extensions can be used to expand the capabilities of Claude in creative ways.
+To submit your extension:</p>
+<ul>
+<li>Ensure it follows the guidelines found in the submission form</li>
+<li>Test across Windows and macOS</li>
+<li>Submit your extension</li>
+<li>Our team reviews for quality and security</li>
+</ul>
+<h3>Building an open ecosystem</h3>
+<p>We are committed to the open ecosystem around MCP servers and believe that its ability to be universally adopted by multiple applications and services has benefitted the community. In line with this commitment, we’re open-sourcing the Desktop Extension specification, toolchain, and the schemas and key functions used by Claude for macOS and Windows to implement its own support of Desktop Extensions. It is our hope that the MCPB format doesn’t just make local MCP servers more portable for Claude, but other AI desktop applications, too.
+We&#x27;re open-sourcing:</p>
+<ul>
+<li>The complete MCPB specification</li>
+<li>Packaging and validation tools</li>
+<li>Reference implementation code</li>
+<li>TypeScript types and schemas</li>
+</ul>
+<p>This means:</p>
+<ul>
+<li>For MCP server developers: Package once, run anywhere that supports MCPB</li>
+<li>For app developers: Add extension support without building from scratch</li>
+<li>For users: Consistent experience across all MCP-enabled applications</li>
+</ul>
+<p>The specification and toolchain is on purpose versioned as 0.1, as we are looking forward to working with the greater community on evolving and changing the format. We look forward to hearing from you.</p>
+<h3>Security and enterprise considerations</h3>
+<p>We understand that extensions introduce new security considerations, particularly for enterprises. We&#x27;ve built in several safeguards with the preview release of Desktop Extensions:</p>
+<h4>For users</h4>
+<ul>
+<li>Sensitive data stays in the OS keychain</li>
+<li>Automatic updates</li>
+<li>Ability to audit what extensions are installed</li>
+</ul>
+<h4>For enterprises</h4>
+<ul>
+<li>Group Policy (Windows) and MDM (macOS) support</li>
+<li>Ability to pre-install approved extensions</li>
+<li>Blocklist specific extensions or publishers</li>
+<li>Disable the extension directory entirely</li>
+<li>Deploy private extension directories</li>
+</ul>
+<p>For more information about how to manage extensions within your organization, see ourdocumentation.</p>
+<h3>Getting started</h3>
+<p>Ready to build your own extension? Here&#x27;s how to start:
+For MCP server developers: Review ourdeveloper documentation– or dive right in by running the following commands in your local MCP servers’ directory:</p>
+<pre><code class="language-">npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack</code></pre>
+<p>npm install -g @anthropic-ai/mcpb
+mcpb init
+mcpb pack
+For Claude Desktop users: Update to the latest version and look for the Extensions section in Settings
+For enterprises: Review our enterprise documentation for deployment options</p>
+<h3>Building with Claude Code</h3>
+<p>Internally at Anthropic, we have found that Claude is great at building extensions with minimal intervention. If you too want to use Claude Code, we recommend that you briefly explain what you want your extension to do and then add the following context to the prompt:</p>
+<pre><code class="language-">I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:
+
+1. **Read the specifications thoroughly:**
+   - https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns
+   - https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions
+   - https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example
+
+2. **Create a proper extension structure:**
+   - Generate a valid manifest.json following the MANIFEST.md spec
+   - Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions
+   - Include proper error handling and timeout management
+
+3. **Follow best development practices:**
+   - Implement proper MCP protocol communication via stdio transport
+   - Structure tools with clear schemas, validation, and consistent JSON responses
+   - Make use of the fact that this extension will be running locally
+   - Add appropriate logging and debugging capabilities
+   - Include proper documentation and setup instructions
+
+4. **Test considerations:**
+   - Validate that all tool calls return properly structured responses
+   - Verify manifest loads correctly and host integration works
+
+Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</code></pre>
+<p>I want to build this as a Desktop Extension, abbreviated as &quot;MCPB&quot;. Please follow these steps:</p>
+<ol>
+<li><strong>Read the specifications thoroughly:</strong></li>
+</ol>
+<ul>
+<li>https://github.com/anthropics/mcpb/blob/main/README.md - MCPB architecture overview, capabilities, and integration patterns</li>
+<li>https://github.com/anthropics/mcpb/blob/main/MANIFEST.md - Complete extension manifest structure and field definitions</li>
+<li>https://github.com/anthropics/mcpb/tree/main/examples - Reference implementations including a &quot;Hello World&quot; example</li>
+</ul>
+<ol>
+<li><strong>Create a proper extension structure:</strong></li>
+</ol>
+<ul>
+<li>Generate a valid manifest.json following the MANIFEST.md spec</li>
+<li>Implement an MCP server using @modelcontextprotocol/sdk with proper tool definitions</li>
+<li>Include proper error handling and timeout management</li>
+</ul>
+<ol>
+<li><strong>Follow best development practices:</strong></li>
+</ol>
+<ul>
+<li>Implement proper MCP protocol communication via stdio transport</li>
+<li>Structure tools with clear schemas, validation, and consistent JSON responses</li>
+<li>Make use of the fact that this extension will be running locally</li>
+<li>Add appropriate logging and debugging capabilities</li>
+<li>Include proper documentation and setup instructions</li>
+</ul>
+<ol>
+<li><strong>Test considerations:</strong></li>
+</ol>
+<ul>
+<li>Validate that all tool calls return properly structured responses</li>
+<li>Verify manifest loads correctly and host integration works</li>
+</ul>
+<p>Generate complete, production-ready code that can be immediately tested. Focus on defensive programming, clear error messages, and following the exact
+MCPB specifications to ensure compatibility with the ecosystem.</p>
+<h3>Conclusion</h3>
+<p>Desktop Extensions represent a fundamental shift in how users interact with local AI tools. By removing installation friction, we&#x27;re making powerful MCP servers accessible to everyone—not just developers.
+Internally, we’re using desktop extensions to share highly experimental MCP servers - some fun, some useful.. One team experimented to see how far our models could make it when directly connected to a GameBoy, similar to our“Claude plays Pokémon” research. We used Desktop Extensions to package a single extension that opens up the popularPyBoyGameBoy emulator and lets Claude take control. We believe that countless opportunities exist to connect the model’s capabilities to the tools, data, and applications users already have on their local machines.
+We can&#x27;t wait to see what you build. The same creativity that brought us thousands of MCP servers can now reach millions of users with just one click. Ready to share your MCP server?Submit your extension for review.</p>
+<h3>Looking to learn more?</h3></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/desktop-extensions" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

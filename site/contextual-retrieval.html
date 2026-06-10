@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上下文检索（Contextual Retrieval）介绍 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h3" href="#heading-1">关于直接使用更长提示词的说明</a>
+<a class="toc-h2" href="#heading-2">RAG 入门：扩展到更大的知识库</a>
+<a class="toc-h3" href="#heading-3">传统 RAG 中的上下文困境</a>
+<a class="toc-h2" href="#heading-4">上下文检索介绍</a>
+<a class="toc-h3" href="#heading-5">实现上下文检索</a>
+<a class="toc-h3" href="#heading-6">使用提示词缓存降低上下文检索的成本</a>
+<a class="toc-h2" href="#heading-7">通过重排序进一步提升性能</a>
+<a class="toc-h3" href="#heading-8">性能提升</a>
+<a class="toc-h2" href="#heading-9">结论</a>
+<a class="toc-h2" href="#heading-10">附录 I</a>
+<a class="toc-h2" href="#heading-11">致谢</a></div>
+            <div class="toc-en"><a class="toc-h3" href="#heading-1">A note on simply using a longer prompt</a>
+<a class="toc-h2" href="#heading-2">A primer on RAG: scaling to larger knowledge bases</a>
+<a class="toc-h3" href="#heading-3">The context conundrum in traditional RAG</a>
+<a class="toc-h2" href="#heading-4">Introducing Contextual Retrieval</a>
+<a class="toc-h3" href="#heading-5">Implementing Contextual Retrieval</a>
+<a class="toc-h3" href="#heading-6">Using Prompt Caching to reduce the costs of Contextual Retrieval</a>
+<a class="toc-h2" href="#heading-7">Further boosting performance with Reranking</a>
+<a class="toc-h3" href="#heading-8">Performance improvements</a>
+<a class="toc-h2" href="#heading-9">Conclusion</a>
+<a class="toc-h2" href="#heading-10">Appendix I</a>
+<a class="toc-h2" href="#heading-11">Acknowledgements</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2024-09-19</div>
+            <div class="title-block">
+                <h1 class="cn">上下文检索（Contextual Retrieval）介绍</h1>
+                <h1 class="en">Introducing Contextual Retrieval</h1>
+                <div class="en-title">Introducing Contextual Retrieval</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>For an AI model to be useful in specific contexts, it often needs access to background knowledge. For example, customer support chatbots need knowledge about the specific business they&#x27;re being used for, and legal analyst bots need to know about a vast array of past cases.
+Developers typically enhance an AI model&#x27;s knowledge using Retrieval-Augmented Generation (RAG). RAG is a method that retrieves relevant information from a knowledge base and appends it to the user&#x27;s prompt, significantly enhancing the model&#x27;s response. The problem is that traditional RAG solutions remove context when encoding information, which often results in the system failing to retrieve the relevant information from the knowledge base.
+In this post, we outline a method that dramatically improves the retrieval step in RAG. The method is called “Contextual Retrieval” and uses two sub-techniques: Contextual Embeddings and Contextual BM25. This method can reduce the number of failed retrievals by 49% and, when combined with reranking, by 67%. These represent significant improvements in retrieval accuracy, which directly translates to better performance in downstream tasks.
+You can easily deploy your own Contextual Retrieval solution with Claude withour cookbook.</p></div><div class="lang-cn-block"><p>要让 AI 模型在特定场景中发挥作用，它通常需要获取背景知识。例如，客户支持聊天机器人需要了解所服务企业的相关信息，法律分析机器人则需要掌握大量过往案例的知识。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>A note on simply using a longer prompt</h3></div><div class="lang-cn-block"><p>开发者通常使用检索增强生成（Retrieval-Augmented Generation，RAG）来增强 AI 模型的知识。RAG 是一种从知识库中检索相关信息并将其附加到用户提示词中的方法，能够显著提升模型的响应质量。问题在于，传统的 RAG 方案在编码信息时会丢失上下文，导致系统往往无法从知识库中检索到相关信息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Sometimes the simplest solution is the best. If your knowledge base is smaller than 200,000 tokens (about 500 pages of material), you can just include the entire knowledge base in the prompt that you give the model, with no need for RAG or similar methods.
+A few weeks ago, we releasedprompt cachingfor Claude, which makes this approach significantly faster and more cost-effective. Developers can now cache frequently used prompts between API calls, reducing latency by &gt; 2x and costs by up to 90% (you can see how it works by reading ourprompt caching cookbook).
+However, as your knowledge base grows, you&#x27;ll need a more scalable solution. That’s where Contextual Retrieval comes in.</p></div><div class="lang-cn-block"><p>本文介绍了一种大幅改进 RAG 检索步骤的方法，名为&quot;上下文检索&quot;（Contextual Retrieval），它使用了两项子技术：上下文嵌入（Contextual Embeddings）和上下文 BM25（Contextual BM25）。该方法可以将检索失败率降低 49%，结合重排序（Reranking）后更可降低 67%。这些改进显著提升了检索准确性，直接转化为下游任务的更好表现。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>A primer on RAG: scaling to larger knowledge bases</h2></div><div class="lang-cn-block"><p>你可以通过我们的 cookbook 轻松部署自己的上下文检索方案。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>For larger knowledge bases that don&#x27;t fit within the context window, RAG is the typical solution. RAG works by preprocessing a knowledge base using the following steps:</p></div><div class="lang-cn-block"><h3 id="heading-1">关于直接使用更长提示词的说明</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Break down the knowledge base (the “corpus” of documents) into smaller chunks of text, usually no more than a few hundred tokens;</li><li>Use an embedding model to convert these chunks into vector embeddings that encode meaning;</li><li>Store these embeddings in a vector database that allows for searching by semantic similarity.</li></ul></div><div class="lang-cn-block"><p>有时候最简单的方案就是最好的。如果你的知识库小于 200,000 个 token（约 500 页材料），你可以直接将整个知识库包含在提供给模型的提示词中，无需使用 RAG 或类似方法。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>At runtime, when a user inputs a query to the model, the vector database is used to find the most relevant chunks based on semantic similarity to the query. Then, the most relevant chunks are added to the prompt sent to the generative model.
+While embedding models excel at capturing semantic relationships, they can miss crucial exact matches. Fortunately, there’s an older technique that can assist in these situations. BM25 (Best Matching 25) is a ranking function that uses lexical matching to find precise word or phrase matches. It&#x27;s particularly effective for queries that include unique identifiers or technical terms.
+BM25 works by building upon the TF-IDF (Term Frequency-Inverse Document Frequency) concept. TF-IDF measures how important a word is to a document in a collection. BM25 refines this by considering document length and applying a saturation function to term frequency, which helps prevent common words from dominating the results.
+Here’s how BM25 can succeed where semantic embeddings fail: Suppose a user queries &quot;Error code TS-999&quot; in a technical support database. An embedding model might find content about error codes in general, but could miss the exact &quot;TS-999&quot; match. BM25 looks for this specific text string to identify the relevant documentation.
+RAG solutions can more accurately retrieve the most applicable chunks by combining the embeddings and BM25 techniques using the following steps:</p></div><div class="lang-cn-block"><p>几周前，我们为 Claude 发布了提示词缓存（prompt caching）功能，使这种方法更加快速且经济高效。开发者现在可以在 API 调用之间缓存常用的提示词，将延迟降低 2 倍以上，成本最高可降低 90%（你可以通过阅读我们的 prompt caching cookbook 了解其工作原理）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Break down the knowledge base (the &quot;corpus&quot; of documents) into smaller chunks of text, usually no more than a few hundred tokens;</li><li>Create TF-IDF encodings and semantic embeddings for these chunks;</li><li>Use BM25 to find top chunks based on exact matches;</li><li>Use embeddings to find top chunks based on semantic similarity;</li><li>Combine and deduplicate results from (3) and (4) using rank fusion techniques;</li><li>Add the top-K chunks to the prompt to generate the response.</li></ul></div><div class="lang-cn-block"><p>然而，随着知识库的增长，你需要更具可扩展性的方案。这正是上下文检索的用武之地。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>By leveraging both BM25 and embedding models, traditional RAG systems can provide more comprehensive and accurate results, balancing precise term matching with broader semantic understanding.
+This approach allows you to cost-effectively scale to enormous knowledge bases, far beyond what could fit in a single prompt. But these traditional RAG systems have a significant limitation: they often destroy context.</p></div><div class="lang-cn-block"><h2 id="heading-2">RAG 入门：扩展到更大的知识库</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>The context conundrum in traditional RAG</h3></div><div class="lang-cn-block"><p>对于无法在上下文窗口中容纳的大型知识库，RAG 是常用的解决方案。RAG 通过以下步骤对知识库进行预处理：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In traditional RAG, documents are typically split into smaller chunks for efficient retrieval. While this approach works well for many applications, it can lead to problems when individual chunks lack sufficient context.
+For example, imagine you had a collection of financial information (say, U.S. SEC filings) embedded in your knowledge base, and you received the following question:&quot;What was the revenue growth for ACME Corp in Q2 2023?&quot;
+A relevant chunk might contain the text:&quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;However, this chunk on its own doesn&#x27;t specify which company it&#x27;s referring to or the relevant time period, making it difficult to retrieve the right information or use the information effectively.</p></div><div class="lang-cn-block"><ul><li>将知识库（文档&quot;语料库&quot;）拆分为较小的文本块（chunk），通常不超过几百个 token；</li><li>使用嵌入模型（Embedding Model）将这些文本块转换为编码含义的向量嵌入（Vector Embedding）；</li><li>将这些嵌入存储在向量数据库中，支持按语义相似性进行搜索。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Introducing Contextual Retrieval</h2></div><div class="lang-cn-block"><p>在运行时，当用户向模型输入查询时，向量数据库会根据查询的语义相似性找到最相关的文本块。然后，将最相关的文本块添加到发送给生成模型的提示词中。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Contextual Retrieval solves this problem by prepending chunk-specific explanatory context to each chunk before embedding (“Contextual Embeddings”) and creating the BM25 index (“Contextual BM25”).
+Let’s return to our SEC filings collection example. Here&#x27;s an example of how a chunk might be transformed:</p></div><div class="lang-cn-block"><p>虽然嵌入模型擅长捕捉语义关系，但它们可能会遗漏关键的精确匹配。幸运的是，有一种更早期的技术可以在这些场景中提供帮助。BM25（Best Matching 25）是一种排序函数，使用词汇匹配来查找精确的词或短语匹配。它对于包含唯一标识符或技术术语的查询尤为有效。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+
+contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</p></div><div class="lang-cn-block"><p>以下是一个 BM25 在语义嵌入失效时发挥作用的例子：假设用户在技术支持数据库中查询&quot;错误代码 TS-999&quot;。嵌入模型可能找到关于错误代码的通用内容，但可能遗漏精确的&quot;TS-999&quot;匹配。而 BM25 会查找这个特定的文本来识别相关文档。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+It is worth noting that other approaches to using context to improve retrieval have been proposed in the past. Other proposals include:adding generic document summaries to chunks(we experimented and saw very limited gains),hypothetical document embedding, andsummary-based indexing(we evaluated and saw low performance). These methods differ from what is proposed in this post.</p></div><div class="lang-cn-block"><p>RAG 方案可以通过以下步骤将嵌入和 BM25 技术结合起来，更准确地检索最适用的文本块：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Implementing Contextual Retrieval</h3></div><div class="lang-cn-block"><ul><li>将知识库（文档&quot;语料库&quot;）拆分为较小的文本块，通常不超过几百个 token；</li><li>为这些文本块创建 TF-IDF 编码和语义嵌入；</li><li>使用 BM25 基于精确匹配查找排名靠前的文本块；</li><li>使用嵌入基于语义相似性查找排名靠前的文本块；</li><li>使用排序融合（Rank Fusion）技术合并并去重第 (3) 和 (4) 步的结果；</li><li>将排名前 K 的文本块添加到提示词中以生成响应。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Of course, it would be far too much work to manually annotate the thousands or even millions of chunks in a knowledge base. To implement Contextual Retrieval, we turn to Claude. We’ve written a prompt that instructs the model to provide concise, chunk-specific context that explains the chunk using the context of the overall document. We used the following Claude 3 Haiku prompt to generate context for each chunk:</p></div><div class="lang-cn-block"><p>通过同时利用 BM25 和嵌入模型，传统 RAG 系统能够提供更全面、更准确的结果，在精确术语匹配与更广泛的语义理解之间取得平衡。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.
+The resulting contextual text, usually 50-100 tokens, is prepended to the chunk before embedding it and before creating the BM25 index.
+Here’s what the preprocessing flow looks like in practice:
+If you’re interested in using Contextual Retrieval, you can get started withour cookbook.</p></div><div class="lang-cn-block"><h3 id="heading-3">传统 RAG 中的上下文困境</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Using Prompt Caching to reduce the costs of Contextual Retrieval</h3></div><div class="lang-cn-block"><p>在传统 RAG 中，文档通常被拆分为较小的文本块以实现高效检索。虽然这种方法对许多应用效果良好，但当单个文本块缺乏足够的上下文时，可能会导致问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Contextual Retrieval is uniquely possible at low cost with Claude, thanks to the special prompt caching feature we mentioned above. With prompt caching, you don’t need to pass in the reference document for every chunk. You simply load the document into the cache once and then reference the previously cached content. Assuming 800 token chunks, 8k token documents, 50 token context instructions, and 100 tokens of context per chunk,the one-time cost to generate contextualized chunks is $1.02 per million document tokens.</p></div><div class="lang-cn-block"><p>例如，假设你的知识库中嵌入了一组财务信息（比如美国 SEC 文件），你收到以下问题：&quot;ACME 公司 2023 年第二季度的收入增长是多少？&quot;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Methodology</h4></div><div class="lang-cn-block"><p>一个相关的文本块可能包含以下文本：&quot;该公司收入较上一季度增长了 3%。&quot;然而，这个文本块本身并没有指明它指的是哪家公司或相关时间段，使得难以检索到正确的信息或有效使用这些信息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We experimented across various knowledge domains (codebases, fiction, ArXiv papers, Science Papers), embedding models, retrieval strategies, and evaluation metrics. We’ve included a few examples of the questions and answers we used for each domain inAppendix II.
+The graphs below show the average performance across all knowledge domains with the top-performing embedding configuration (Gemini Text 004) and retrieving the top-20-chunks. We use 1 minus recall@20 as our evaluation metric, which measures the percentage of relevant documents that fail to be retrieved within the top 20 chunks. You can see the full results in the appendix - contextualizing improves performance in every embedding-source combination we evaluated.</p></div><div class="lang-cn-block"><h2 id="heading-4">上下文检索介绍</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Performance improvements</h4></div><div class="lang-cn-block"><p>上下文检索通过在嵌入（&quot;上下文嵌入&quot;）和创建 BM25 索引（&quot;上下文 BM25&quot;）之前，为每个文本块添加特定于该块的解释性上下文来解决这一问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our experiments showed that:</p></div><div class="lang-cn-block"><p>让我们回到 SEC 文件集合的例子。以下是文本块转换的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Contextual Embeddings reduced the top-20-chunk retrieval failure rate by 35%(5.7% → 3.7%).</li><li>Combining Contextual Embeddings and Contextual BM25 reduced the top-20-chunk retrieval failure rate by 49%(5.7% → 2.9%).</li></ul></div><div class="lang-cn-block"><pre><code class="language-">original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+
+contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Implementation considerations</h4></div><div class="lang-cn-block"><p>值得注意的是，过去也有其他利用上下文来改进检索的方法被提出。其他方案包括：在文本块中添加通用文档摘要（我们实验后发现收益非常有限）、假设文档嵌入（Hypothetical Document Embedding）和基于摘要的索引（Summary-based Indexing）（我们评估后发现性能较低）。这些方法与本文提出的方法不同。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When implementing Contextual Retrieval, there are a few considerations to keep in mind:</p></div><div class="lang-cn-block"><h3 id="heading-5">实现上下文检索</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Chunk boundaries:Consider how you split your documents into chunks. The choice of chunk size, chunk boundary, and chunk overlap can affect retrieval performance1.</li><li>Embedding model:Whereas Contextual Retrieval improves performance across all embedding models we tested, some models may benefit more than others. We foundGeminiandVoyageembeddings to be particularly effective.</li><li>Custom contextualizer prompts:While the generic prompt we provided works well, you may be able to achieve even better results with prompts tailored to your specific domain or use case (for example, including a glossary of key terms that might only be defined in other documents in the knowledge base).</li><li>Number of chunks:Adding more chunks into the context window increases the chances that you include the relevant information. However, more information can be distracting for models so there&#x27;s a limit to this. We tried delivering 5, 10, and 20 chunks, and found using 20 to be the most performant of these options (see appendix for comparisons) but it’s worth experimenting on your use case.</li></ul></div><div class="lang-cn-block"><p>当然，手动标注知识库中数千甚至数百万个文本块的工作量实在太大。为了实现上下文检索，我们使用 Claude。我们编写了一个提示词，指示模型提供简洁的、针对特定文本块的上下文，利用整体文档的上下文来解释该文本块。我们使用以下 Claude 3 Haiku 提示词来为每个文本块生成上下文：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Always run evals:Response generation may be improved by passing it the contextualized chunk and distinguishing between what is context and what is the chunk.</p></div><div class="lang-cn-block"><pre><code class="language-">&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Further boosting performance with Reranking</h2></div><div class="lang-cn-block"><p>生成的上下文文本通常为 50-100 个 token，在嵌入和创建 BM25 索引之前会被添加到文本块前面。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In a final step, we can combine Contextual Retrieval with another technique to give even more performance improvements. In traditional RAG, the AI system searches its knowledge base to find the potentially relevant information chunks. With large knowledge bases, this initial retrieval often returns a lot of chunks—sometimes hundreds—of varying relevance and importance.
+Reranking is a commonly used filtering technique to ensure that only the most relevant chunks are passed to the model. Reranking provides better responses and reduces cost and latency because the model is processing less information. The key steps are:</p></div><div class="lang-cn-block"><p>以下是实际的预处理流程：
+如果你有兴趣使用上下文检索，可以通过我们的 cookbook 开始。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Perform initial retrieval to get the top potentially relevant chunks (we used the top 150);</li><li>Pass the top-N chunks, along with the user&#x27;s query, through the reranking model;</li><li>Using a reranking model, give each chunk a score based on its relevance and importance to the prompt, then select the top-K chunks (we used the top 20);</li><li>Pass the top-K chunks into the model as context to generate the final result.</li></ul></div><div class="lang-cn-block"><h3 id="heading-6">使用提示词缓存降低上下文检索的成本</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Performance improvements</h3></div><div class="lang-cn-block"><p>得益于我们前面提到的特殊提示词缓存功能，上下文检索在 Claude 上能够以低成本实现。通过提示词缓存，你无需为每个文本块传入参考文档。你只需将文档加载到缓存中一次，然后引用之前缓存的内容即可。假设文本块为 800 个 token，文档为 8k 个 token，上下文指令为 50 个 token，每个文本块的上下文为 100 个 token，生成上下文化文本块的一次性成本为每百万文档 token 1.02 美元。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>There are several reranking models on the market. We ran our tests with theCohere reranker. Voyagealso offers a reranker, though we did not have time to test it. Our experiments showed that, across various domains, adding a reranking step further optimizes retrieval.
+Specifically, we found that Reranked Contextual Embedding and Contextual BM25 reduced the top-20-chunk retrieval failure rate by 67% (5.7% → 1.9%).</p></div><div class="lang-cn-block"><h4>方法论</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Cost and latency considerations</h4></div><div class="lang-cn-block"><p>我们在多个知识领域（代码库、小说、ArXiv 论文、科学论文）、多种嵌入模型、检索策略和评估指标上进行了实验。我们在附录 II 中列出了每个领域使用的问答示例。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>One important consideration with reranking is the impact on latency and cost, especially when reranking a large number of chunks. Because reranking adds an extra step at runtime, it inevitably adds a small amount of latency, even though the reranker scores all the chunks in parallel. There is an inherent trade-off between reranking more chunks for better performance vs. reranking fewer for lower latency and cost. We recommend experimenting with different settings on your specific use case to find the right balance.</p></div><div class="lang-cn-block"><p>下图展示了在所有知识领域中使用最佳嵌入配置（Gemini Text 004）并检索前 20 个文本块的平均性能。我们使用 1 减去 recall@20 作为评估指标，衡量在前 20 个文本块中未能检索到的相关文档的百分比。完整结果可在附录中查看——在我们评估的每种嵌入-来源组合中，添加上下文都能提升性能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Conclusion</h2></div><div class="lang-cn-block"><h4 id="heading-8">性能提升</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We ran a large number of tests, comparing different combinations of all the techniques described above (embedding model, use of BM25, use of contextual retrieval, use of a reranker, and total # of top-K results retrieved), all across a variety of different dataset types. Here’s a summary of what we found:</p></div><div class="lang-cn-block"><p>我们的实验表明：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Embeddings+BM25 is better than embeddings on their own;</li><li>Voyage and Gemini have the best embeddings of the ones we tested;</li><li>Passing the top-20 chunks to the model is more effective than just the top-10 or top-5;</li><li>Adding context to chunks improves retrieval accuracy a lot;</li><li>Reranking is better than no reranking;</li><li>All these benefits stack: to maximize performance improvements, we can combine contextual embeddings (from Voyage or Gemini) with contextual BM25, plus a reranking step, and adding the 20 chunks to the prompt.</li></ul></div><div class="lang-cn-block"><ul><li>上下文嵌入将前 20 个文本块的检索失败率降低了 35%（5.7% → 3.7%）。</li><li>结合上下文嵌入和上下文 BM25 将前 20 个文本块的检索失败率降低了 49%（5.7% → 2.9%）。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We encourage all developers working with knowledge bases to useour cookbookto experiment with these approaches to unlock new levels of performance.</p></div><div class="lang-cn-block"><h4>实现注意事项</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Appendix I</h2></div><div class="lang-cn-block"><p>在实现上下文检索时，需要注意以下几点：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Below is a breakdown of results across datasets, embedding providers, use of BM25 in addition to embeddings, use of contextual retrieval, and use of reranking for Retrievals @ 20.
+SeeAppendix IIfor the breakdowns for Retrievals @ 10 and @ 5 as well as example questions and answers for each dataset.</p></div><div class="lang-cn-block"><ul><li>文本块边界：考虑如何将文档拆分为文本块。文本块大小、边界和重叠的选择会影响检索性能。</li><li>嵌入模型：虽然上下文检索在我们测试的所有嵌入模型上都能提升性能，但某些模型可能受益更多。我们发现 Gemini 和 Voyage 嵌入特别有效。</li><li>自定义上下文生成器提示词：虽然我们提供的通用提示词效果很好，但针对特定领域或用例定制的提示词可能会获得更好的效果（例如，包含可能仅在知识库其他文档中定义的关键术语的术语表）。</li><li>文本块数量：在上下文窗口中添加更多文本块会增加包含相关信息的机会。然而，过多的信息可能会分散模型的注意力，因此存在上限。我们尝试了 5、10 和 20 个文本块，发现使用 20 个是这些选项中效果最好的（比较见附录），但建议在你的用例上进行实验。</li><li>始终运行评估：通过传递上下文化的文本块并区分上下文与文本块本身，可以改进响应生成。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Acknowledgements</h2></div><div class="lang-cn-block"><h2 id="heading-7">通过重排序进一步提升性能</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Research and writing by Daniel Ford. Thanks to Orowa Sikder, Gautam Mittal, and Kenneth Lien for critical feedback, Samuel Flamini for implementing the cookbooks, Lauren Polansky for project coordination and Alex Albert, Susan Payne, Stuart Ritchie, and Brad Abrams for shaping this blog post.</p></div><div class="lang-cn-block"><p>在最后一步中，我们可以将上下文检索与另一种技术结合，以获得更大的性能提升。在传统 RAG 中，AI 系统搜索知识库以找到潜在相关的信息文本块。对于大型知识库，初始检索通常会返回大量文本块——有时多达数百个——其相关性和重要性各不相同。</p></div></div>
+<div class="lang-cn-block"><p>重排序（Reranking）是一种常用的过滤技术，确保只有最相关的文本块被传递给模型。重排序提供更好的响应，并降低成本和延迟，因为模型处理的信息更少。关键步骤如下：</p></div>
+<div class="lang-cn-block"><ul><li>执行初始检索以获取最有可能相关的文本块（我们使用前 150 个）；</li></ul></div>
+<div class="lang-cn-block"><ul><li>将排名前 N 的文本块与用户查询一起传入重排序模型；</li></ul></div>
+<div class="lang-cn-block"><ul><li>使用重排序模型，根据每个文本块与提示词的相关性和重要性给出分数，然后选择排名前 K 的文本块（我们使用前 20 个）；</li></ul></div>
+<div class="lang-cn-block"><ul><li>将排名前 K 的文本块作为上下文传入模型以生成最终结果。</li></ul></div>
+<div class="lang-cn-block"><h3 id="heading-8">性能提升</h3></div>
+<div class="lang-cn-block"><p>市场上有多种重排序模型。我们使用 Cohere reranker 进行了测试。Voyage 也提供重排序器，但我们没有时间进行测试。我们的实验表明，在各个领域中，添加重排序步骤可以进一步优化检索。</p></div>
+<div class="lang-cn-block"><p>具体而言，我们发现经过重排序的上下文嵌入和上下文 BM25 将前 20 个文本块的检索失败率降低了 67%（5.7% → 1.9%）。</p></div>
+<div class="lang-cn-block"><h4>成本和延迟考虑</h4></div>
+<div class="lang-cn-block"><p>重排序的一个重要考虑是对延迟和成本的影响，尤其是在对大量文本块进行重排序时。因为重排序在运行时增加了额外步骤，即使重排序器并行地对所有文本块评分，也不可避免地会增加少量延迟。在为获得更好性能而重排序更多文本块与为降低延迟和成本而重排序更少文本块之间，存在固有的权衡。我们建议在你的特定用例上尝试不同设置，以找到合适的平衡点。</p></div>
+<div class="lang-cn-block"><h2 id="heading-9">结论</h2></div>
+<div class="lang-cn-block"><p>我们进行了大量测试，比较了上述所有技术的不同组合（嵌入模型、是否使用 BM25、是否使用上下文检索、是否使用重排序器，以及检索的前 K 个结果总数），涵盖了多种不同的数据集类型。以下是我们发现的总结：</p></div>
+<div class="lang-cn-block"><ul><li>嵌入 + BM25 优于单独使用嵌入；</li></ul></div>
+<div class="lang-cn-block"><ul><li>在我们测试的模型中，Voyage 和 Gemini 的嵌入效果最好；</li></ul></div>
+<div class="lang-cn-block"><ul><li>将前 20 个文本块传递给模型比仅使用前 10 或前 5 个更有效；</li></ul></div>
+<div class="lang-cn-block"><ul><li>为文本块添加上下文能大幅提升检索准确性；</li></ul></div>
+<div class="lang-cn-block"><ul><li>重排序优于不使用重排序；</li></ul></div>
+<div class="lang-cn-block"><ul><li>所有这些收益可以叠加：为了最大化性能提升，我们可以结合上下文嵌入（来自 Voyage 或 Gemini）、上下文 BM25、重排序步骤，并将 20 个文本块添加到提示词中。</li></ul></div>
+<div class="lang-cn-block"><p>我们鼓励所有使用知识库的开发者使用我们的 cookbook 来实验这些方法，以解锁新的性能水平。</p></div>
+<div class="lang-cn-block"><h2 id="heading-10">附录 I</h2></div>
+<div class="lang-cn-block"><p>以下是按数据集、嵌入提供者、是否在嵌入基础上使用 BM25、是否使用上下文检索、是否使用重排序对 Retrievals @ 20 结果的详细分类。</p></div>
+<div class="lang-cn-block"><p>Retrievals @ 10 和 @ 5 的分类以及每个数据集的示例问答详见附录 II。</p></div>
+<div class="lang-cn-block"><h2 id="heading-11">致谢</h2></div>
+<div class="lang-cn-block"><p>研究和撰写：Daniel Ford。感谢 Orowa Sikder、Gautam Mittal 和 Kenneth Lien 提供的关键反馈，Samuel Flamini 实现了 cookbook，Lauren Polansky 负责项目协调，以及 Alex Albert、Susan Payne、Stuart Ritchie 和 Brad Abrams 对本博文的指导。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>要让 AI 模型在特定场景中发挥作用，它通常需要获取背景知识。例如，客户支持聊天机器人需要了解所服务企业的相关信息，法律分析机器人则需要掌握大量过往案例的知识。</p>
+<p>开发者通常使用检索增强生成（Retrieval-Augmented Generation，RAG）来增强 AI 模型的知识。RAG 是一种从知识库中检索相关信息并将其附加到用户提示词中的方法，能够显著提升模型的响应质量。问题在于，传统的 RAG 方案在编码信息时会丢失上下文，导致系统往往无法从知识库中检索到相关信息。</p>
+<p>本文介绍了一种大幅改进 RAG 检索步骤的方法，名为&quot;上下文检索&quot;（Contextual Retrieval），它使用了两项子技术：上下文嵌入（Contextual Embeddings）和上下文 BM25（Contextual BM25）。该方法可以将检索失败率降低 49%，结合重排序（Reranking）后更可降低 67%。这些改进显著提升了检索准确性，直接转化为下游任务的更好表现。</p>
+<p>你可以通过我们的 cookbook 轻松部署自己的上下文检索方案。</p>
+<h3>关于直接使用更长提示词的说明</h3>
+<p>有时候最简单的方案就是最好的。如果你的知识库小于 200,000 个 token（约 500 页材料），你可以直接将整个知识库包含在提供给模型的提示词中，无需使用 RAG 或类似方法。</p>
+<p>几周前，我们为 Claude 发布了提示词缓存（prompt caching）功能，使这种方法更加快速且经济高效。开发者现在可以在 API 调用之间缓存常用的提示词，将延迟降低 2 倍以上，成本最高可降低 90%（你可以通过阅读我们的 prompt caching cookbook 了解其工作原理）。</p>
+<p>然而，随着知识库的增长，你需要更具可扩展性的方案。这正是上下文检索的用武之地。</p>
+<h2>RAG 入门：扩展到更大的知识库</h2>
+<p>对于无法在上下文窗口中容纳的大型知识库，RAG 是常用的解决方案。RAG 通过以下步骤对知识库进行预处理：</p>
+<ul>
+<li>将知识库（文档&quot;语料库&quot;）拆分为较小的文本块（chunk），通常不超过几百个 token；</li>
+<li>使用嵌入模型（Embedding Model）将这些文本块转换为编码含义的向量嵌入（Vector Embedding）；</li>
+<li>将这些嵌入存储在向量数据库中，支持按语义相似性进行搜索。</li>
+</ul>
+<p>在运行时，当用户向模型输入查询时，向量数据库会根据查询的语义相似性找到最相关的文本块。然后，将最相关的文本块添加到发送给生成模型的提示词中。</p>
+<p>虽然嵌入模型擅长捕捉语义关系，但它们可能会遗漏关键的精确匹配。幸运的是，有一种更早期的技术可以在这些场景中提供帮助。BM25（Best Matching 25）是一种排序函数，使用词汇匹配来查找精确的词或短语匹配。它对于包含唯一标识符或技术术语的查询尤为有效。</p>
+<p>BM25 建立在 TF-IDF（词频-逆文档频率，Term Frequency-Inverse Document Frequency）概念之上。TF-IDF 衡量一个词对文档集合中某篇文档的重要程度。BM25 通过考虑文档长度并对词频应用饱和函数来改进这一方法，这有助于防止常见词汇主导结果。</p>
+<p>以下是一个 BM25 在语义嵌入失效时发挥作用的例子：假设用户在技术支持数据库中查询&quot;错误代码 TS-999&quot;。嵌入模型可能找到关于错误代码的通用内容，但可能遗漏精确的&quot;TS-999&quot;匹配。而 BM25 会查找这个特定的文本来识别相关文档。</p>
+<p>RAG 方案可以通过以下步骤将嵌入和 BM25 技术结合起来，更准确地检索最适用的文本块：</p>
+<ul>
+<li>将知识库（文档&quot;语料库&quot;）拆分为较小的文本块，通常不超过几百个 token；</li>
+<li>为这些文本块创建 TF-IDF 编码和语义嵌入；</li>
+<li>使用 BM25 基于精确匹配查找排名靠前的文本块；</li>
+<li>使用嵌入基于语义相似性查找排名靠前的文本块；</li>
+<li>使用排序融合（Rank Fusion）技术合并并去重第 (3) 和 (4) 步的结果；</li>
+<li>将排名前 K 的文本块添加到提示词中以生成响应。</li>
+</ul>
+<p>通过同时利用 BM25 和嵌入模型，传统 RAG 系统能够提供更全面、更准确的结果，在精确术语匹配与更广泛的语义理解之间取得平衡。</p>
+<p>这种方法让你能够经济高效地扩展到庞大的知识库，远远超出单个提示词所能容纳的范围。但这些传统 RAG 系统有一个重大局限：它们往往会破坏上下文。</p>
+<h3>传统 RAG 中的上下文困境</h3>
+<p>在传统 RAG 中，文档通常被拆分为较小的文本块以实现高效检索。虽然这种方法对许多应用效果良好，但当单个文本块缺乏足够的上下文时，可能会导致问题。</p>
+<p>例如，假设你的知识库中嵌入了一组财务信息（比如美国 SEC 文件），你收到以下问题：&quot;ACME 公司 2023 年第二季度的收入增长是多少？&quot;</p>
+<p>一个相关的文本块可能包含以下文本：&quot;该公司收入较上一季度增长了 3%。&quot;然而，这个文本块本身并没有指明它指的是哪家公司或相关时间段，使得难以检索到正确的信息或有效使用这些信息。</p>
+<h2>上下文检索介绍</h2>
+<p>上下文检索通过在嵌入（&quot;上下文嵌入&quot;）和创建 BM25 索引（&quot;上下文 BM25&quot;）之前，为每个文本块添加特定于该块的解释性上下文来解决这一问题。</p>
+<p>让我们回到 SEC 文件集合的例子。以下是文本块转换的示例：</p>
+<pre><code class="language-">original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+
+contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</code></pre>
+<p>值得注意的是，过去也有其他利用上下文来改进检索的方法被提出。其他方案包括：在文本块中添加通用文档摘要（我们实验后发现收益非常有限）、假设文档嵌入（Hypothetical Document Embedding）和基于摘要的索引（Summary-based Indexing）（我们评估后发现性能较低）。这些方法与本文提出的方法不同。</p>
+<h3>实现上下文检索</h3>
+<p>当然，手动标注知识库中数千甚至数百万个文本块的工作量实在太大。为了实现上下文检索，我们使用 Claude。我们编写了一个提示词，指示模型提供简洁的、针对特定文本块的上下文，利用整体文档的上下文来解释该文本块。我们使用以下 Claude 3 Haiku 提示词来为每个文本块生成上下文：</p>
+<pre><code class="language-">&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.</code></pre>
+<p>生成的上下文文本通常为 50-100 个 token，在嵌入和创建 BM25 索引之前会被添加到文本块前面。</p>
+<p>以下是实际的预处理流程：
+如果你有兴趣使用上下文检索，可以通过我们的 cookbook 开始。</p>
+<h3>使用提示词缓存降低上下文检索的成本</h3>
+<p>得益于我们前面提到的特殊提示词缓存功能，上下文检索在 Claude 上能够以低成本实现。通过提示词缓存，你无需为每个文本块传入参考文档。你只需将文档加载到缓存中一次，然后引用之前缓存的内容即可。假设文本块为 800 个 token，文档为 8k 个 token，上下文指令为 50 个 token，每个文本块的上下文为 100 个 token，生成上下文化文本块的一次性成本为每百万文档 token 1.02 美元。</p>
+<h4>方法论</h4>
+<p>我们在多个知识领域（代码库、小说、ArXiv 论文、科学论文）、多种嵌入模型、检索策略和评估指标上进行了实验。我们在附录 II 中列出了每个领域使用的问答示例。</p>
+<p>下图展示了在所有知识领域中使用最佳嵌入配置（Gemini Text 004）并检索前 20 个文本块的平均性能。我们使用 1 减去 recall@20 作为评估指标，衡量在前 20 个文本块中未能检索到的相关文档的百分比。完整结果可在附录中查看——在我们评估的每种嵌入-来源组合中，添加上下文都能提升性能。</p>
+<h4>性能提升</h4>
+<p>我们的实验表明：</p>
+<ul>
+<li>上下文嵌入将前 20 个文本块的检索失败率降低了 35%（5.7% → 3.7%）。</li>
+<li>结合上下文嵌入和上下文 BM25 将前 20 个文本块的检索失败率降低了 49%（5.7% → 2.9%）。</li>
+</ul>
+<h4>实现注意事项</h4>
+<p>在实现上下文检索时，需要注意以下几点：</p>
+<ul>
+<li>文本块边界：考虑如何将文档拆分为文本块。文本块大小、边界和重叠的选择会影响检索性能。</li>
+<li>嵌入模型：虽然上下文检索在我们测试的所有嵌入模型上都能提升性能，但某些模型可能受益更多。我们发现 Gemini 和 Voyage 嵌入特别有效。</li>
+<li>自定义上下文生成器提示词：虽然我们提供的通用提示词效果很好，但针对特定领域或用例定制的提示词可能会获得更好的效果（例如，包含可能仅在知识库其他文档中定义的关键术语的术语表）。</li>
+<li>文本块数量：在上下文窗口中添加更多文本块会增加包含相关信息的机会。然而，过多的信息可能会分散模型的注意力，因此存在上限。我们尝试了 5、10 和 20 个文本块，发现使用 20 个是这些选项中效果最好的（比较见附录），但建议在你的用例上进行实验。</li>
+<li>始终运行评估：通过传递上下文化的文本块并区分上下文与文本块本身，可以改进响应生成。</li>
+</ul>
+<h2>通过重排序进一步提升性能</h2>
+<p>在最后一步中，我们可以将上下文检索与另一种技术结合，以获得更大的性能提升。在传统 RAG 中，AI 系统搜索知识库以找到潜在相关的信息文本块。对于大型知识库，初始检索通常会返回大量文本块——有时多达数百个——其相关性和重要性各不相同。</p>
+<p>重排序（Reranking）是一种常用的过滤技术，确保只有最相关的文本块被传递给模型。重排序提供更好的响应，并降低成本和延迟，因为模型处理的信息更少。关键步骤如下：</p>
+<ul>
+<li>执行初始检索以获取最有可能相关的文本块（我们使用前 150 个）；</li>
+<li>将排名前 N 的文本块与用户查询一起传入重排序模型；</li>
+<li>使用重排序模型，根据每个文本块与提示词的相关性和重要性给出分数，然后选择排名前 K 的文本块（我们使用前 20 个）；</li>
+<li>将排名前 K 的文本块作为上下文传入模型以生成最终结果。</li>
+</ul>
+<h3>性能提升</h3>
+<p>市场上有多种重排序模型。我们使用 Cohere reranker 进行了测试。Voyage 也提供重排序器，但我们没有时间进行测试。我们的实验表明，在各个领域中，添加重排序步骤可以进一步优化检索。</p>
+<p>具体而言，我们发现经过重排序的上下文嵌入和上下文 BM25 将前 20 个文本块的检索失败率降低了 67%（5.7% → 1.9%）。</p>
+<h4>成本和延迟考虑</h4>
+<p>重排序的一个重要考虑是对延迟和成本的影响，尤其是在对大量文本块进行重排序时。因为重排序在运行时增加了额外步骤，即使重排序器并行地对所有文本块评分，也不可避免地会增加少量延迟。在为获得更好性能而重排序更多文本块与为降低延迟和成本而重排序更少文本块之间，存在固有的权衡。我们建议在你的特定用例上尝试不同设置，以找到合适的平衡点。</p>
+<h2>结论</h2>
+<p>我们进行了大量测试，比较了上述所有技术的不同组合（嵌入模型、是否使用 BM25、是否使用上下文检索、是否使用重排序器，以及检索的前 K 个结果总数），涵盖了多种不同的数据集类型。以下是我们发现的总结：</p>
+<ul>
+<li>嵌入 + BM25 优于单独使用嵌入；</li>
+<li>在我们测试的模型中，Voyage 和 Gemini 的嵌入效果最好；</li>
+<li>将前 20 个文本块传递给模型比仅使用前 10 或前 5 个更有效；</li>
+<li>为文本块添加上下文能大幅提升检索准确性；</li>
+<li>重排序优于不使用重排序；</li>
+<li>所有这些收益可以叠加：为了最大化性能提升，我们可以结合上下文嵌入（来自 Voyage 或 Gemini）、上下文 BM25、重排序步骤，并将 20 个文本块添加到提示词中。</li>
+</ul>
+<p>我们鼓励所有使用知识库的开发者使用我们的 cookbook 来实验这些方法，以解锁新的性能水平。</p>
+<h2>附录 I</h2>
+<p>以下是按数据集、嵌入提供者、是否在嵌入基础上使用 BM25、是否使用上下文检索、是否使用重排序对 Retrievals @ 20 结果的详细分类。</p>
+<p>Retrievals @ 10 和 @ 5 的分类以及每个数据集的示例问答详见附录 II。</p>
+<h2>致谢</h2>
+<p>研究和撰写：Daniel Ford。感谢 Orowa Sikder、Gautam Mittal 和 Kenneth Lien 提供的关键反馈，Samuel Flamini 实现了 cookbook，Lauren Polansky 负责项目协调，以及 Alex Albert、Susan Payne、Stuart Ritchie 和 Brad Abrams 对本博文的指导。</p></div>
+                <div class="lang-en"><p>For an AI model to be useful in specific contexts, it often needs access to background knowledge. For example, customer support chatbots need knowledge about the specific business they&#x27;re being used for, and legal analyst bots need to know about a vast array of past cases.
+Developers typically enhance an AI model&#x27;s knowledge using Retrieval-Augmented Generation (RAG). RAG is a method that retrieves relevant information from a knowledge base and appends it to the user&#x27;s prompt, significantly enhancing the model&#x27;s response. The problem is that traditional RAG solutions remove context when encoding information, which often results in the system failing to retrieve the relevant information from the knowledge base.
+In this post, we outline a method that dramatically improves the retrieval step in RAG. The method is called “Contextual Retrieval” and uses two sub-techniques: Contextual Embeddings and Contextual BM25. This method can reduce the number of failed retrievals by 49% and, when combined with reranking, by 67%. These represent significant improvements in retrieval accuracy, which directly translates to better performance in downstream tasks.
+You can easily deploy your own Contextual Retrieval solution with Claude withour cookbook.</p>
+<h3>A note on simply using a longer prompt</h3>
+<p>Sometimes the simplest solution is the best. If your knowledge base is smaller than 200,000 tokens (about 500 pages of material), you can just include the entire knowledge base in the prompt that you give the model, with no need for RAG or similar methods.
+A few weeks ago, we releasedprompt cachingfor Claude, which makes this approach significantly faster and more cost-effective. Developers can now cache frequently used prompts between API calls, reducing latency by &gt; 2x and costs by up to 90% (you can see how it works by reading ourprompt caching cookbook).
+However, as your knowledge base grows, you&#x27;ll need a more scalable solution. That’s where Contextual Retrieval comes in.</p>
+<h2>A primer on RAG: scaling to larger knowledge bases</h2>
+<p>For larger knowledge bases that don&#x27;t fit within the context window, RAG is the typical solution. RAG works by preprocessing a knowledge base using the following steps:</p>
+<ul>
+<li>Break down the knowledge base (the “corpus” of documents) into smaller chunks of text, usually no more than a few hundred tokens;</li>
+<li>Use an embedding model to convert these chunks into vector embeddings that encode meaning;</li>
+<li>Store these embeddings in a vector database that allows for searching by semantic similarity.</li>
+</ul>
+<p>At runtime, when a user inputs a query to the model, the vector database is used to find the most relevant chunks based on semantic similarity to the query. Then, the most relevant chunks are added to the prompt sent to the generative model.
+While embedding models excel at capturing semantic relationships, they can miss crucial exact matches. Fortunately, there’s an older technique that can assist in these situations. BM25 (Best Matching 25) is a ranking function that uses lexical matching to find precise word or phrase matches. It&#x27;s particularly effective for queries that include unique identifiers or technical terms.
+BM25 works by building upon the TF-IDF (Term Frequency-Inverse Document Frequency) concept. TF-IDF measures how important a word is to a document in a collection. BM25 refines this by considering document length and applying a saturation function to term frequency, which helps prevent common words from dominating the results.
+Here’s how BM25 can succeed where semantic embeddings fail: Suppose a user queries &quot;Error code TS-999&quot; in a technical support database. An embedding model might find content about error codes in general, but could miss the exact &quot;TS-999&quot; match. BM25 looks for this specific text string to identify the relevant documentation.
+RAG solutions can more accurately retrieve the most applicable chunks by combining the embeddings and BM25 techniques using the following steps:</p>
+<ul>
+<li>Break down the knowledge base (the &quot;corpus&quot; of documents) into smaller chunks of text, usually no more than a few hundred tokens;</li>
+<li>Create TF-IDF encodings and semantic embeddings for these chunks;</li>
+<li>Use BM25 to find top chunks based on exact matches;</li>
+<li>Use embeddings to find top chunks based on semantic similarity;</li>
+<li>Combine and deduplicate results from (3) and (4) using rank fusion techniques;</li>
+<li>Add the top-K chunks to the prompt to generate the response.</li>
+</ul>
+<p>By leveraging both BM25 and embedding models, traditional RAG systems can provide more comprehensive and accurate results, balancing precise term matching with broader semantic understanding.
+This approach allows you to cost-effectively scale to enormous knowledge bases, far beyond what could fit in a single prompt. But these traditional RAG systems have a significant limitation: they often destroy context.</p>
+<h3>The context conundrum in traditional RAG</h3>
+<p>In traditional RAG, documents are typically split into smaller chunks for efficient retrieval. While this approach works well for many applications, it can lead to problems when individual chunks lack sufficient context.
+For example, imagine you had a collection of financial information (say, U.S. SEC filings) embedded in your knowledge base, and you received the following question:&quot;What was the revenue growth for ACME Corp in Q2 2023?&quot;
+A relevant chunk might contain the text:&quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;However, this chunk on its own doesn&#x27;t specify which company it&#x27;s referring to or the relevant time period, making it difficult to retrieve the right information or use the information effectively.</p>
+<h2>Introducing Contextual Retrieval</h2>
+<p>Contextual Retrieval solves this problem by prepending chunk-specific explanatory context to each chunk before embedding (“Contextual Embeddings”) and creating the BM25 index (“Contextual BM25”).
+Let’s return to our SEC filings collection example. Here&#x27;s an example of how a chunk might be transformed:</p>
+<pre><code class="language-">original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+
+contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</code></pre>
+<p>original_chunk = &quot;The company&#x27;s revenue grew by 3% over the previous quarter.&quot;</p>
+<p>contextualized_chunk = &quot;This chunk is from an SEC filing on ACME corp&#x27;s performance in Q2 2023; the previous quarter&#x27;s revenue was $314 million. The company&#x27;s revenue grew by 3% over the previous quarter.&quot;
+It is worth noting that other approaches to using context to improve retrieval have been proposed in the past. Other proposals include:adding generic document summaries to chunks(we experimented and saw very limited gains),hypothetical document embedding, andsummary-based indexing(we evaluated and saw low performance). These methods differ from what is proposed in this post.</p>
+<h3>Implementing Contextual Retrieval</h3>
+<p>Of course, it would be far too much work to manually annotate the thousands or even millions of chunks in a knowledge base. To implement Contextual Retrieval, we turn to Claude. We’ve written a prompt that instructs the model to provide concise, chunk-specific context that explains the chunk using the context of the overall document. We used the following Claude 3 Haiku prompt to generate context for each chunk:</p>
+<pre><code class="language-">&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.</code></pre>
+<p>&lt;document&gt; 
+{{WHOLE_DOCUMENT}} 
+&lt;/document&gt; 
+Here is the chunk we want to situate within the whole document 
+&lt;chunk&gt; 
+{{CHUNK_CONTENT}} 
+&lt;/chunk&gt; 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.
+The resulting contextual text, usually 50-100 tokens, is prepended to the chunk before embedding it and before creating the BM25 index.
+Here’s what the preprocessing flow looks like in practice:
+If you’re interested in using Contextual Retrieval, you can get started withour cookbook.</p>
+<h3>Using Prompt Caching to reduce the costs of Contextual Retrieval</h3>
+<p>Contextual Retrieval is uniquely possible at low cost with Claude, thanks to the special prompt caching feature we mentioned above. With prompt caching, you don’t need to pass in the reference document for every chunk. You simply load the document into the cache once and then reference the previously cached content. Assuming 800 token chunks, 8k token documents, 50 token context instructions, and 100 tokens of context per chunk,the one-time cost to generate contextualized chunks is $1.02 per million document tokens.</p>
+<h4>Methodology</h4>
+<p>We experimented across various knowledge domains (codebases, fiction, ArXiv papers, Science Papers), embedding models, retrieval strategies, and evaluation metrics. We’ve included a few examples of the questions and answers we used for each domain inAppendix II.
+The graphs below show the average performance across all knowledge domains with the top-performing embedding configuration (Gemini Text 004) and retrieving the top-20-chunks. We use 1 minus recall@20 as our evaluation metric, which measures the percentage of relevant documents that fail to be retrieved within the top 20 chunks. You can see the full results in the appendix - contextualizing improves performance in every embedding-source combination we evaluated.</p>
+<h4>Performance improvements</h4>
+<p>Our experiments showed that:</p>
+<ul>
+<li>Contextual Embeddings reduced the top-20-chunk retrieval failure rate by 35%(5.7% → 3.7%).</li>
+<li>Combining Contextual Embeddings and Contextual BM25 reduced the top-20-chunk retrieval failure rate by 49%(5.7% → 2.9%).</li>
+</ul>
+<h4>Implementation considerations</h4>
+<p>When implementing Contextual Retrieval, there are a few considerations to keep in mind:</p>
+<ul>
+<li>Chunk boundaries:Consider how you split your documents into chunks. The choice of chunk size, chunk boundary, and chunk overlap can affect retrieval performance1.</li>
+<li>Embedding model:Whereas Contextual Retrieval improves performance across all embedding models we tested, some models may benefit more than others. We foundGeminiandVoyageembeddings to be particularly effective.</li>
+<li>Custom contextualizer prompts:While the generic prompt we provided works well, you may be able to achieve even better results with prompts tailored to your specific domain or use case (for example, including a glossary of key terms that might only be defined in other documents in the knowledge base).</li>
+<li>Number of chunks:Adding more chunks into the context window increases the chances that you include the relevant information. However, more information can be distracting for models so there&#x27;s a limit to this. We tried delivering 5, 10, and 20 chunks, and found using 20 to be the most performant of these options (see appendix for comparisons) but it’s worth experimenting on your use case.</li>
+</ul>
+<p>Always run evals:Response generation may be improved by passing it the contextualized chunk and distinguishing between what is context and what is the chunk.</p>
+<h2>Further boosting performance with Reranking</h2>
+<p>In a final step, we can combine Contextual Retrieval with another technique to give even more performance improvements. In traditional RAG, the AI system searches its knowledge base to find the potentially relevant information chunks. With large knowledge bases, this initial retrieval often returns a lot of chunks—sometimes hundreds—of varying relevance and importance.
+Reranking is a commonly used filtering technique to ensure that only the most relevant chunks are passed to the model. Reranking provides better responses and reduces cost and latency because the model is processing less information. The key steps are:</p>
+<ul>
+<li>Perform initial retrieval to get the top potentially relevant chunks (we used the top 150);</li>
+<li>Pass the top-N chunks, along with the user&#x27;s query, through the reranking model;</li>
+<li>Using a reranking model, give each chunk a score based on its relevance and importance to the prompt, then select the top-K chunks (we used the top 20);</li>
+<li>Pass the top-K chunks into the model as context to generate the final result.</li>
+</ul>
+<h3>Performance improvements</h3>
+<p>There are several reranking models on the market. We ran our tests with theCohere reranker. Voyagealso offers a reranker, though we did not have time to test it. Our experiments showed that, across various domains, adding a reranking step further optimizes retrieval.
+Specifically, we found that Reranked Contextual Embedding and Contextual BM25 reduced the top-20-chunk retrieval failure rate by 67% (5.7% → 1.9%).</p>
+<h4>Cost and latency considerations</h4>
+<p>One important consideration with reranking is the impact on latency and cost, especially when reranking a large number of chunks. Because reranking adds an extra step at runtime, it inevitably adds a small amount of latency, even though the reranker scores all the chunks in parallel. There is an inherent trade-off between reranking more chunks for better performance vs. reranking fewer for lower latency and cost. We recommend experimenting with different settings on your specific use case to find the right balance.</p>
+<h2>Conclusion</h2>
+<p>We ran a large number of tests, comparing different combinations of all the techniques described above (embedding model, use of BM25, use of contextual retrieval, use of a reranker, and total # of top-K results retrieved), all across a variety of different dataset types. Here’s a summary of what we found:</p>
+<ul>
+<li>Embeddings+BM25 is better than embeddings on their own;</li>
+<li>Voyage and Gemini have the best embeddings of the ones we tested;</li>
+<li>Passing the top-20 chunks to the model is more effective than just the top-10 or top-5;</li>
+<li>Adding context to chunks improves retrieval accuracy a lot;</li>
+<li>Reranking is better than no reranking;</li>
+<li>All these benefits stack: to maximize performance improvements, we can combine contextual embeddings (from Voyage or Gemini) with contextual BM25, plus a reranking step, and adding the 20 chunks to the prompt.</li>
+</ul>
+<p>We encourage all developers working with knowledge bases to useour cookbookto experiment with these approaches to unlock new levels of performance.</p>
+<h2>Appendix I</h2>
+<p>Below is a breakdown of results across datasets, embedding providers, use of BM25 in addition to embeddings, use of contextual retrieval, and use of reranking for Retrievals @ 20.
+SeeAppendix IIfor the breakdowns for Retrievals @ 10 and @ 5 as well as example questions and answers for each dataset.</p>
+<h2>Acknowledgements</h2>
+<p>Research and writing by Daniel Ford. Thanks to Orowa Sikder, Gautam Mittal, and Kenneth Lien for critical feedback, Samuel Flamini for implementing the cookbooks, Lauren Polansky for project coordination and Alex Albert, Susan Payne, Stuart Ritchie, and Brad Abrams for shaping this blog post.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/contextual-retrieval" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

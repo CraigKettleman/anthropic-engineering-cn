@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>构建有效的智能体（Agent） - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">什么是智能体？</a>
+<a class="toc-h2" href="#heading-2">何时（以及何时不）使用智能体</a>
+<a class="toc-h2" href="#heading-3">何时以及如何使用框架</a>
+<a class="toc-h2" href="#heading-4">构建块、工作流和智能体</a>
+<a class="toc-h3" href="#heading-5">构建块：增强型 LLM</a>
+<a class="toc-h3" href="#heading-6">工作流：提示链</a>
+<a class="toc-h3" href="#heading-7">工作流：路由</a>
+<a class="toc-h3" href="#heading-8">工作流：并行化</a>
+<a class="toc-h3" href="#heading-9">工作流：编排者-工作者</a>
+<a class="toc-h3" href="#heading-10">工作流：评估者-优化者</a>
+<a class="toc-h3" href="#heading-11">智能体</a>
+<a class="toc-h2" href="#heading-12">组合和自定义这些模式</a>
+<a class="toc-h2" href="#heading-13">总结</a>
+<a class="toc-h3" href="#heading-14">致谢</a>
+<a class="toc-h2" href="#heading-15">附录 1：智能体实践</a>
+<a class="toc-h3" href="#heading-16">A. 客户支持</a>
+<a class="toc-h3" href="#heading-17">B. 编码智能体</a>
+<a class="toc-h2" href="#heading-18">附录 2：工具的提示工程</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">What are agents?</a>
+<a class="toc-h2" href="#heading-2">When (and when not) to use agents</a>
+<a class="toc-h2" href="#heading-3">When and how to use frameworks</a>
+<a class="toc-h2" href="#heading-4">Building blocks, workflows, and agents</a>
+<a class="toc-h3" href="#heading-5">Building block: The augmented LLM</a>
+<a class="toc-h3" href="#heading-6">Workflow: Prompt chaining</a>
+<a class="toc-h3" href="#heading-7">Workflow: Routing</a>
+<a class="toc-h3" href="#heading-8">Workflow: Parallelization</a>
+<a class="toc-h3" href="#heading-9">Workflow: Orchestrator-workers</a>
+<a class="toc-h3" href="#heading-10">Workflow: Evaluator-optimizer</a>
+<a class="toc-h3" href="#heading-11">Agents</a>
+<a class="toc-h2" href="#heading-12">Combining and customizing these patterns</a>
+<a class="toc-h2" href="#heading-13">Summary</a>
+<a class="toc-h3" href="#heading-14">Acknowledgements</a>
+<a class="toc-h2" href="#heading-15">Appendix 1: Agents in practice</a>
+<a class="toc-h3" href="#heading-16">A. Customer support</a>
+<a class="toc-h3" href="#heading-17">B. Coding agents</a>
+<a class="toc-h2" href="#heading-18">Appendix 2: Prompt engineering your tools</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2024-12-19</div>
+            <div class="title-block">
+                <h1 class="cn">构建有效的智能体（Agent）</h1>
+                <h1 class="en">Building effective agents</h1>
+                <div class="en-title">Building effective agents</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Over the past year, we&#x27;ve worked with dozens of teams building large language model (LLM) agents across industries. Consistently, the most successful implementations weren&#x27;t using complex frameworks or specialized libraries. Instead, they were building with simple, composable patterns.
+In this post, we share what we’ve learned from working with our customers and building agents ourselves, and give practical advice for developers on building effective agents.</p></div><div class="lang-cn-block"><p>在过去一年中，我们与数十个团队合作，在各行各业构建大语言模型（LLM）智能体。一致的是，最成功的实现并没有使用复杂的框架或专门的库。相反，他们使用的是简单、可组合的模式来构建。
+在本文中，我们分享了从与客户合作以及自己构建智能体中学到的经验，并为开发者提供了构建有效智能体的实用建议。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>What are agents?</h2></div><div class="lang-cn-block"><h2 id="heading-1">什么是智能体？</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&quot;Agent&quot; can be defined in several ways. Some customers define agents as fully autonomous systems that operate independently over extended periods, using various tools to accomplish complex tasks. Others use the term to describe more prescriptive implementations that follow predefined workflows. At Anthropic, we categorize all these variations asagentic systems, but draw an important architectural distinction betweenworkflowsandagents:</p></div><div class="lang-cn-block"><p>&quot;智能体&quot;可以有多种定义。一些客户将智能体定义为完全自主的系统，能够在较长时间内独立运行，使用各种工具来完成复杂任务。另一些客户则用这个术语来描述遵循预定义工作流的更规范化的实现。在 Anthropic，我们将所有这些变体归类为<strong>智能体系统</strong>（agentic systems），但在<strong>工作流</strong>（workflows）和<strong>智能体</strong>（agents）之间做出了重要的架构区分：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Workflowsare systems where LLMs and tools are orchestrated through predefined code paths.</li><li>Agents, on the other hand, are systems where LLMs dynamically direct their own processes and tool usage, maintaining control over how they accomplish tasks.</li></ul></div><div class="lang-cn-block"><ul><li><strong>工作流</strong>是通过预定义的代码路径来编排 LLM 和工具的系统。</li><li><strong>智能体</strong>则是 LLM 动态指导自身流程和工具使用的系统，保持对如何完成任务的控制权。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Below, we will explore both types of agentic systems in detail. In Appendix 1 (“Agents in Practice”), we describe two domains where customers have found particular value in using these kinds of systems.</p></div><div class="lang-cn-block"><p>下面，我们将详细探讨这两种类型的智能体系统。在附录 1（&quot;智能体实践&quot;）中，我们描述了客户在使用这类系统时发现特别有价值的两个领域。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>When (and when not) to use agents</h2></div><div class="lang-cn-block"><h2 id="heading-2">何时（以及何时不）使用智能体</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When building applications with LLMs, we recommend finding the simplest solution possible, and only increasing complexity when needed. This might mean not building agentic systems at all. Agentic systems often trade latency and cost for better task performance, and you should consider when this tradeoff makes sense.
+When more complexity is warranted, workflows offer predictability and consistency for well-defined tasks, whereas agents are the better option when flexibility and model-driven decision-making are needed at scale. For many applications, however, optimizing single LLM calls with retrieval and in-context examples is usually enough.</p></div><div class="lang-cn-block"><p>在使用 LLM 构建应用程序时，我们建议找到尽可能简单的解决方案，只在需要时才增加复杂性。这可能意味着根本不构建智能体系统。智能体系统通常以延迟和成本换取更好的任务性能，你应该考虑这种权衡何时是合理的。
+当需要更多复杂性时，工作流为定义明确的任务提供可预测性和一致性，而智能体则是在需要大规模灵活性和模型驱动决策时的更好选择。然而，对于许多应用来说，通过检索和上下文示例来优化单次 LLM 调用通常就足够了。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>When and how to use frameworks</h2></div><div class="lang-cn-block"><h2 id="heading-3">何时以及如何使用框架</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>There are many frameworks that make agentic systems easier to implement, including:</p></div><div class="lang-cn-block"><p>有许多框架可以使智能体系统更易于实现，包括：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>TheClaude Agent SDK;</li><li>Strands Agents SDK by AWS;</li><li>Rivet, a drag and drop GUI LLM workflow builder; and</li><li>Vellum, another GUI tool for building and testing complex workflows.</li></ul></div><div class="lang-cn-block"><ul><li>TheClaude Agent SDK；</li><li>AWS 的 Strands Agents SDK；</li><li>Rivet，一个拖放式 GUI LLM 工作流构建器；以及</li><li>Vellum，另一个用于构建和测试复杂工作流的 GUI 工具。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>These frameworks make it easy to get started by simplifying standard low-level tasks like calling LLMs, defining and parsing tools, and chaining calls together. However, they often create extra layers of abstraction that can obscure the underlying prompts ​​and responses, making them harder to debug. They can also make it tempting to add complexity when a simpler setup would suffice.
+We suggest that developers start by using LLM APIs directly: many patterns can be implemented in a few lines of code. If you do use a framework, ensure you understand the underlying code. Incorrect assumptions about what&#x27;s under the hood are a common source of customer error.
+See ourcookbookfor some sample implementations.</p></div><div class="lang-cn-block"><p>这些框架通过简化标准的底层任务（如调用 LLM、定义和解析工具、将调用链接在一起）使入门变得容易。然而，它们通常会创建额外的抽象层，可能会掩盖底层的提示和响应，使调试变得更加困难。它们也可能诱使你在更简单的设置就足够的情况下增加复杂性。
+我们建议开发者从直接使用 LLM API 开始：许多模式可以用几行代码实现。如果你确实使用框架，请确保你理解底层代码。对底层机制的错误假设是客户错误的常见来源。
+请参阅我们的 cookbook 获取一些示例实现。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Building blocks, workflows, and agents</h2></div><div class="lang-cn-block"><h2 id="heading-4">构建块、工作流和智能体</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In this section, we’ll explore the common patterns for agentic systems we’ve seen in production. We&#x27;ll start with our foundational building block—the augmented LLM—and progressively increase complexity, from simple compositional workflows to autonomous agents.</p></div><div class="lang-cn-block"><p>在本节中，我们将探讨在生产环境中看到的智能体系统的常见模式。我们将从基础构建块——增强型 LLM 开始，逐步增加复杂性，从简单的组合工作流到自主智能体。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Building block: The augmented LLM</h3></div><div class="lang-cn-block"><h3 id="heading-5">构建块：增强型 LLM</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The basic building block of agentic systems is an LLM enhanced with augmentations such as retrieval, tools, and memory. Our current models can actively use these capabilities—generating their own search queries, selecting appropriate tools, and determining what information to retain.
+We recommend focusing on two key aspects of the implementation: tailoring these capabilities to your specific use case and ensuring they provide an easy, well-documented interface for your LLM. While there are many ways to implement these augmentations, one approach is through our recently releasedModel Context Protocol, which allows developers to integrate with a growing ecosystem of third-party tools with a simpleclient implementation.
+For the remainder of this post, we&#x27;ll assume each LLM call has access to these augmented capabilities.</p></div><div class="lang-cn-block"><p>智能体系统的基本构建块是一个经过增强的 LLM，增强了检索、工具和记忆等功能。我们当前的模型能够主动使用这些能力——生成自己的搜索查询、选择适当的工具以及决定保留哪些信息。
+我们建议关注实现的两个关键方面：根据你的特定用例定制这些能力，并确保它们为你的 LLM 提供易于使用、文档完善的接口。虽然有许多方法可以实现这些增强，但一种方法是通过我们最近发布的 Model Context Protocol，它允许开发者通过简单的客户端实现与不断增长的第三方工具生态系统集成。
+在本文的其余部分，我们假设每次 LLM 调用都可以访问这些增强能力。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Workflow: Prompt chaining</h3></div><div class="lang-cn-block"><h3 id="heading-6">工作流：提示链</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Prompt chaining decomposes a task into a sequence of steps, where each LLM call processes the output of the previous one. You can add programmatic checks (see &quot;gate” in the diagram below) on any intermediate steps to ensure that the process is still on track.
+When to use this workflow:This workflow is ideal for situations where the task can be easily and cleanly decomposed into fixed subtasks. The main goal is to trade off latency for higher accuracy, by making each LLM call an easier task.
+Examples where prompt chaining is useful:</p></div><div class="lang-cn-block"><p>提示链（Prompt chaining）将任务分解为一系列步骤，其中每个 LLM call 处理前一个的输出。你可以在任何中间步骤添加程序化检查（见下图中的&quot;gate&quot;），以确保过程仍在正轨上。
+<strong>何时使用此工作流：</strong> 此工作流适用于任务可以轻松且清晰地分解为固定子任务的情况。主要目标是通过使每个 LLM call 成为更简单的任务来以延迟换取更高准确性。
+提示链有用的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Generating Marketing copy, then translating it into a different language.</li><li>Writing an outline of a document, checking that the outline meets certain criteria, then writing the document based on the outline.</li></ul></div><div class="lang-cn-block"><ul><li>生成营销文案，然后将其翻译成另一种语言。</li><li>编写文档大纲，检查大纲是否满足某些标准，然后根据大纲编写文档。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Workflow: Routing</h3></div><div class="lang-cn-block"><h3 id="heading-7">工作流：路由</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Routing classifies an input and directs it to a specialized followup task. This workflow allows for separation of concerns, and building more specialized prompts. Without this workflow, optimizing for one kind of input can hurt performance on other inputs.
+When to use this workflow:Routing works well for complex tasks where there are distinct categories that are better handled separately, and where classification can be handled accurately, either by an LLM or a more traditional classification model/algorithm.
+Examples where routing is useful:</p></div><div class="lang-cn-block"><p>路由（Routing）对输入进行分类，并将其引导到专门的后续任务。此工作流允许关注点分离，并构建更专门的提示。没有此工作流，优化一种输入可能会损害其他输入的性能。
+<strong>何时使用此工作流：</strong> 路由适用于复杂任务，其中有不同的类别最好分别处理，并且分类可以由 LLM 或更传统的分类模型/算法准确处理。
+路由有用的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Directing different types of customer service queries (general questions, refund requests, technical support) into different downstream processes, prompts, and tools.</li><li>Routing easy/common questions to smaller, cost-efficient models like Claude Haiku 4.5 and hard/unusual questions to more capable models like Claude Sonnet 4.5 to optimize for best performance.</li></ul></div><div class="lang-cn-block"><ul><li>将不同类型的客户服务查询（一般问题、退款请求、技术支持）引导到不同的下游流程、提示和工具中。</li><li>将简单/常见问题路由到较小的、成本效益高的模型（如 Claude Haiku 4.5），将困难/不寻常的问题路由到更强大的模型（如 Claude Sonnet 4.5），以优化最佳性能。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Workflow: Parallelization</h3></div><div class="lang-cn-block"><h3 id="heading-8">工作流：并行化</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>LLMs can sometimes work simultaneously on a task and have their outputs aggregated programmatically. This workflow, parallelization, manifests in two key variations:</p></div><div class="lang-cn-block"><p>LLM 有时可以同时处理一个任务，并以编程方式聚合它们的输出。这种并行化工作流表现为两种关键变体：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Sectioning: Breaking a task into independent subtasks run in parallel.</li><li>Voting:Running the same task multiple times to get diverse outputs.</li></ul></div><div class="lang-cn-block"><ul><li><strong>分段（Sectioning）：</strong> 将任务分解为独立的子任务并行运行。</li><li><strong>投票（Voting）：</strong> 多次运行同一任务以获得多样化的输出。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When to use this workflow:Parallelization is effective when the divided subtasks can be parallelized for speed, or when multiple perspectives or attempts are needed for higher confidence results. For complex tasks with multiple considerations, LLMs generally perform better when each consideration is handled by a separate LLM call, allowing focused attention on each specific aspect.
+Examples where parallelization is useful:</p></div><div class="lang-cn-block"><p><strong>何时使用此工作流：</strong> 当划分的子任务可以并行化以提高速度，或者需要多个视角或尝试以获得更高置信度的结果时，并行化是有效的。对于具有多个考量因素的复杂任务，当每个考量因素由单独的 LLM call 处理时，LLM 通常表现更好，允许对每个特定方面进行专注关注。
+并行化有用的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Sectioning:Implementing guardrails where one model instance processes user queries while another screens them for inappropriate content or requests. This tends to perform better than having the same LLM call handle both guardrails and the core response.Automating evals for evaluating LLM performance, where each LLM call evaluates a different aspect of the model’s performance on a given prompt.</li><li>Implementing guardrails where one model instance processes user queries while another screens them for inappropriate content or requests. This tends to perform better than having the same LLM call handle both guardrails and the core response.</li><li>Automating evals for evaluating LLM performance, where each LLM call evaluates a different aspect of the model’s performance on a given prompt.</li><li>Voting:Reviewing a piece of code for vulnerabilities, where several different prompts review and flag the code if they find a problem.Evaluating whether a given piece of content is inappropriate, with multiple prompts evaluating different aspects or requiring different vote thresholds to balance false positives and negatives.</li><li>Reviewing a piece of code for vulnerabilities, where several different prompts review and flag the code if they find a problem.</li><li>Evaluating whether a given piece of content is inappropriate, with multiple prompts evaluating different aspects or requiring different vote thresholds to balance false positives and negatives.</li></ul></div><div class="lang-cn-block"><ul><li><strong>分段：</strong></li><li>实现护栏，其中一个模型实例处理用户查询，而另一个筛选不当内容或请求。这往往比让同一个 LLM call 同时处理护栏和核心响应表现更好。</li><li>自动化评估以评估 LLM 性能，其中每个 LLM call 评估模型在给定提示上的不同方面。</li><li><strong>投票：</strong></li><li>审查代码漏洞，其中几个不同的提示审查代码，如果发现问题则标记。</li><li>评估给定内容是否不当，使用多个提示评估不同方面或需要不同的投票阈值以平衡误报和漏报。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Workflow: Orchestrator-workers</h3></div><div class="lang-cn-block"><h3 id="heading-9">工作流：编排者-工作者</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In the orchestrator-workers workflow, a central LLM dynamically breaks down tasks, delegates them to worker LLMs, and synthesizes their results.
+When to use this workflow:This workflow is well-suited for complex tasks where you can’t predict the subtasks needed (in coding, for example, the number of files that need to be changed and the nature of the change in each file likely depend on the task). Whereas it’s topographically similar, the key difference from parallelization is its flexibility—subtasks aren&#x27;t pre-defined, but determined by the orchestrator based on the specific input.
+Example where orchestrator-workers is useful:</p></div><div class="lang-cn-block"><p>在编排者-工作者（Orchestrator-workers）工作流中，一个中央 LLM 动态分解任务，将其委派给工作者 LLM，并综合它们的结果。
+<strong>何时使用此工作流：</strong> 此工作流适用于无法预测所需子任务的复杂任务（例如在编码中，需要更改的文件数量以及每个文件中更改的性质可能取决于任务）。虽然在拓扑上与并行化相似，但关键区别在于其灵活性——子任务不是预定义的，而是由编排者根据特定输入确定的。
+编排者-工作者有用的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Coding products that make complex changes to multiple files each time.</li><li>Search tasks that involve gathering and analyzing information from multiple sources for possible relevant information.</li></ul></div><div class="lang-cn-block"><ul><li>每次对多个文件进行复杂更改的编码产品。</li><li>涉及从多个来源收集和分析信息以寻找可能相关信息的搜索任务。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Workflow: Evaluator-optimizer</h3></div><div class="lang-cn-block"><h3 id="heading-10">工作流：评估者-优化者</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In the evaluator-optimizer workflow, one LLM call generates a response while another provides evaluation and feedback in a loop.
+When to use this workflow:This workflow is particularly effective when we have clear evaluation criteria, and when iterative refinement provides measurable value. The two signs of good fit are, first, that LLM responses can be demonstrably improved when a human articulates their feedback; and second, that the LLM can provide such feedback. This is analogous to the iterative writing process a human writer might go through when producing a polished document.
+Examples where evaluator-optimizer is useful:</p></div><div class="lang-cn-block"><p>在评估者-优化者（Evaluator-optimizer）工作流中，一个 LLM call 生成响应，而另一个在循环中提供评估和反馈。
+<strong>何时使用此工作流：</strong> 当我们有明确的评估标准，并且迭代改进提供可衡量的价值时，此工作流特别有效。良好适用的两个标志是：首先，当人类阐明其反馈时，LLM 响应可以明显改善；其次，LLM 可以提供此类反馈。这类似于人类作者在制作精良文档时可能经历的迭代写作过程。
+评估者-优化者有用的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Literary translation where there are nuances that the translator LLM might not capture initially, but where an evaluator LLM can provide useful critiques.</li><li>Complex search tasks that require multiple rounds of searching and analysis to gather comprehensive information, where the evaluator decides whether further searches are warranted.</li></ul></div><div class="lang-cn-block"><ul><li>文学翻译，其中翻译 LLM 最初可能未捕捉到的细微差别，但评估者 LLM 可以提供有用的批评。</li><li>需要多轮搜索和分析以收集全面信息的复杂搜索任务，其中评估者决定是否需要进一步搜索。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Agents</h3></div><div class="lang-cn-block"><h3 id="heading-11">智能体</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Agents are emerging in production as LLMs mature in key capabilities—understanding complex inputs, engaging in reasoning and planning, using tools reliably, and recovering from errors. Agents begin their work with either a command from, or interactive discussion with, the human user. Once the task is clear, agents plan and operate independently, potentially returning to the human for further information or judgement. During execution, it&#x27;s crucial for the agents to gain “ground truth” from the environment at each step (such as tool call results or code execution) to assess its progress. Agents can then pause for human feedback at checkpoints or when encountering blockers. The task often terminates upon completion, but it’s also common to include stopping conditions (such as a maximum number of iterations) to maintain control.
+Agents can handle sophisticated tasks, but their implementation is often straightforward. They are typically just LLMs using tools based on environmental feedback in a loop. It is therefore crucial to design toolsets and their documentation clearly and thoughtfully. We expand on best practices for tool development in Appendix 2 (&quot;Prompt Engineering your Tools&quot;).
+When to use agents:Agents can be used for open-ended problems where it’s difficult or impossible to predict the required number of steps, and where you can’t hardcode a fixed path. The LLM will potentially operate for many turns, and you must have some level of trust in its decision-making. Agents&#x27; autonomy makes them ideal for scaling tasks in trusted environments.
+The autonomous nature of agents means higher costs, and the potential for compounding errors. We recommend extensive testing in sandboxed environments, along with the appropriate guardrails.
+Examples where agents are useful:
+The following examples are from our own implementations:</p></div><div class="lang-cn-block"><p>随着 LLM 在关键能力上成熟——理解复杂输入、进行推理和规划、可靠地使用工具以及从错误中恢复——智能体正在生产环境中涌现。智能体通过来自人类用户的命令或互动讨论开始工作。一旦任务明确，智能体独立规划和运行，可能会返回人类以获取更多信息或判断。在执行过程中，智能体在每一步从环境中获取&quot;真实情况&quot;（如工具调用结果或代码执行）以评估其进展至关重要。然后，智能体可以在检查点或遇到阻碍时暂停以获取人类反馈。任务通常在完成时终止，但通常也会包含停止条件（如最大迭代次数）以保持控制。
+智能体可以处理复杂的任务，但它们的实现通常很直接。它们通常只是在循环中基于环境反馈使用工具的 LLM。因此，清晰且深思熟虑地设计工具集及其文档至关重要。我们在附录 2（&quot;工具的提示工程&quot;）中扩展了工具开发的最佳实践。
+<strong>何时使用智能体：</strong> 智能体可用于开放性问题，其中难以或无法预测所需步骤数量，并且无法硬编码固定路径。LLM 可能会运行许多轮，你必须对其决策有一定程度的信任。智能体的自主性使其成为在可信环境中扩展任务的理想选择。
+智能体的自主性意味着更高的成本，以及错误复合的潜在风险。我们建议在沙箱环境中进行广泛测试，并配合适当的护栏。
+智能体有用的示例：
+以下示例来自我们自己的实现：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>A coding Agent to resolveSWE-bench tasks, which involve edits to many files based on a task description;</li><li>Our“computer use” reference implementation, where Claude uses a computer to accomplish tasks.</li></ul></div><div class="lang-cn-block"><ul><li>一个用于解决 SWE-bench 任务的编码智能体，这些任务涉及根据任务描述对多个文件进行编辑；</li><li>我们的&quot;computer use&quot;参考实现，其中 Claude 使用计算机完成任务。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Combining and customizing these patterns</h2></div><div class="lang-cn-block"><h2 id="heading-12">组合和自定义这些模式</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>These building blocks aren&#x27;t prescriptive. They&#x27;re common patterns that developers can shape and combine to fit different use cases. The key to success, as with any LLM features, is measuring performance and iterating on implementations. To repeat: you should consider adding complexityonlywhen it demonstrably improves outcomes.</p></div><div class="lang-cn-block"><p>这些构建块不是规定性的。它们是常见的模式，开发者可以塑造和组合以适应不同的用例。与任何 LLM 功能一样，成功的关键是衡量性能并迭代实现。重申一遍：你应该<strong>只在</strong>它明显改善结果时才考虑增加复杂性。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Summary</h2></div><div class="lang-cn-block"><h2 id="heading-13">总结</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Success in the LLM space isn&#x27;t about building the most sophisticated system. It&#x27;s about building therightsystem for your needs. Start with simple prompts, optimize them with comprehensive evaluation, and add multi-step agentic systems only when simpler solutions fall short.
+When implementing agents, we try to follow three core principles:</p></div><div class="lang-cn-block"><p>在 LLM 领域的成功不是关于构建最复杂的系统。而是关于构建<strong>适合</strong>你需求的<strong>正确</strong>系统。从简单的提示开始，通过全面评估进行优化，只在更简单的解决方案不足时才添加多步骤智能体系统。
+在实现智能体时，我们尝试遵循三个核心原则：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Maintainsimplicityin your agent&#x27;s design.</li><li>Prioritizetransparencyby explicitly showing the agent’s planning steps.</li><li>Carefully craft your agent-computer interface (ACI) through thorough tooldocumentation and testing.</li></ul></div><div class="lang-cn-block"><ul><li>在你的智能体设计中保持<strong>简洁性</strong>。</li><li>通过明确展示智能体的规划步骤来优先考虑<strong>透明性</strong>。</li><li>通过彻底的工具文档和测试精心设计你的<strong>智能体-计算机接口</strong>（ACI）。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Frameworks can help you get started quickly, but don&#x27;t hesitate to reduce abstraction layers and build with basic components as you move to production. By following these principles, you can create agents that are not only powerful but also reliable, maintainable, and trusted by their users.</p></div><div class="lang-cn-block"><p>框架可以帮助你快速入门，但不要犹豫在进入生产时减少抽象层并使用基本组件构建。通过遵循这些原则，你可以创建不仅强大而且可靠、可维护且受用户信任的智能体。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Acknowledgements</h3></div><div class="lang-cn-block"><h3 id="heading-14">致谢</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Erik S. and Barry Zhang. This work draws upon our experiences building agents at Anthropic and the valuable insights shared by our customers, for which we&#x27;re deeply grateful.</p></div><div class="lang-cn-block"><p>由 Erik S. 和 Barry Zhang 撰写。这项工作借鉴了我们在 Anthropic 构建智能体的经验以及客户分享的宝贵见解，对此我们深表感谢。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Appendix 1: Agents in practice</h2></div><div class="lang-cn-block"><h2 id="heading-15">附录 1：智能体实践</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our work with customers has revealed two particularly promising applications for AI agents that demonstrate the practical value of the patterns discussed above. Both applications illustrate how agents add the most value for tasks that require both conversation and action, have clear success criteria, enable feedback loops, and integrate meaningful human oversight.</p></div><div class="lang-cn-block"><p>我们与客户的工作揭示了 AI 智能体两个特别有前景的应用，它们展示了上述模式的实际价值。这两个应用都说明了智能体在需要对话和行动、具有明确成功标准、支持反馈循环并整合有意义的人类监督的任务中如何增加最大价值。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>A. Customer support</h3></div><div class="lang-cn-block"><h3 id="heading-16">A. 客户支持</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Customer support combines familiar chatbot interfaces with enhanced capabilities through tool integration. This is a natural fit for more open-ended agents because:</p></div><div class="lang-cn-block"><p>客户支持将熟悉的聊天机器人界面与通过工具集成增强的能力相结合。这是更开放性智能体的天然契合，因为：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Support interactions naturally follow a conversation flow while requiring access to external information and actions;</li><li>Tools can be integrated to pull customer data, order history, and knowledge base articles;</li><li>Actions such as issuing refunds or updating tickets can be handled programmatically; and</li><li>Success can be clearly measured through user-defined resolutions.</li></ul></div><div class="lang-cn-block"><ul><li>支持交互自然遵循对话流程，同时需要访问外部信息和操作；</li><li>可以集成工具以提取客户数据、订单历史和知识库文章；</li><li>诸如发放退款或更新工单等操作可以以编程方式处理；以及</li><li>成功可以通过用户定义的解决方案清晰衡量。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Several companies have demonstrated the viability of this approach through usage-based pricing models that charge only for successful resolutions, showing confidence in their agents&#x27; effectiveness.</p></div><div class="lang-cn-block"><p>几家通过基于使用的定价模式（仅对成功解决方案收费）展示了这种方法的可行性，表明对其智能体有效性的信心。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>B. Coding agents</h3></div><div class="lang-cn-block"><h3 id="heading-17">B. 编码智能体</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The software development space has shown remarkable potential for LLM features, with capabilities evolving from code completion to autonomous problem-solving. Agents are particularly effective because:</p></div><div class="lang-cn-block"><p>软件开发领域为 LLM 功能展示了显著潜力，能力从代码补全发展到自主问题解决。智能体特别有效，因为：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Code solutions are verifiable through automated tests;</li><li>Agents can iterate on solutions using test results as feedback;</li><li>The problem space is well-defined and structured; and</li><li>Output quality can be measured objectively.</li></ul></div><div class="lang-cn-block"><ul><li>代码解决方案可以通过自动化测试验证；</li><li>智能体可以使用测试结果作为反馈迭代解决方案；</li><li>问题空间定义明确且结构化；以及</li><li>输出质量可以客观衡量。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In our own implementation, agents can now solve real GitHub issues in theSWE-bench Verifiedbenchmark based on the pull request description alone. However, whereas automated testing helps verify functionality, human review remains crucial for ensuring solutions align with broader system requirements.</p></div><div class="lang-cn-block"><p>在我们自己的实现中，智能体现在可以根据 pull request 描述单独解决 SWE-bench Verified 基准中的真实 GitHub 问题。然而，虽然自动化测试有助于验证功能，但人类审查对于确保解决方案符合更广泛的系统要求仍然至关重要。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Appendix 2: Prompt engineering your tools</h2></div><div class="lang-cn-block"><h2 id="heading-18">附录 2：工具的提示工程</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>No matter which agentic system you&#x27;re building, tools will likely be an important part of your agent.Toolsenable Claude to interact with external services and APIs by specifying their exact structure and definition in our API. When Claude responds, it will include atool use blockin the API response if it plans to invoke a tool. Tool definitions and specifications should be given just as much prompt engineering attention as your overall prompts. In this brief appendix, we describe how to prompt engineer your tools.
+There are often several ways to specify the same action. For instance, you can specify a file edit by writing a diff, or by rewriting the entire file. For structured output, you can return code inside markdown or inside JSON. In software engineering, differences like these are cosmetic and can be converted losslessly from one to the other. However, some formats are much more difficult for an LLM to write than others. Writing a diff requires knowing how many lines are changing in the chunk header before the new code is written. Writing code inside JSON (compared to markdown) requires extra escaping of newlines and quotes.
+Our suggestions for deciding on tool formats are the following:</p></div><div class="lang-cn-block"><p>无论你构建哪种智能体系统，工具都可能是你智能体的重要组成部分。<strong>工具</strong>通过在我们的 API 中指定其确切结构和定义，使 Claude 能够与外部服务和 API 交互。当 Claude 响应时，如果它计划调用工具，将在 API 响应中包含一个<strong>工具使用块</strong>（tool use block）。工具定义和规范应该像你的整体提示一样受到同等的提示工程关注。在这个简短的附录中，我们描述了如何对工具进行提示工程。
+通常有几种方式可以指定相同的操作。例如，你可以通过编写 diff 或重写整个文件来指定文件编辑。对于结构化输出，你可以在 markdown 内或 JSON 内返回代码。在软件 engineering 中，这些差异是表面的，可以无损地从一种转换为另一种。然而，某些格式比其他格式更难让 LLM 编写。编写 diff 需要在编写新代码之前知道块头中有多少行在变化。在 JSON 内编写代码（与 markdown 相比）需要额外转义换行符和引号。
+我们关于决定工具格式的建议如下：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Give the model enough tokens to &quot;think&quot; before it writes itself into a corner.</li><li>Keep the format close to what the model has seen naturally occurring in text on the internet.</li><li>Make sure there&#x27;s no formatting &quot;overhead&quot; such as having to keep an accurate count of thousands of lines of code, or string-escaping any code it writes.</li></ul></div><div class="lang-cn-block"><ul><li>给模型足够的 token 来&quot;思考&quot;，然后再编写代码，避免把自己逼入死角。</li><li>保持格式接近模型在互联网文本中自然看到的形式。</li><li>确保没有格式化的&quot;开销&quot;，例如必须准确计数数千行代码，或对编写的任何代码进行字符串转义。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>One rule of thumb is to think about how much effort goes into human-computer interfaces (HCI), and plan to invest just as much effort in creating goodagent-computer interfaces (ACI). Here are some thoughts on how to do so:</p></div><div class="lang-cn-block"><p>一个经验法则是思考在人机界面（HCI）上投入了多少精力，并计划在创建良好的<strong>智能体-计算机接口</strong>（ACI）上投入同样多的精力。以下是一些关于如何做到这一点的想法：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Put yourself in the model&#x27;s shoes. Is it obvious how to use this tool, based on the description and parameters, or would you need to think carefully about it? If so, then it’s probably also true for the model. A good tool definition often includes example usage, edge cases, input format requirements, and clear boundaries from other tools.</li><li>How can you change parameter names or descriptions to make things more obvious? Think of this as writing a great docstring for a junior developer on your team. This is especially important when using many similar tools.</li><li>Test how the model uses your tools: Run many example inputs in ourworkbenchto see what mistakes the model makes, and iterate.</li><li>Poka-yokeyour tools. Change the arguments so that it is harder to make mistakes.</li></ul></div><div class="lang-cn-block"><ul><li>设身处地为模型着想。根据描述和参数，如何使用这个工具是否显而易见，还是你需要仔细思考？如果是这样，那么对模型来说可能也是如此。一个好的工具定义通常包括使用示例、边缘情况、输入格式要求以及与其他工具的明确界限。</li><li>如何更改参数名称或描述以使事情更加明显？将此视为为团队中的初级开发人员编写出色的文档字符串。当使用许多相似的工具时，这一点尤其重要。</li><li>测试模型如何使用你的工具：在我们的 workbench 中运行许多示例输入，查看模型犯的错误，并进行迭代。</li><li><strong>防错设计</strong>（Poka-yoke）你的工具。更改参数以使犯错更加困难。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>While building our agent forSWE-bench, we actually spent more time optimizing our tools than the overall prompt. For example, we found that the model would make mistakes with tools using relative filepaths after the agent had moved out of the root directory. To fix this, we changed the tool to always require absolute filepaths—and we found that the model used this method flawlessly.</p></div><div class="lang-cn-block"><p>在为 SWE-bench 构建我们的智能体时，我们实际上花在优化工具上的时间比优化整体提示还要多。例如，我们发现模型在使用相对文件路径的工具时会在智能体离开根目录后犯错。为了解决这个问题，我们将工具更改为始终要求绝对文件路径——我们发现模型使用这种方法完美无缺。</p></div></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>在过去一年中，我们与数十个团队合作，在各行各业构建大语言模型（LLM）智能体。一致的是，最成功的实现并没有使用复杂的框架或专门的库。相反，他们使用的是简单、可组合的模式来构建。
+在本文中，我们分享了从与客户合作以及自己构建智能体中学到的经验，并为开发者提供了构建有效智能体的实用建议。</p>
+<h2>什么是智能体？</h2>
+<p>&quot;智能体&quot;可以有多种定义。一些客户将智能体定义为完全自主的系统，能够在较长时间内独立运行，使用各种工具来完成复杂任务。另一些客户则用这个术语来描述遵循预定义工作流的更规范化的实现。在 Anthropic，我们将所有这些变体归类为<strong>智能体系统</strong>（agentic systems），但在<strong>工作流</strong>（workflows）和<strong>智能体</strong>（agents）之间做出了重要的架构区分：</p>
+<ul>
+<li><strong>工作流</strong>是通过预定义的代码路径来编排 LLM 和工具的系统。</li>
+<li><strong>智能体</strong>则是 LLM 动态指导自身流程和工具使用的系统，保持对如何完成任务的控制权。</li>
+</ul>
+<p>下面，我们将详细探讨这两种类型的智能体系统。在附录 1（&quot;智能体实践&quot;）中，我们描述了客户在使用这类系统时发现特别有价值的两个领域。</p>
+<h2>何时（以及何时不）使用智能体</h2>
+<p>在使用 LLM 构建应用程序时，我们建议找到尽可能简单的解决方案，只在需要时才增加复杂性。这可能意味着根本不构建智能体系统。智能体系统通常以延迟和成本换取更好的任务性能，你应该考虑这种权衡何时是合理的。
+当需要更多复杂性时，工作流为定义明确的任务提供可预测性和一致性，而智能体则是在需要大规模灵活性和模型驱动决策时的更好选择。然而，对于许多应用来说，通过检索和上下文示例来优化单次 LLM 调用通常就足够了。</p>
+<h2>何时以及如何使用框架</h2>
+<p>有许多框架可以使智能体系统更易于实现，包括：</p>
+<ul>
+<li>TheClaude Agent SDK；</li>
+<li>AWS 的 Strands Agents SDK；</li>
+<li>Rivet，一个拖放式 GUI LLM 工作流构建器；以及</li>
+<li>Vellum，另一个用于构建和测试复杂工作流的 GUI 工具。</li>
+</ul>
+<p>这些框架通过简化标准的底层任务（如调用 LLM、定义和解析工具、将调用链接在一起）使入门变得容易。然而，它们通常会创建额外的抽象层，可能会掩盖底层的提示和响应，使调试变得更加困难。它们也可能诱使你在更简单的设置就足够的情况下增加复杂性。
+我们建议开发者从直接使用 LLM API 开始：许多模式可以用几行代码实现。如果你确实使用框架，请确保你理解底层代码。对底层机制的错误假设是客户错误的常见来源。
+请参阅我们的 cookbook 获取一些示例实现。</p>
+<h2>构建块、工作流和智能体</h2>
+<p>在本节中，我们将探讨在生产环境中看到的智能体系统的常见模式。我们将从基础构建块——增强型 LLM 开始，逐步增加复杂性，从简单的组合工作流到自主智能体。</p>
+<h3>构建块：增强型 LLM</h3>
+<p>智能体系统的基本构建块是一个经过增强的 LLM，增强了检索、工具和记忆等功能。我们当前的模型能够主动使用这些能力——生成自己的搜索查询、选择适当的工具以及决定保留哪些信息。
+我们建议关注实现的两个关键方面：根据你的特定用例定制这些能力，并确保它们为你的 LLM 提供易于使用、文档完善的接口。虽然有许多方法可以实现这些增强，但一种方法是通过我们最近发布的 Model Context Protocol，它允许开发者通过简单的客户端实现与不断增长的第三方工具生态系统集成。
+在本文的其余部分，我们假设每次 LLM 调用都可以访问这些增强能力。</p>
+<h3>工作流：提示链</h3>
+<p>提示链（Prompt chaining）将任务分解为一系列步骤，其中每个 LLM call 处理前一个的输出。你可以在任何中间步骤添加程序化检查（见下图中的&quot;gate&quot;），以确保过程仍在正轨上。
+<strong>何时使用此工作流：</strong> 此工作流适用于任务可以轻松且清晰地分解为固定子任务的情况。主要目标是通过使每个 LLM call 成为更简单的任务来以延迟换取更高准确性。
+提示链有用的示例：</p>
+<ul>
+<li>生成营销文案，然后将其翻译成另一种语言。</li>
+<li>编写文档大纲，检查大纲是否满足某些标准，然后根据大纲编写文档。</li>
+</ul>
+<h3>工作流：路由</h3>
+<p>路由（Routing）对输入进行分类，并将其引导到专门的后续任务。此工作流允许关注点分离，并构建更专门的提示。没有此工作流，优化一种输入可能会损害其他输入的性能。
+<strong>何时使用此工作流：</strong> 路由适用于复杂任务，其中有不同的类别最好分别处理，并且分类可以由 LLM 或更传统的分类模型/算法准确处理。
+路由有用的示例：</p>
+<ul>
+<li>将不同类型的客户服务查询（一般问题、退款请求、技术支持）引导到不同的下游流程、提示和工具中。</li>
+<li>将简单/常见问题路由到较小的、成本效益高的模型（如 Claude Haiku 4.5），将困难/不寻常的问题路由到更强大的模型（如 Claude Sonnet 4.5），以优化最佳性能。</li>
+</ul>
+<h3>工作流：并行化</h3>
+<p>LLM 有时可以同时处理一个任务，并以编程方式聚合它们的输出。这种并行化工作流表现为两种关键变体：</p>
+<ul>
+<li><strong>分段（Sectioning）：</strong> 将任务分解为独立的子任务并行运行。</li>
+<li><strong>投票（Voting）：</strong> 多次运行同一任务以获得多样化的输出。</li>
+</ul>
+<p><strong>何时使用此工作流：</strong> 当划分的子任务可以并行化以提高速度，或者需要多个视角或尝试以获得更高置信度的结果时，并行化是有效的。对于具有多个考量因素的复杂任务，当每个考量因素由单独的 LLM call 处理时，LLM 通常表现更好，允许对每个特定方面进行专注关注。
+并行化有用的示例：</p>
+<ul>
+<li><strong>分段：</strong></li>
+<li>实现护栏，其中一个模型实例处理用户查询，而另一个筛选不当内容或请求。这往往比让同一个 LLM call 同时处理护栏和核心响应表现更好。</li>
+<li>自动化评估以评估 LLM 性能，其中每个 LLM call 评估模型在给定提示上的不同方面。</li>
+<li><strong>投票：</strong></li>
+<li>审查代码漏洞，其中几个不同的提示审查代码，如果发现问题则标记。</li>
+<li>评估给定内容是否不当，使用多个提示评估不同方面或需要不同的投票阈值以平衡误报和漏报。</li>
+</ul>
+<h3>工作流：编排者-工作者</h3>
+<p>在编排者-工作者（Orchestrator-workers）工作流中，一个中央 LLM 动态分解任务，将其委派给工作者 LLM，并综合它们的结果。
+<strong>何时使用此工作流：</strong> 此工作流适用于无法预测所需子任务的复杂任务（例如在编码中，需要更改的文件数量以及每个文件中更改的性质可能取决于任务）。虽然在拓扑上与并行化相似，但关键区别在于其灵活性——子任务不是预定义的，而是由编排者根据特定输入确定的。
+编排者-工作者有用的示例：</p>
+<ul>
+<li>每次对多个文件进行复杂更改的编码产品。</li>
+<li>涉及从多个来源收集和分析信息以寻找可能相关信息的搜索任务。</li>
+</ul>
+<h3>工作流：评估者-优化者</h3>
+<p>在评估者-优化者（Evaluator-optimizer）工作流中，一个 LLM call 生成响应，而另一个在循环中提供评估和反馈。
+<strong>何时使用此工作流：</strong> 当我们有明确的评估标准，并且迭代改进提供可衡量的价值时，此工作流特别有效。良好适用的两个标志是：首先，当人类阐明其反馈时，LLM 响应可以明显改善；其次，LLM 可以提供此类反馈。这类似于人类作者在制作精良文档时可能经历的迭代写作过程。
+评估者-优化者有用的示例：</p>
+<ul>
+<li>文学翻译，其中翻译 LLM 最初可能未捕捉到的细微差别，但评估者 LLM 可以提供有用的批评。</li>
+<li>需要多轮搜索和分析以收集全面信息的复杂搜索任务，其中评估者决定是否需要进一步搜索。</li>
+</ul>
+<h3>智能体</h3>
+<p>随着 LLM 在关键能力上成熟——理解复杂输入、进行推理和规划、可靠地使用工具以及从错误中恢复——智能体正在生产环境中涌现。智能体通过来自人类用户的命令或互动讨论开始工作。一旦任务明确，智能体独立规划和运行，可能会返回人类以获取更多信息或判断。在执行过程中，智能体在每一步从环境中获取&quot;真实情况&quot;（如工具调用结果或代码执行）以评估其进展至关重要。然后，智能体可以在检查点或遇到阻碍时暂停以获取人类反馈。任务通常在完成时终止，但通常也会包含停止条件（如最大迭代次数）以保持控制。
+智能体可以处理复杂的任务，但它们的实现通常很直接。它们通常只是在循环中基于环境反馈使用工具的 LLM。因此，清晰且深思熟虑地设计工具集及其文档至关重要。我们在附录 2（&quot;工具的提示工程&quot;）中扩展了工具开发的最佳实践。
+<strong>何时使用智能体：</strong> 智能体可用于开放性问题，其中难以或无法预测所需步骤数量，并且无法硬编码固定路径。LLM 可能会运行许多轮，你必须对其决策有一定程度的信任。智能体的自主性使其成为在可信环境中扩展任务的理想选择。
+智能体的自主性意味着更高的成本，以及错误复合的潜在风险。我们建议在沙箱环境中进行广泛测试，并配合适当的护栏。
+智能体有用的示例：
+以下示例来自我们自己的实现：</p>
+<ul>
+<li>一个用于解决 SWE-bench 任务的编码智能体，这些任务涉及根据任务描述对多个文件进行编辑；</li>
+<li>我们的&quot;computer use&quot;参考实现，其中 Claude 使用计算机完成任务。</li>
+</ul>
+<h2>组合和自定义这些模式</h2>
+<p>这些构建块不是规定性的。它们是常见的模式，开发者可以塑造和组合以适应不同的用例。与任何 LLM 功能一样，成功的关键是衡量性能并迭代实现。重申一遍：你应该<strong>只在</strong>它明显改善结果时才考虑增加复杂性。</p>
+<h2>总结</h2>
+<p>在 LLM 领域的成功不是关于构建最复杂的系统。而是关于构建<strong>适合</strong>你需求的<strong>正确</strong>系统。从简单的提示开始，通过全面评估进行优化，只在更简单的解决方案不足时才添加多步骤智能体系统。
+在实现智能体时，我们尝试遵循三个核心原则：</p>
+<ul>
+<li>在你的智能体设计中保持<strong>简洁性</strong>。</li>
+<li>通过明确展示智能体的规划步骤来优先考虑<strong>透明性</strong>。</li>
+<li>通过彻底的工具文档和测试精心设计你的<strong>智能体-计算机接口</strong>（ACI）。</li>
+</ul>
+<p>框架可以帮助你快速入门，但不要犹豫在进入生产时减少抽象层并使用基本组件构建。通过遵循这些原则，你可以创建不仅强大而且可靠、可维护且受用户信任的智能体。</p>
+<h3>致谢</h3>
+<p>由 Erik S. 和 Barry Zhang 撰写。这项工作借鉴了我们在 Anthropic 构建智能体的经验以及客户分享的宝贵见解，对此我们深表感谢。</p>
+<h2>附录 1：智能体实践</h2>
+<p>我们与客户的工作揭示了 AI 智能体两个特别有前景的应用，它们展示了上述模式的实际价值。这两个应用都说明了智能体在需要对话和行动、具有明确成功标准、支持反馈循环并整合有意义的人类监督的任务中如何增加最大价值。</p>
+<h3>A. 客户支持</h3>
+<p>客户支持将熟悉的聊天机器人界面与通过工具集成增强的能力相结合。这是更开放性智能体的天然契合，因为：</p>
+<ul>
+<li>支持交互自然遵循对话流程，同时需要访问外部信息和操作；</li>
+<li>可以集成工具以提取客户数据、订单历史和知识库文章；</li>
+<li>诸如发放退款或更新工单等操作可以以编程方式处理；以及</li>
+<li>成功可以通过用户定义的解决方案清晰衡量。</li>
+</ul>
+<p>几家通过基于使用的定价模式（仅对成功解决方案收费）展示了这种方法的可行性，表明对其智能体有效性的信心。</p>
+<h3>B. 编码智能体</h3>
+<p>软件开发领域为 LLM 功能展示了显著潜力，能力从代码补全发展到自主问题解决。智能体特别有效，因为：</p>
+<ul>
+<li>代码解决方案可以通过自动化测试验证；</li>
+<li>智能体可以使用测试结果作为反馈迭代解决方案；</li>
+<li>问题空间定义明确且结构化；以及</li>
+<li>输出质量可以客观衡量。</li>
+</ul>
+<p>在我们自己的实现中，智能体现在可以根据 pull request 描述单独解决 SWE-bench Verified 基准中的真实 GitHub 问题。然而，虽然自动化测试有助于验证功能，但人类审查对于确保解决方案符合更广泛的系统要求仍然至关重要。</p>
+<h2>附录 2：工具的提示工程</h2>
+<p>无论你构建哪种智能体系统，工具都可能是你智能体的重要组成部分。<strong>工具</strong>通过在我们的 API 中指定其确切结构和定义，使 Claude 能够与外部服务和 API 交互。当 Claude 响应时，如果它计划调用工具，将在 API 响应中包含一个<strong>工具使用块</strong>（tool use block）。工具定义和规范应该像你的整体提示一样受到同等的提示工程关注。在这个简短的附录中，我们描述了如何对工具进行提示工程。
+通常有几种方式可以指定相同的操作。例如，你可以通过编写 diff 或重写整个文件来指定文件编辑。对于结构化输出，你可以在 markdown 内或 JSON 内返回代码。在软件 engineering 中，这些差异是表面的，可以无损地从一种转换为另一种。然而，某些格式比其他格式更难让 LLM 编写。编写 diff 需要在编写新代码之前知道块头中有多少行在变化。在 JSON 内编写代码（与 markdown 相比）需要额外转义换行符和引号。
+我们关于决定工具格式的建议如下：</p>
+<ul>
+<li>给模型足够的 token 来&quot;思考&quot;，然后再编写代码，避免把自己逼入死角。</li>
+<li>保持格式接近模型在互联网文本中自然看到的形式。</li>
+<li>确保没有格式化的&quot;开销&quot;，例如必须准确计数数千行代码，或对编写的任何代码进行字符串转义。</li>
+</ul>
+<p>一个经验法则是思考在人机界面（HCI）上投入了多少精力，并计划在创建良好的<strong>智能体-计算机接口</strong>（ACI）上投入同样多的精力。以下是一些关于如何做到这一点的想法：</p>
+<ul>
+<li>设身处地为模型着想。根据描述和参数，如何使用这个工具是否显而易见，还是你需要仔细思考？如果是这样，那么对模型来说可能也是如此。一个好的工具定义通常包括使用示例、边缘情况、输入格式要求以及与其他工具的明确界限。</li>
+<li>如何更改参数名称或描述以使事情更加明显？将此视为为团队中的初级开发人员编写出色的文档字符串。当使用许多相似的工具时，这一点尤其重要。</li>
+<li>测试模型如何使用你的工具：在我们的 workbench 中运行许多示例输入，查看模型犯的错误，并进行迭代。</li>
+<li><strong>防错设计</strong>（Poka-yoke）你的工具。更改参数以使犯错更加困难。</li>
+</ul>
+<p>在为 SWE-bench 构建我们的智能体时，我们实际上花在优化工具上的时间比优化整体提示还要多。例如，我们发现模型在使用相对文件路径的工具时会在智能体离开根目录后犯错。为了解决这个问题，我们将工具更改为始终要求绝对文件路径——我们发现模型使用这种方法完美无缺。</p></div>
+                <div class="lang-en"><p>Over the past year, we&#x27;ve worked with dozens of teams building large language model (LLM) agents across industries. Consistently, the most successful implementations weren&#x27;t using complex frameworks or specialized libraries. Instead, they were building with simple, composable patterns.
+In this post, we share what we’ve learned from working with our customers and building agents ourselves, and give practical advice for developers on building effective agents.</p>
+<h2>What are agents?</h2>
+<p>&quot;Agent&quot; can be defined in several ways. Some customers define agents as fully autonomous systems that operate independently over extended periods, using various tools to accomplish complex tasks. Others use the term to describe more prescriptive implementations that follow predefined workflows. At Anthropic, we categorize all these variations asagentic systems, but draw an important architectural distinction betweenworkflowsandagents:</p>
+<ul>
+<li>Workflowsare systems where LLMs and tools are orchestrated through predefined code paths.</li>
+<li>Agents, on the other hand, are systems where LLMs dynamically direct their own processes and tool usage, maintaining control over how they accomplish tasks.</li>
+</ul>
+<p>Below, we will explore both types of agentic systems in detail. In Appendix 1 (“Agents in Practice”), we describe two domains where customers have found particular value in using these kinds of systems.</p>
+<h2>When (and when not) to use agents</h2>
+<p>When building applications with LLMs, we recommend finding the simplest solution possible, and only increasing complexity when needed. This might mean not building agentic systems at all. Agentic systems often trade latency and cost for better task performance, and you should consider when this tradeoff makes sense.
+When more complexity is warranted, workflows offer predictability and consistency for well-defined tasks, whereas agents are the better option when flexibility and model-driven decision-making are needed at scale. For many applications, however, optimizing single LLM calls with retrieval and in-context examples is usually enough.</p>
+<h2>When and how to use frameworks</h2>
+<p>There are many frameworks that make agentic systems easier to implement, including:</p>
+<ul>
+<li>TheClaude Agent SDK;</li>
+<li>Strands Agents SDK by AWS;</li>
+<li>Rivet, a drag and drop GUI LLM workflow builder; and</li>
+<li>Vellum, another GUI tool for building and testing complex workflows.</li>
+</ul>
+<p>These frameworks make it easy to get started by simplifying standard low-level tasks like calling LLMs, defining and parsing tools, and chaining calls together. However, they often create extra layers of abstraction that can obscure the underlying prompts ​​and responses, making them harder to debug. They can also make it tempting to add complexity when a simpler setup would suffice.
+We suggest that developers start by using LLM APIs directly: many patterns can be implemented in a few lines of code. If you do use a framework, ensure you understand the underlying code. Incorrect assumptions about what&#x27;s under the hood are a common source of customer error.
+See ourcookbookfor some sample implementations.</p>
+<h2>Building blocks, workflows, and agents</h2>
+<p>In this section, we’ll explore the common patterns for agentic systems we’ve seen in production. We&#x27;ll start with our foundational building block—the augmented LLM—and progressively increase complexity, from simple compositional workflows to autonomous agents.</p>
+<h3>Building block: The augmented LLM</h3>
+<p>The basic building block of agentic systems is an LLM enhanced with augmentations such as retrieval, tools, and memory. Our current models can actively use these capabilities—generating their own search queries, selecting appropriate tools, and determining what information to retain.
+We recommend focusing on two key aspects of the implementation: tailoring these capabilities to your specific use case and ensuring they provide an easy, well-documented interface for your LLM. While there are many ways to implement these augmentations, one approach is through our recently releasedModel Context Protocol, which allows developers to integrate with a growing ecosystem of third-party tools with a simpleclient implementation.
+For the remainder of this post, we&#x27;ll assume each LLM call has access to these augmented capabilities.</p>
+<h3>Workflow: Prompt chaining</h3>
+<p>Prompt chaining decomposes a task into a sequence of steps, where each LLM call processes the output of the previous one. You can add programmatic checks (see &quot;gate” in the diagram below) on any intermediate steps to ensure that the process is still on track.
+When to use this workflow:This workflow is ideal for situations where the task can be easily and cleanly decomposed into fixed subtasks. The main goal is to trade off latency for higher accuracy, by making each LLM call an easier task.
+Examples where prompt chaining is useful:</p>
+<ul>
+<li>Generating Marketing copy, then translating it into a different language.</li>
+<li>Writing an outline of a document, checking that the outline meets certain criteria, then writing the document based on the outline.</li>
+</ul>
+<h3>Workflow: Routing</h3>
+<p>Routing classifies an input and directs it to a specialized followup task. This workflow allows for separation of concerns, and building more specialized prompts. Without this workflow, optimizing for one kind of input can hurt performance on other inputs.
+When to use this workflow:Routing works well for complex tasks where there are distinct categories that are better handled separately, and where classification can be handled accurately, either by an LLM or a more traditional classification model/algorithm.
+Examples where routing is useful:</p>
+<ul>
+<li>Directing different types of customer service queries (general questions, refund requests, technical support) into different downstream processes, prompts, and tools.</li>
+<li>Routing easy/common questions to smaller, cost-efficient models like Claude Haiku 4.5 and hard/unusual questions to more capable models like Claude Sonnet 4.5 to optimize for best performance.</li>
+</ul>
+<h3>Workflow: Parallelization</h3>
+<p>LLMs can sometimes work simultaneously on a task and have their outputs aggregated programmatically. This workflow, parallelization, manifests in two key variations:</p>
+<ul>
+<li>Sectioning: Breaking a task into independent subtasks run in parallel.</li>
+<li>Voting:Running the same task multiple times to get diverse outputs.</li>
+</ul>
+<p>When to use this workflow:Parallelization is effective when the divided subtasks can be parallelized for speed, or when multiple perspectives or attempts are needed for higher confidence results. For complex tasks with multiple considerations, LLMs generally perform better when each consideration is handled by a separate LLM call, allowing focused attention on each specific aspect.
+Examples where parallelization is useful:</p>
+<ul>
+<li>Sectioning:Implementing guardrails where one model instance processes user queries while another screens them for inappropriate content or requests. This tends to perform better than having the same LLM call handle both guardrails and the core response.Automating evals for evaluating LLM performance, where each LLM call evaluates a different aspect of the model’s performance on a given prompt.</li>
+<li>Implementing guardrails where one model instance processes user queries while another screens them for inappropriate content or requests. This tends to perform better than having the same LLM call handle both guardrails and the core response.</li>
+<li>Automating evals for evaluating LLM performance, where each LLM call evaluates a different aspect of the model’s performance on a given prompt.</li>
+<li>Voting:Reviewing a piece of code for vulnerabilities, where several different prompts review and flag the code if they find a problem.Evaluating whether a given piece of content is inappropriate, with multiple prompts evaluating different aspects or requiring different vote thresholds to balance false positives and negatives.</li>
+<li>Reviewing a piece of code for vulnerabilities, where several different prompts review and flag the code if they find a problem.</li>
+<li>Evaluating whether a given piece of content is inappropriate, with multiple prompts evaluating different aspects or requiring different vote thresholds to balance false positives and negatives.</li>
+</ul>
+<h3>Workflow: Orchestrator-workers</h3>
+<p>In the orchestrator-workers workflow, a central LLM dynamically breaks down tasks, delegates them to worker LLMs, and synthesizes their results.
+When to use this workflow:This workflow is well-suited for complex tasks where you can’t predict the subtasks needed (in coding, for example, the number of files that need to be changed and the nature of the change in each file likely depend on the task). Whereas it’s topographically similar, the key difference from parallelization is its flexibility—subtasks aren&#x27;t pre-defined, but determined by the orchestrator based on the specific input.
+Example where orchestrator-workers is useful:</p>
+<ul>
+<li>Coding products that make complex changes to multiple files each time.</li>
+<li>Search tasks that involve gathering and analyzing information from multiple sources for possible relevant information.</li>
+</ul>
+<h3>Workflow: Evaluator-optimizer</h3>
+<p>In the evaluator-optimizer workflow, one LLM call generates a response while another provides evaluation and feedback in a loop.
+When to use this workflow:This workflow is particularly effective when we have clear evaluation criteria, and when iterative refinement provides measurable value. The two signs of good fit are, first, that LLM responses can be demonstrably improved when a human articulates their feedback; and second, that the LLM can provide such feedback. This is analogous to the iterative writing process a human writer might go through when producing a polished document.
+Examples where evaluator-optimizer is useful:</p>
+<ul>
+<li>Literary translation where there are nuances that the translator LLM might not capture initially, but where an evaluator LLM can provide useful critiques.</li>
+<li>Complex search tasks that require multiple rounds of searching and analysis to gather comprehensive information, where the evaluator decides whether further searches are warranted.</li>
+</ul>
+<h3>Agents</h3>
+<p>Agents are emerging in production as LLMs mature in key capabilities—understanding complex inputs, engaging in reasoning and planning, using tools reliably, and recovering from errors. Agents begin their work with either a command from, or interactive discussion with, the human user. Once the task is clear, agents plan and operate independently, potentially returning to the human for further information or judgement. During execution, it&#x27;s crucial for the agents to gain “ground truth” from the environment at each step (such as tool call results or code execution) to assess its progress. Agents can then pause for human feedback at checkpoints or when encountering blockers. The task often terminates upon completion, but it’s also common to include stopping conditions (such as a maximum number of iterations) to maintain control.
+Agents can handle sophisticated tasks, but their implementation is often straightforward. They are typically just LLMs using tools based on environmental feedback in a loop. It is therefore crucial to design toolsets and their documentation clearly and thoughtfully. We expand on best practices for tool development in Appendix 2 (&quot;Prompt Engineering your Tools&quot;).
+When to use agents:Agents can be used for open-ended problems where it’s difficult or impossible to predict the required number of steps, and where you can’t hardcode a fixed path. The LLM will potentially operate for many turns, and you must have some level of trust in its decision-making. Agents&#x27; autonomy makes them ideal for scaling tasks in trusted environments.
+The autonomous nature of agents means higher costs, and the potential for compounding errors. We recommend extensive testing in sandboxed environments, along with the appropriate guardrails.
+Examples where agents are useful:
+The following examples are from our own implementations:</p>
+<ul>
+<li>A coding Agent to resolveSWE-bench tasks, which involve edits to many files based on a task description;</li>
+<li>Our“computer use” reference implementation, where Claude uses a computer to accomplish tasks.</li>
+</ul>
+<h2>Combining and customizing these patterns</h2>
+<p>These building blocks aren&#x27;t prescriptive. They&#x27;re common patterns that developers can shape and combine to fit different use cases. The key to success, as with any LLM features, is measuring performance and iterating on implementations. To repeat: you should consider adding complexityonlywhen it demonstrably improves outcomes.</p>
+<h2>Summary</h2>
+<p>Success in the LLM space isn&#x27;t about building the most sophisticated system. It&#x27;s about building therightsystem for your needs. Start with simple prompts, optimize them with comprehensive evaluation, and add multi-step agentic systems only when simpler solutions fall short.
+When implementing agents, we try to follow three core principles:</p>
+<ul>
+<li>Maintainsimplicityin your agent&#x27;s design.</li>
+<li>Prioritizetransparencyby explicitly showing the agent’s planning steps.</li>
+<li>Carefully craft your agent-computer interface (ACI) through thorough tooldocumentation and testing.</li>
+</ul>
+<p>Frameworks can help you get started quickly, but don&#x27;t hesitate to reduce abstraction layers and build with basic components as you move to production. By following these principles, you can create agents that are not only powerful but also reliable, maintainable, and trusted by their users.</p>
+<h3>Acknowledgements</h3>
+<p>Written by Erik S. and Barry Zhang. This work draws upon our experiences building agents at Anthropic and the valuable insights shared by our customers, for which we&#x27;re deeply grateful.</p>
+<h2>Appendix 1: Agents in practice</h2>
+<p>Our work with customers has revealed two particularly promising applications for AI agents that demonstrate the practical value of the patterns discussed above. Both applications illustrate how agents add the most value for tasks that require both conversation and action, have clear success criteria, enable feedback loops, and integrate meaningful human oversight.</p>
+<h3>A. Customer support</h3>
+<p>Customer support combines familiar chatbot interfaces with enhanced capabilities through tool integration. This is a natural fit for more open-ended agents because:</p>
+<ul>
+<li>Support interactions naturally follow a conversation flow while requiring access to external information and actions;</li>
+<li>Tools can be integrated to pull customer data, order history, and knowledge base articles;</li>
+<li>Actions such as issuing refunds or updating tickets can be handled programmatically; and</li>
+<li>Success can be clearly measured through user-defined resolutions.</li>
+</ul>
+<p>Several companies have demonstrated the viability of this approach through usage-based pricing models that charge only for successful resolutions, showing confidence in their agents&#x27; effectiveness.</p>
+<h3>B. Coding agents</h3>
+<p>The software development space has shown remarkable potential for LLM features, with capabilities evolving from code completion to autonomous problem-solving. Agents are particularly effective because:</p>
+<ul>
+<li>Code solutions are verifiable through automated tests;</li>
+<li>Agents can iterate on solutions using test results as feedback;</li>
+<li>The problem space is well-defined and structured; and</li>
+<li>Output quality can be measured objectively.</li>
+</ul>
+<p>In our own implementation, agents can now solve real GitHub issues in theSWE-bench Verifiedbenchmark based on the pull request description alone. However, whereas automated testing helps verify functionality, human review remains crucial for ensuring solutions align with broader system requirements.</p>
+<h2>Appendix 2: Prompt engineering your tools</h2>
+<p>No matter which agentic system you&#x27;re building, tools will likely be an important part of your agent.Toolsenable Claude to interact with external services and APIs by specifying their exact structure and definition in our API. When Claude responds, it will include atool use blockin the API response if it plans to invoke a tool. Tool definitions and specifications should be given just as much prompt engineering attention as your overall prompts. In this brief appendix, we describe how to prompt engineer your tools.
+There are often several ways to specify the same action. For instance, you can specify a file edit by writing a diff, or by rewriting the entire file. For structured output, you can return code inside markdown or inside JSON. In software engineering, differences like these are cosmetic and can be converted losslessly from one to the other. However, some formats are much more difficult for an LLM to write than others. Writing a diff requires knowing how many lines are changing in the chunk header before the new code is written. Writing code inside JSON (compared to markdown) requires extra escaping of newlines and quotes.
+Our suggestions for deciding on tool formats are the following:</p>
+<ul>
+<li>Give the model enough tokens to &quot;think&quot; before it writes itself into a corner.</li>
+<li>Keep the format close to what the model has seen naturally occurring in text on the internet.</li>
+<li>Make sure there&#x27;s no formatting &quot;overhead&quot; such as having to keep an accurate count of thousands of lines of code, or string-escaping any code it writes.</li>
+</ul>
+<p>One rule of thumb is to think about how much effort goes into human-computer interfaces (HCI), and plan to invest just as much effort in creating goodagent-computer interfaces (ACI). Here are some thoughts on how to do so:</p>
+<ul>
+<li>Put yourself in the model&#x27;s shoes. Is it obvious how to use this tool, based on the description and parameters, or would you need to think carefully about it? If so, then it’s probably also true for the model. A good tool definition often includes example usage, edge cases, input format requirements, and clear boundaries from other tools.</li>
+<li>How can you change parameter names or descriptions to make things more obvious? Think of this as writing a great docstring for a junior developer on your team. This is especially important when using many similar tools.</li>
+<li>Test how the model uses your tools: Run many example inputs in ourworkbenchto see what mistakes the model makes, and iterate.</li>
+<li>Poka-yokeyour tools. Change the arguments so that it is harder to make mistakes.</li>
+</ul>
+<p>While building our agent forSWE-bench, we actually spent more time optimizing our tools than the overall prompt. For example, we found that the model would make mistakes with tools using relative filepaths after the agent had moved out of the root directory. To fix this, we changed the tool to always require absolute filepaths—and we found that the model used this method flawlessly.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>
