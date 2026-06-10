@@ -11,7 +11,7 @@
 > 如何把大模型从“会聊天”变成“能长期稳定干活的软件工程师”。
 
 
-Anthropic Engineering 收录了 Anthropic 工程团队在构建 Claude、Claude Code 和 AI Agent 过程中的实践经验与技术思考。文章关注如何通过上下文管理、工具使用、记忆机制和工程化设计，让 AI 真正成为能够长期协作、解决复杂问题的伙伴。对于想理解现代 AI 编程工具背后设计理念的人来说，相信这份资料能拨开你内心的谜团。
+Anthropic Engineering 收录了 Anthropic 工程团队在构建 Claude、Claude Code 和 AI Agent 过程中的实践经验与技术思考。文章关注如何通过上下文管理、工具使用、记忆机制和工程化设计，让 AI 真正成为能够长期协作、解决复杂问题的伙伴。对于想理解现代 AI 编程工具背后设计理念的朋友来说，相信这份资料能拨开你内心的谜团。
 
 ```bash
 Prompt Engineering
