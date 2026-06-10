@@ -3,6 +3,7 @@
 我将 [Anthropic Engineering](https://www.anthropic.com/engineering/) 的全部文章爬取并翻译为中文，做成了比较美观网页，支持中英对照阅读，如果对你有帮助，***非常感谢您给的star🤠***。
 
 > **在线阅读** 👉 [GitHub Pages](https://CraigKettleman.github.io/anthropic-engineering-cn/)
+<img width="735" height="478" alt="截屏2026-06-10 22 52 44" src="https://github.com/user-attachments/assets/597a65a2-ee16-4da2-846d-803bd72c97c8" />
 
 
 ## 1.文章简介
