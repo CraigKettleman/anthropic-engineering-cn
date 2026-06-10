@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三次近期故障的复盘报告 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">我们如何大规模提供 Claude 服务</a>
+<a class="toc-h2" href="#heading-2">事件时间线</a>
+<a class="toc-h2" href="#heading-3">三个重叠的问题</a>
+<a class="toc-h3" href="#heading-4">1. 上下文窗口路由错误</a>
+<a class="toc-h3" href="#heading-5">2. 输出损坏</a>
+<a class="toc-h3" href="#heading-6">3. 近似 top-k 的 XLA:TPU 编译错误</a>
+<a class="toc-h2" href="#heading-7">XLA 编译器漏洞深入解析</a>
+<a class="toc-h2" href="#heading-8">为何检测困难</a>
+<a class="toc-h2" href="#heading-9">我们正在做出的改变</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">How we serve Claude at scale</a>
+<a class="toc-h2" href="#heading-2">Timeline of events</a>
+<a class="toc-h2" href="#heading-3">Three overlapping issues</a>
+<a class="toc-h3" href="#heading-4">1. Context window routing error</a>
+<a class="toc-h3" href="#heading-5">2. Output corruption</a>
+<a class="toc-h3" href="#heading-6">3. Approximate top-k XLA:TPU miscompilation</a>
+<a class="toc-h2" href="#heading-7">A closer look at the XLA compiler bug</a>
+<a class="toc-h2" href="#heading-8">Why detection was difficult</a>
+<a class="toc-h2" href="#heading-9">What we&#x27;re changing</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-09-17</div>
+            <div class="title-block">
+                <h1 class="cn">三次近期故障的复盘报告</h1>
+                <h1 class="en">A postmortem of three recent issues</h1>
+                <div class="en-title">A postmortem of three recent issues</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Between August and early September, three infrastructure bugs intermittently degraded Claude&#x27;s response quality. We&#x27;ve now resolved these issues and want to explain what happened.
+In early August, a number of users began reporting degraded responses from Claude. These initial reports were difficult to distinguish from normal variation in user feedback. By late August, the increasing frequency and persistence of these reports prompted us to open an investigation that led us to uncover three separate infrastructure bugs.
+To state it plainly: We never reduce model quality due to demand, time of day, or server load. The problems our users reported were due to infrastructure bugs alone.
+We recognize users expect consistent quality from Claude, and we maintain an extremely high bar for ensuring infrastructure changes don&#x27;t affect model outputs. In these recent incidents, we didn&#x27;t meet that bar. The following postmortem explains what went wrong, why detection and resolution took longer than we would have wanted, and what we&#x27;re changing to prevent similar future incidents.
+We don&#x27;t typically share this level of technical detail about our infrastructure, but the scope and complexity of these issues justified a more comprehensive explanation.</p></div><div class="lang-cn-block"><p>八月至九月初期间，三个基础设施漏洞间歇性地降低了 Claude 的回复质量。这些问题现已全部修复，我们在此说明事件经过。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>How we serve Claude at scale</h2></div><div class="lang-cn-block"><p>八月初，多位用户开始报告 Claude 回复质量下降。这些早期报告很难与用户反馈中的正常波动区分开来。到了八月下旬，相关报告的频率和持续性不断增加，促使我们启动调查，最终发现了三个独立的基础设施漏洞。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We serve Claude to millions of users via our first-party API, Amazon Bedrock, and Google Cloud&#x27;s Vertex AI. We deploy Claude across multiple hardware platforms, namely AWS Trainium, NVIDIA GPUs, and Google TPUs. This approach provides the capacity and geographic distribution necessary to serve users worldwide.
+Each hardware platform has different characteristics and requires specific optimizations. Despite these variations, we have strict equivalence standards for model implementations. Our aim is that users should get the same quality responses regardless of which platform serves their request. This complexity means that any infrastructure change requires careful validation across all platforms and configurations.</p></div><div class="lang-cn-block"><p>坦率地说：我们从未因请求量、时段或服务器负载而降低模型质量。用户报告的问题完全是由基础设施漏洞导致的。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Timeline of events</h2></div><div class="lang-cn-block"><p>我们深知用户期望 Claude 提供始终如一的质量，因此对确保基础设施变更不影响模型输出设定了极高的标准。在近期这几起事件中，我们未能达到这一标准。以下复盘将说明问题所在、检测和修复为何耗时超预期，以及我们正在采取哪些措施防止类似事件再次发生。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The overlapping nature of these bugs made diagnosis particularly challenging. The first bug was introduced on August 5, affecting approximately 0.8% of requests made to Sonnet 4. Two more bugs arose from deployments on August 25 and 26.
+Although initial impacts were limited, a load balancing change on August 29 started to increase affected traffic. This caused many more users to experience issues while others continued to see normal performance, creating confusing and contradictory reports.</p></div><div class="lang-cn-block"><p>我们通常不会公开分享基础设施层面的技术细节，但此次问题的波及范围和复杂程度值得给出更全面的说明。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Three overlapping issues</h2></div><div class="lang-cn-block"><h2 id="heading-1">我们如何大规模提供 Claude 服务</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Below we describe the three bugs that caused the degradation, when they occurred, and how we resolved them:</p></div><div class="lang-cn-block"><p>我们通过第一方 API、Amazon Bedrock 和 Google Cloud 的 Vertex AI 为数百万用户提供 Claude 服务。Claude 部署在多种硬件平台上，包括 AWS Trainium、NVIDIA GPU 和 Google TPU。这种架构提供了服务全球用户所需的容量和地理分布能力。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>1. Context window routing error</h3></div><div class="lang-cn-block"><p>每个硬件平台都有不同的特性，需要针对性优化。尽管存在这些差异，我们对模型实现有严格的等价性标准。无论用户的请求由哪个平台处理，都应获得相同质量的回复。这种复杂性意味着任何基础设施变更都需要在所有平台和配置上进行仔细验证。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>On August 5, some Sonnet 4 requests were misrouted to servers configured for the upcoming1M tokencontext window. This bug initially affected 0.8% of requests. On August 29, a routine load balancing change unintentionally increased the number of short-context requests routed to the 1M context servers. At the worst impacted hour on August 31, 16% of Sonnet 4 requests were affected.
+Approximately 30% of Claude Code users who made requests during this period had at least one message routed to the wrong server type, resulting in degraded responses. On Amazon Bedrock, misrouted traffic peaked at 0.18% of all Sonnet 4 requests from August 12. Incorrect routing affected less than 0.0004% of requests on Google Cloud&#x27;s Vertex AI between August 27 and September 16.
+However, some users were affected more severely, as our routing is &quot;sticky&quot;. This meant that once a request was served by the incorrect server, subsequent follow-ups were likely to be served by the same incorrect server.
+Resolution:We fixed the routing logic to ensure short- and long-context requests were directed to the correct server pools. We deployed the fix on September 4. Rollout to our first-party platform and Google Cloud&#x27;s Vertex AI was completed by September 16, and to AWS Bedrock by September 18.</p></div><div class="lang-cn-block"><h2 id="heading-2">事件时间线</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>2. Output corruption</h3></div><div class="lang-cn-block"><p>这些漏洞的重叠特性使诊断工作尤为棘手。第一个漏洞于 8 月 5 日引入，影响了约 0.8% 的 Sonnet 4 请求。8 月 25 日和 26 日的部署又引入了两个漏洞。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>On August 25, we deployed a misconfiguration to the Claude API TPU servers that caused an error during token generation. An issue caused by a runtime performance optimization occasionally assigned a high probability to tokens that should rarely be produced given the context, for example producing Thai or Chinese characters in response to English prompts, or producing obvious syntax errors in code. A small subset of users that asked a question in English might have seen &quot;สวัสดี&quot; in the middle of the response, for example.
+This corruption affected requests made to Opus 4.1 and Opus 4 on August 25-28, and requests to Sonnet 4 August 25–September 2. Third-party platforms were not affected by this issue.
+Resolution:We identified the issue and rolled back the change on September 2. We&#x27;ve added detection tests for unexpected character outputs to our deployment process.</p></div><div class="lang-cn-block"><p>虽然初始影响有限，但 8 月 29 日的一次负载均衡变更开始增加受影响的流量。这导致更多用户遇到问题，而其他用户仍看到正常表现，从而产生了令人困惑和相互矛盾的报告。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>3. Approximate top-k XLA:TPU miscompilation</h3></div><div class="lang-cn-block"><h2 id="heading-3">三个重叠的问题</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>On August 25, we deployed code to improve how Claude selects tokens during text generation. This change inadvertently triggered a latent bug in the XLA:TPU[1]compiler, which has been confirmed to affect requests to Claude Haiku 3.5.
+We also believe this could have impacted a subset of Sonnet 4 and Opus 3 on the Claude API. Third-party platforms were not affected by this issue.
+Resolution:We first observed the bug affecting Haiku 3.5 and rolled it back on September 4. We later noticed user reports of problems with Opus 3 that were compatible with this bug, and rolled it back on September 12. After extensive investigation we were unable to reproduce this bug on Sonnet 4 but decided to also roll it back out of an abundance of caution.
+Simultaneously, we have (a) been working with the XLA:TPU team on a fix for the compiler bug and (b) rolled out a fix to use exact top-k with enhanced precision. For details, see the deep dive below.</p></div><div class="lang-cn-block"><p>以下是我们对导致质量下降的三个漏洞的描述，包括发生时间和修复方式：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>A closer look at the XLA compiler bug</h2></div><div class="lang-cn-block"><h3 id="heading-4">1. 上下文窗口路由错误</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>To illustrate the complexity of these issues, here&#x27;s how the XLA compiler bug manifested and why it proved particularly challenging to diagnose.
+When Claude generates text, it calculates probabilities for each possible next word, then randomly chooses a sample from this probability distribution. We use &quot;top-p sampling&quot; to avoid nonsensical outputs—only considering words whose cumulative probability reaches a threshold (typically 0.99 or 0.999). On TPUs, our models run across multiple chips, with probability calculations happening in different locations. To sort these probabilities, we need to coordinate data between chips, which is complex.[2]
+In December 2024, we discovered our TPU implementation would occasionally drop the most probable token whentemperaturewas zero. We deployed a workaround to fix this case.
+The root cause involved mixed precision arithmetic. Our models compute next-token probabilities inbf16(16-bit floating point). However, the vector processor isfp32-native, so the TPU compiler (XLA) can optimize runtime by converting some operations to fp32 (32-bit). This optimization pass is guarded by thexla_allow_excess_precisionflag which defaults to true.
+xla_allow_excess_precision
+This caused a mismatch: operations that should have agreed on the highest probability token were running at different precision levels. The precision mismatch meant they didn&#x27;t agree on which token had the highest probability. This caused the highest probability token to sometimes disappear from consideration entirely.
+On August 26, we deployed a rewrite of our sampling code to fix the precision issues and improve how we handled probabilities at the limit that reach the top-p threshold. But in fixing these problems, we exposed a trickier one.
+xla_allow_excess_precision
+Our fix removed the December workaround because we believed we&#x27;d solved the root cause. This led to a deeper bug in theapproximate top-koperation—a performance optimization that quickly finds the highest probability tokens.[3]This approximation sometimes returned completely wrong results, but only for certain batch sizes and model configurations. The December workaround had been inadvertently masking this problem.
+The bug&#x27;s behavior was frustratingly inconsistent. It changed depending on unrelated factors such as what operations ran before or after it, and whether debugging tools were enabled. The same prompt might work perfectly on one request and fail on the next.
+While investigating, we also discovered that the exact top-k operation no longer had the prohibitive performance penalty it once did. We switched from approximate to exact top-k and standardized some additional operations on fp32 precision.[4]Model quality is non-negotiable, so we accepted the minor efficiency impact.</p></div><div class="lang-cn-block"><p>8 月 5 日，部分 Sonnet 4 请求被错误路由到了为即将推出的 100 万 token 上下文窗口配置的服务器。该漏洞最初影响 0.8% 的请求。8 月 29 日，一次例行负载均衡变更无意中增加了被路由到 100 万上下文服务器的短上下文请求数量。在 8 月 31 日影响最严重的一个小时内，16% 的 Sonnet 4 请求受到影响。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Why detection was difficult</h2></div><div class="lang-cn-block"><p>在此期间，约 30% 的 Claude Code 用户至少有一条消息被路由到了错误的服务器类型，导致回复质量下降。在 Amazon Bedrock 上，自 8 月 12 日起，错误路由的流量峰值占所有 Sonnet 4 请求的 0.18%。8 月 27 日至 9 月 16 日期间，Google Cloud 的 Vertex AI 上受影响的请求不到 0.0004%。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our validation process ordinarily relies on benchmarks alongside safety evaluations and performance metrics. Engineering teams perform spot checks and deploy to small &quot;canary&quot; groups first.
+These issues exposed critical gaps that we should have identified earlier. The evaluations we ran simply didn&#x27;t capture the degradation users were reporting, in part because Claude often recovers well from isolated mistakes. Our own privacy practices also created challenges in investigating reports. Our internal privacy and security controls limit how and when engineers can access user interactions with Claude, in particular when those interactions are not reported to us as feedback. This protects user privacy but prevents engineers from examining the problematic interactions needed to identify or reproduce bugs.
+Each bug produced different symptoms on different platforms at different rates. This created a confusing mix of reports that didn&#x27;t point to any single cause. It looked like random, inconsistent degradation.
+More fundamentally, we relied too heavily on noisy evaluations. Although we were aware of an increase in reports online, we lacked a clear way to connect these to each of our recent changes. When negative reports spiked on August 29, we didn&#x27;t immediately make the connection to an otherwise standard load balancing change.</p></div><div class="lang-cn-block"><p>然而，部分用户受到的影响更为严重，因为我们的路由具有&quot;粘性&quot;。这意味着一旦请求由错误的服务器处理，后续的追问很可能仍由同一台错误的服务器处理。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>What we&#x27;re changing</h2></div><div class="lang-cn-block"><p><strong>修复措施：</strong>我们修正了路由逻辑，确保短上下文和长上下文请求被引导到正确的服务器池。修复于 9 月 4 日部署，9 月 16 日前完成了第一方平台和 Google Cloud Vertex AI 的上线，9 月 18 日前完成了 AWS Bedrock 的上线。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>As we continue to improve our infrastructure, we&#x27;re also improving the way we evaluate and prevent bugs like those discussed above across all platforms where we serve Claude. Here&#x27;s what we&#x27;re changing:</p></div><div class="lang-cn-block"><h3 id="heading-5">2. 输出损坏</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>More sensitive evaluations:To help discover the root cause of any given issue, we’ve developed evaluations that can more reliably differentiate between working and broken implementations. We’ll keep improving these evaluations to keep a closer eye on model quality.</li><li>Quality evaluations in more places:Although we run regular evaluations on our systems, we will run them continuously on true production systems to catch issues such as the context window load balancing error.</li><li>Faster debugging tooling:We&#x27;ll develop infrastructure and tooling to better debug community-sourced feedback without sacrificing user privacy. Additionally, some bespoke tools developed here will be used to reduce the remediation time in future similar incidents, if those should occur.</li></ul></div><div class="lang-cn-block"><p>8 月 25 日，我们向 Claude API 的 TPU 服务器部署了一个错误配置，导致 token 生成过程中出现错误。由运行时性能优化引发的问题偶尔会为在给定上下文中本应极少出现的 token 分配高概率，例如在英文提示中输出泰文或中文字符，或在代码中产生明显的语法错误。少数用英文提问的用户可能会在回复中看到类似&quot;สวัสดี&quot;（泰文&quot;你好&quot;）的内容。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Evals and monitoring are important. But these incidents have shown that we also need continuous signal from users when responses from Claude aren&#x27;t up to the usual standard. Reports of specific changes observed, examples of unexpected behavior encountered, and patterns across different use cases all helped us isolate the issues.
+It remains particularly helpful for users to continue to send us their feedback directly. You can use the/bugcommand in Claude Code or you can use the &quot;thumbs down&quot; button in the Claude apps to do so. Developers and researchers often create new and interesting ways to evaluate model quality that complement our internal testing. If you&#x27;d like to share yours, reach out tofeedback@anthropic.com.
+/bug
+We remain grateful to our community for these contributions.</p></div><div class="lang-cn-block"><p>此损坏影响了 8 月 25-28 日期间对 Opus 4.1 和 Opus 4 的请求，以及 8 月 25 日至 9 月 2 日对 Sonnet 4 的请求。第三方平台未受此问题影响。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Acknowledgments</h4></div><div class="lang-cn-block"><p><strong>修复措施：</strong>我们定位了问题并于 9 月 2 日回滚了相关变更。我们已在部署流程中增加了对异常字符输出的检测测试。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Sam McAllister, with thanks to Stuart Ritchie, Jonathan Gray, Kashyap Murali, Brennan Saeta, Oliver Rausch, Alex Palcuie, and many others.
+[1]XLA:TPU is the optimizing compiler that translatesXLAHigh Level Optimizing language—often written usingJAX—to TPU machine instructions.
+[2]Our models are too large for single chips and are partitioned across tens of chips or more, making our sorting operation a distributed sort. TPUs (just like GPUs and Trainium) also have different performance characteristics than CPUs, requiring different implementation techniques using vectorized operations instead of serial algorithms.
+[3]We had been using this approximate operation because it yielded substantial performance improvements. The approximation works by accepting potential inaccuracies in the lowest probability tokens, which shouldn&#x27;t affect quality—except when the bug caused it to drop the highest probability token instead.
+[4]Note that the now-correct top-k implementation may result in slight differences in the inclusion of tokens near the top-p threshold, and in rare cases users may benefit from re-tuning their choice of top-p.</p></div><div class="lang-cn-block"><h3 id="heading-6">3. 近似 top-k 的 XLA:TPU 编译错误</h3></div></div>
+<div class="lang-cn-block"><p>8 月 25 日，我们部署了用于改进 Claude 在文本生成过程中选择 token 方式的代码。此变更无意中触发了 XLA:TPU[1] 编译器中的一个潜在漏洞，经确认影响了对 Claude Haiku 3.5 的请求。</p></div>
+<div class="lang-cn-block"><p>我们还认为该漏洞可能影响了 Claude API 上部分 Sonnet 4 和 Opus 3 的请求。第三方平台未受此问题影响。</p></div>
+<div class="lang-cn-block"><p><strong>修复措施：</strong>我们首先观察到该漏洞影响了 Haiku 3.5，并于 9 月 4 日进行了回滚。随后注意到用户关于 Opus 3 问题的报告与该漏洞特征吻合，于 9 月 12 日对其也进行了回滚。经过大量调查，我们未能在 Sonnet 4 上复现该漏洞，但出于谨慎考虑，同样进行了回滚。</p></div>
+<div class="lang-cn-block"><p>同时，我们（a）正与 XLA:TPU 团队合作修复编译器漏洞，（b）已部署了使用精确 top-k 并增强精度的修复方案。详情请参见下文的深入分析。</p></div>
+<div class="lang-cn-block"><h2 id="heading-7">XLA 编译器漏洞深入解析</h2></div>
+<div class="lang-cn-block"><p>为了说明这些问题的复杂性，以下是 XLA 编译器漏洞的表现形式及其诊断难度的原因。</p></div>
+<div class="lang-cn-block"><p>当 Claude 生成文本时，它会为每个可能的下一个词计算概率，然后从该概率分布中随机采样。我们使用&quot;top-p 采样&quot;来避免无意义的输出——只考虑累积概率达到阈值（通常为 0.99 或 0.999）的词。在 TPU 上，我们的模型运行在多个芯片上，概率计算在不同位置进行。为了排序这些概率，我们需要在芯片之间协调数据，这本身就很复杂。[2]</p></div>
+<div class="lang-cn-block"><p>2024 年 12 月，我们发现 TPU 实现偶尔会在温度（temperature）为零时丢失概率最高的 token。我们部署了一个变通方案来修复此问题。</p></div>
+<div class="lang-cn-block"><p>根本原因涉及混合精度算术。我们的模型以 bf16（16 位浮点数）计算下一个 token 的概率。然而，向量处理器是原生 fp32 的，因此 TPU 编译器（XLA）可以通过将部分运算转换为 fp32（32 位）来优化运行时性能。该优化过程受 <code class="inline">xla_allow_excess_precision</code> 标志保护，其默认值为 true。</p></div>
+<div class="lang-cn-block"><p>这导致了不一致：本应对最高概率 token 达成一致的运算在不同精度级别上运行。精度不一致意味着它们对哪个 token 具有最高概率的判断不一致，导致最高概率的 token 有时会完全从候选中消失。</p></div>
+<div class="lang-cn-block"><p>8 月 26 日，我们部署了采样代码的重写版本，以修复精度问题并改进我们对达到 top-p 阈值的极限概率的处理方式。但在修复这些问题的过程中，我们暴露了一个更棘手的问题。</p></div>
+<div class="lang-cn-block"><p>我们的修复移除了 12 月的变通方案，因为我们认为已解决了根本原因。这导致 <code class="inline">approximate top-k</code>（近似 top-k）运算中出现了更深层的漏洞——这是一种快速找到最高概率 token 的性能优化。[3] 这种近似方法有时会返回完全错误的结果，但仅在特定批量大小和模型配置下出现。12 月的变通方案无意中掩盖了这个问题。</p></div>
+<div class="lang-cn-block"><p>该漏洞的行为令人沮丧地不一致。它会因不相关的因素而变化，例如其前后运行了什么操作，以及是否启用了调试工具。相同的提示可能在一次请求中完美运行，在下一次请求中则失败。</p></div>
+<div class="lang-cn-block"><p>在调查过程中，我们还发现精确 top-k 运算不再具有曾经令人望而却步的性能代价。我们将近似 top-k 切换为精确 top-k，并将部分额外运算标准化为 fp32 精度。[4] 模型质量是不可妥协的，因此我们接受了轻微的效率影响。</p></div>
+<div class="lang-cn-block"><h2 id="heading-8">为何检测困难</h2></div>
+<div class="lang-cn-block"><p>我们的验证流程通常依赖基准测试、安全评估和性能指标。工程团队进行抽查，并先部署到小规模的&quot;金丝雀&quot;用户组。</p></div>
+<div class="lang-cn-block"><p>这些暴露出的关键缺口本应更早被发现。我们运行的评估根本没有捕捉到用户报告的质量下降，部分原因是 Claude 通常能很好地从孤立错误中恢复。我们自身的隐私保护措施也给调查报告带来了挑战。我们的内部隐私和安全控制限制了工程师访问用户与 Claude 交互的方式和时机，特别是在这些交互未作为反馈报告给我们的情况下。这保护了用户隐私，但也阻碍了工程师检查识别或复现漏洞所需的问题交互。</p></div>
+<div class="lang-cn-block"><p>每个漏洞在不同平台上以不同速率产生了不同的症状。这造成了一堆令人困惑的报告，无法指向任何单一原因。看起来像是随机的、不一致的质量下降。</p></div>
+<div class="lang-cn-block"><p>更根本的是，我们过于依赖噪音较大的评估指标。尽管我们注意到网上报告有所增加，但缺乏将这些报告与我们近期各项变更明确关联的方法。当 8 月 29 日负面报告激增时，我们并未立即将其与一次看似常规的负载均衡变更联系起来。</p></div>
+<div class="lang-cn-block"><h2 id="heading-9">我们正在做出的改变</h2></div>
+<div class="lang-cn-block"><p>在持续改进基础设施的同时，我们也正在改进在所有 Claude 服务平台上评估和预防类似漏洞的方式。以下是我们的改进措施：</p></div>
+<div class="lang-cn-block"><ul><li><strong>更灵敏的评估：</strong>为了帮助发现任何特定问题的根本原因，我们开发了能够更可靠地区分正常与异常实现的评估方法。我们将持续改进这些评估，更密切地关注模型质量。</li></ul></div>
+<div class="lang-cn-block"><ul><li><strong>在更多环节进行质量评估：</strong>虽然我们对系统进行定期评估，但我们将在真实生产系统上持续运行评估，以捕获诸如上下文窗口负载均衡错误等问题。</li></ul></div>
+<div class="lang-cn-block"><ul><li><strong>更快的调试工具：</strong>我们将开发基础设施和工具，以便在不牺牲用户隐私的前提下更好地调试来自社区的反馈。此外，此次开发的部分定制工具将用于缩短未来类似事件（如果发生）的修复时间。</li></ul></div>
+<div class="lang-cn-block"><p>评估和监控固然重要。但这些事件表明，当 Claude 的回复未达到通常标准时，我们也需要来自用户的持续信号。对所观察到的具体变化的报告、遇到的意外行为示例以及不同使用场景中的模式，都有助于我们隔离问题。</p></div>
+<div class="lang-cn-block"><p>用户继续直接向我们发送反馈仍然特别有帮助。您可以使用 Claude Code 中的 <code class="inline">/bug</code> 命令，或使用 Claude 应用中的&quot;踩&quot;（thumbs down）按钮来提交反馈。开发者和研究人员经常创建新的、有趣的方法来评估模型质量，这些方法可以补充我们的内部测试。如果您愿意分享您的评估方法，请联系 feedback@anthropic.com。</p></div>
+<div class="lang-cn-block"><p>我们对社区的这些贡献深表感谢。</p></div>
+<div class="lang-cn-block"><h4>致谢</h4></div>
+<div class="lang-cn-block"><p>由 Sam McAllister 撰写，感谢 Stuart Ritchie、Jonathan Gray、Kashyap Murali、Brennan Saeta、Oliver Rausch、Alex Palcuie 及众多其他同事。</p></div>
+<div class="lang-cn-block"><p>[1] XLA:TPU 是优化编译器，用于将 XLA 高级优化语言（通常通过 JAX 编写）翻译为 TPU 机器指令。</p></div>
+<div class="lang-cn-block"><p>[2] 我们的模型规模太大，无法在单个芯片上运行，因此被分布在数十个甚至更多芯片上，使得排序操作成为分布式排序。TPU（与 GPU 和 Trainium 一样）的性能特性与 CPU 不同，需要使用向量化运算而非串行算法的不同实现技术。</p></div>
+<div class="lang-cn-block"><p>[3] 我们此前使用该近似运算是因为它带来了显著的性能提升。该近似方法通过接受最低概率 token 的潜在不精确性来工作，这通常不会影响质量——除了当漏洞导致它丢弃的是最高概率 token。</p></div>
+<div class="lang-cn-block"><p>[4] 请注意，现在修正后的 top-k 实现可能导致接近 top-p 阈值的 token 的纳入情况出现细微差异，在极少数情况下，用户可能受益于重新调整其 top-p 参数的选择。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>八月至九月初期间，三个基础设施漏洞间歇性地降低了 Claude 的回复质量。这些问题现已全部修复，我们在此说明事件经过。</p>
+<p>八月初，多位用户开始报告 Claude 回复质量下降。这些早期报告很难与用户反馈中的正常波动区分开来。到了八月下旬，相关报告的频率和持续性不断增加，促使我们启动调查，最终发现了三个独立的基础设施漏洞。</p>
+<p>坦率地说：我们从未因请求量、时段或服务器负载而降低模型质量。用户报告的问题完全是由基础设施漏洞导致的。</p>
+<p>我们深知用户期望 Claude 提供始终如一的质量，因此对确保基础设施变更不影响模型输出设定了极高的标准。在近期这几起事件中，我们未能达到这一标准。以下复盘将说明问题所在、检测和修复为何耗时超预期，以及我们正在采取哪些措施防止类似事件再次发生。</p>
+<p>我们通常不会公开分享基础设施层面的技术细节，但此次问题的波及范围和复杂程度值得给出更全面的说明。</p>
+<h2>我们如何大规模提供 Claude 服务</h2>
+<p>我们通过第一方 API、Amazon Bedrock 和 Google Cloud 的 Vertex AI 为数百万用户提供 Claude 服务。Claude 部署在多种硬件平台上，包括 AWS Trainium、NVIDIA GPU 和 Google TPU。这种架构提供了服务全球用户所需的容量和地理分布能力。</p>
+<p>每个硬件平台都有不同的特性，需要针对性优化。尽管存在这些差异，我们对模型实现有严格的等价性标准。无论用户的请求由哪个平台处理，都应获得相同质量的回复。这种复杂性意味着任何基础设施变更都需要在所有平台和配置上进行仔细验证。</p>
+<h2>事件时间线</h2>
+<p>这些漏洞的重叠特性使诊断工作尤为棘手。第一个漏洞于 8 月 5 日引入，影响了约 0.8% 的 Sonnet 4 请求。8 月 25 日和 26 日的部署又引入了两个漏洞。</p>
+<p>虽然初始影响有限，但 8 月 29 日的一次负载均衡变更开始增加受影响的流量。这导致更多用户遇到问题，而其他用户仍看到正常表现，从而产生了令人困惑和相互矛盾的报告。</p>
+<h2>三个重叠的问题</h2>
+<p>以下是我们对导致质量下降的三个漏洞的描述，包括发生时间和修复方式：</p>
+<h3>1. 上下文窗口路由错误</h3>
+<p>8 月 5 日，部分 Sonnet 4 请求被错误路由到了为即将推出的 100 万 token 上下文窗口配置的服务器。该漏洞最初影响 0.8% 的请求。8 月 29 日，一次例行负载均衡变更无意中增加了被路由到 100 万上下文服务器的短上下文请求数量。在 8 月 31 日影响最严重的一个小时内，16% 的 Sonnet 4 请求受到影响。</p>
+<p>在此期间，约 30% 的 Claude Code 用户至少有一条消息被路由到了错误的服务器类型，导致回复质量下降。在 Amazon Bedrock 上，自 8 月 12 日起，错误路由的流量峰值占所有 Sonnet 4 请求的 0.18%。8 月 27 日至 9 月 16 日期间，Google Cloud 的 Vertex AI 上受影响的请求不到 0.0004%。</p>
+<p>然而，部分用户受到的影响更为严重，因为我们的路由具有&quot;粘性&quot;。这意味着一旦请求由错误的服务器处理，后续的追问很可能仍由同一台错误的服务器处理。</p>
+<p><strong>修复措施：</strong>我们修正了路由逻辑，确保短上下文和长上下文请求被引导到正确的服务器池。修复于 9 月 4 日部署，9 月 16 日前完成了第一方平台和 Google Cloud Vertex AI 的上线，9 月 18 日前完成了 AWS Bedrock 的上线。</p>
+<h3>2. 输出损坏</h3>
+<p>8 月 25 日，我们向 Claude API 的 TPU 服务器部署了一个错误配置，导致 token 生成过程中出现错误。由运行时性能优化引发的问题偶尔会为在给定上下文中本应极少出现的 token 分配高概率，例如在英文提示中输出泰文或中文字符，或在代码中产生明显的语法错误。少数用英文提问的用户可能会在回复中看到类似&quot;สวัสดี&quot;（泰文&quot;你好&quot;）的内容。</p>
+<p>此损坏影响了 8 月 25-28 日期间对 Opus 4.1 和 Opus 4 的请求，以及 8 月 25 日至 9 月 2 日对 Sonnet 4 的请求。第三方平台未受此问题影响。</p>
+<p><strong>修复措施：</strong>我们定位了问题并于 9 月 2 日回滚了相关变更。我们已在部署流程中增加了对异常字符输出的检测测试。</p>
+<h3>3. 近似 top-k 的 XLA:TPU 编译错误</h3>
+<p>8 月 25 日，我们部署了用于改进 Claude 在文本生成过程中选择 token 方式的代码。此变更无意中触发了 XLA:TPU[1] 编译器中的一个潜在漏洞，经确认影响了对 Claude Haiku 3.5 的请求。</p>
+<p>我们还认为该漏洞可能影响了 Claude API 上部分 Sonnet 4 和 Opus 3 的请求。第三方平台未受此问题影响。</p>
+<p><strong>修复措施：</strong>我们首先观察到该漏洞影响了 Haiku 3.5，并于 9 月 4 日进行了回滚。随后注意到用户关于 Opus 3 问题的报告与该漏洞特征吻合，于 9 月 12 日对其也进行了回滚。经过大量调查，我们未能在 Sonnet 4 上复现该漏洞，但出于谨慎考虑，同样进行了回滚。</p>
+<p>同时，我们（a）正与 XLA:TPU 团队合作修复编译器漏洞，（b）已部署了使用精确 top-k 并增强精度的修复方案。详情请参见下文的深入分析。</p>
+<h2>XLA 编译器漏洞深入解析</h2>
+<p>为了说明这些问题的复杂性，以下是 XLA 编译器漏洞的表现形式及其诊断难度的原因。</p>
+<p>当 Claude 生成文本时，它会为每个可能的下一个词计算概率，然后从该概率分布中随机采样。我们使用&quot;top-p 采样&quot;来避免无意义的输出——只考虑累积概率达到阈值（通常为 0.99 或 0.999）的词。在 TPU 上，我们的模型运行在多个芯片上，概率计算在不同位置进行。为了排序这些概率，我们需要在芯片之间协调数据，这本身就很复杂。[2]</p>
+<p>2024 年 12 月，我们发现 TPU 实现偶尔会在温度（temperature）为零时丢失概率最高的 token。我们部署了一个变通方案来修复此问题。</p>
+<p>根本原因涉及混合精度算术。我们的模型以 bf16（16 位浮点数）计算下一个 token 的概率。然而，向量处理器是原生 fp32 的，因此 TPU 编译器（XLA）可以通过将部分运算转换为 fp32（32 位）来优化运行时性能。该优化过程受 <code class="inline">xla_allow_excess_precision</code> 标志保护，其默认值为 true。</p>
+<p>这导致了不一致：本应对最高概率 token 达成一致的运算在不同精度级别上运行。精度不一致意味着它们对哪个 token 具有最高概率的判断不一致，导致最高概率的 token 有时会完全从候选中消失。</p>
+<p>8 月 26 日，我们部署了采样代码的重写版本，以修复精度问题并改进我们对达到 top-p 阈值的极限概率的处理方式。但在修复这些问题的过程中，我们暴露了一个更棘手的问题。</p>
+<p>我们的修复移除了 12 月的变通方案，因为我们认为已解决了根本原因。这导致 <code class="inline">approximate top-k</code>（近似 top-k）运算中出现了更深层的漏洞——这是一种快速找到最高概率 token 的性能优化。[3] 这种近似方法有时会返回完全错误的结果，但仅在特定批量大小和模型配置下出现。12 月的变通方案无意中掩盖了这个问题。</p>
+<p>该漏洞的行为令人沮丧地不一致。它会因不相关的因素而变化，例如其前后运行了什么操作，以及是否启用了调试工具。相同的提示可能在一次请求中完美运行，在下一次请求中则失败。</p>
+<p>在调查过程中，我们还发现精确 top-k 运算不再具有曾经令人望而却步的性能代价。我们将近似 top-k 切换为精确 top-k，并将部分额外运算标准化为 fp32 精度。[4] 模型质量是不可妥协的，因此我们接受了轻微的效率影响。</p>
+<h2>为何检测困难</h2>
+<p>我们的验证流程通常依赖基准测试、安全评估和性能指标。工程团队进行抽查，并先部署到小规模的&quot;金丝雀&quot;用户组。</p>
+<p>这些暴露出的关键缺口本应更早被发现。我们运行的评估根本没有捕捉到用户报告的质量下降，部分原因是 Claude 通常能很好地从孤立错误中恢复。我们自身的隐私保护措施也给调查报告带来了挑战。我们的内部隐私和安全控制限制了工程师访问用户与 Claude 交互的方式和时机，特别是在这些交互未作为反馈报告给我们的情况下。这保护了用户隐私，但也阻碍了工程师检查识别或复现漏洞所需的问题交互。</p>
+<p>每个漏洞在不同平台上以不同速率产生了不同的症状。这造成了一堆令人困惑的报告，无法指向任何单一原因。看起来像是随机的、不一致的质量下降。</p>
+<p>更根本的是，我们过于依赖噪音较大的评估指标。尽管我们注意到网上报告有所增加，但缺乏将这些报告与我们近期各项变更明确关联的方法。当 8 月 29 日负面报告激增时，我们并未立即将其与一次看似常规的负载均衡变更联系起来。</p>
+<h2>我们正在做出的改变</h2>
+<p>在持续改进基础设施的同时，我们也正在改进在所有 Claude 服务平台上评估和预防类似漏洞的方式。以下是我们的改进措施：</p>
+<ul>
+<li><strong>更灵敏的评估：</strong>为了帮助发现任何特定问题的根本原因，我们开发了能够更可靠地区分正常与异常实现的评估方法。我们将持续改进这些评估，更密切地关注模型质量。</li>
+<li><strong>在更多环节进行质量评估：</strong>虽然我们对系统进行定期评估，但我们将在真实生产系统上持续运行评估，以捕获诸如上下文窗口负载均衡错误等问题。</li>
+<li><strong>更快的调试工具：</strong>我们将开发基础设施和工具，以便在不牺牲用户隐私的前提下更好地调试来自社区的反馈。此外，此次开发的部分定制工具将用于缩短未来类似事件（如果发生）的修复时间。</li>
+</ul>
+<p>评估和监控固然重要。但这些事件表明，当 Claude 的回复未达到通常标准时，我们也需要来自用户的持续信号。对所观察到的具体变化的报告、遇到的意外行为示例以及不同使用场景中的模式，都有助于我们隔离问题。</p>
+<p>用户继续直接向我们发送反馈仍然特别有帮助。您可以使用 Claude Code 中的 <code class="inline">/bug</code> 命令，或使用 Claude 应用中的&quot;踩&quot;（thumbs down）按钮来提交反馈。开发者和研究人员经常创建新的、有趣的方法来评估模型质量，这些方法可以补充我们的内部测试。如果您愿意分享您的评估方法，请联系 feedback@anthropic.com。</p>
+<p>我们对社区的这些贡献深表感谢。</p>
+<h4>致谢</h4>
+<p>由 Sam McAllister 撰写，感谢 Stuart Ritchie、Jonathan Gray、Kashyap Murali、Brennan Saeta、Oliver Rausch、Alex Palcuie 及众多其他同事。</p>
+<p>[1] XLA:TPU 是优化编译器，用于将 XLA 高级优化语言（通常通过 JAX 编写）翻译为 TPU 机器指令。</p>
+<p>[2] 我们的模型规模太大，无法在单个芯片上运行，因此被分布在数十个甚至更多芯片上，使得排序操作成为分布式排序。TPU（与 GPU 和 Trainium 一样）的性能特性与 CPU 不同，需要使用向量化运算而非串行算法的不同实现技术。</p>
+<p>[3] 我们此前使用该近似运算是因为它带来了显著的性能提升。该近似方法通过接受最低概率 token 的潜在不精确性来工作，这通常不会影响质量——除了当漏洞导致它丢弃的是最高概率 token。</p>
+<p>[4] 请注意，现在修正后的 top-k 实现可能导致接近 top-p 阈值的 token 的纳入情况出现细微差异，在极少数情况下，用户可能受益于重新调整其 top-p 参数的选择。</p></div>
+                <div class="lang-en"><p>Between August and early September, three infrastructure bugs intermittently degraded Claude&#x27;s response quality. We&#x27;ve now resolved these issues and want to explain what happened.
+In early August, a number of users began reporting degraded responses from Claude. These initial reports were difficult to distinguish from normal variation in user feedback. By late August, the increasing frequency and persistence of these reports prompted us to open an investigation that led us to uncover three separate infrastructure bugs.
+To state it plainly: We never reduce model quality due to demand, time of day, or server load. The problems our users reported were due to infrastructure bugs alone.
+We recognize users expect consistent quality from Claude, and we maintain an extremely high bar for ensuring infrastructure changes don&#x27;t affect model outputs. In these recent incidents, we didn&#x27;t meet that bar. The following postmortem explains what went wrong, why detection and resolution took longer than we would have wanted, and what we&#x27;re changing to prevent similar future incidents.
+We don&#x27;t typically share this level of technical detail about our infrastructure, but the scope and complexity of these issues justified a more comprehensive explanation.</p>
+<h2>How we serve Claude at scale</h2>
+<p>We serve Claude to millions of users via our first-party API, Amazon Bedrock, and Google Cloud&#x27;s Vertex AI. We deploy Claude across multiple hardware platforms, namely AWS Trainium, NVIDIA GPUs, and Google TPUs. This approach provides the capacity and geographic distribution necessary to serve users worldwide.
+Each hardware platform has different characteristics and requires specific optimizations. Despite these variations, we have strict equivalence standards for model implementations. Our aim is that users should get the same quality responses regardless of which platform serves their request. This complexity means that any infrastructure change requires careful validation across all platforms and configurations.</p>
+<h2>Timeline of events</h2>
+<p>The overlapping nature of these bugs made diagnosis particularly challenging. The first bug was introduced on August 5, affecting approximately 0.8% of requests made to Sonnet 4. Two more bugs arose from deployments on August 25 and 26.
+Although initial impacts were limited, a load balancing change on August 29 started to increase affected traffic. This caused many more users to experience issues while others continued to see normal performance, creating confusing and contradictory reports.</p>
+<h2>Three overlapping issues</h2>
+<p>Below we describe the three bugs that caused the degradation, when they occurred, and how we resolved them:</p>
+<h3>1. Context window routing error</h3>
+<p>On August 5, some Sonnet 4 requests were misrouted to servers configured for the upcoming1M tokencontext window. This bug initially affected 0.8% of requests. On August 29, a routine load balancing change unintentionally increased the number of short-context requests routed to the 1M context servers. At the worst impacted hour on August 31, 16% of Sonnet 4 requests were affected.
+Approximately 30% of Claude Code users who made requests during this period had at least one message routed to the wrong server type, resulting in degraded responses. On Amazon Bedrock, misrouted traffic peaked at 0.18% of all Sonnet 4 requests from August 12. Incorrect routing affected less than 0.0004% of requests on Google Cloud&#x27;s Vertex AI between August 27 and September 16.
+However, some users were affected more severely, as our routing is &quot;sticky&quot;. This meant that once a request was served by the incorrect server, subsequent follow-ups were likely to be served by the same incorrect server.
+Resolution:We fixed the routing logic to ensure short- and long-context requests were directed to the correct server pools. We deployed the fix on September 4. Rollout to our first-party platform and Google Cloud&#x27;s Vertex AI was completed by September 16, and to AWS Bedrock by September 18.</p>
+<h3>2. Output corruption</h3>
+<p>On August 25, we deployed a misconfiguration to the Claude API TPU servers that caused an error during token generation. An issue caused by a runtime performance optimization occasionally assigned a high probability to tokens that should rarely be produced given the context, for example producing Thai or Chinese characters in response to English prompts, or producing obvious syntax errors in code. A small subset of users that asked a question in English might have seen &quot;สวัสดี&quot; in the middle of the response, for example.
+This corruption affected requests made to Opus 4.1 and Opus 4 on August 25-28, and requests to Sonnet 4 August 25–September 2. Third-party platforms were not affected by this issue.
+Resolution:We identified the issue and rolled back the change on September 2. We&#x27;ve added detection tests for unexpected character outputs to our deployment process.</p>
+<h3>3. Approximate top-k XLA:TPU miscompilation</h3>
+<p>On August 25, we deployed code to improve how Claude selects tokens during text generation. This change inadvertently triggered a latent bug in the XLA:TPU[1]compiler, which has been confirmed to affect requests to Claude Haiku 3.5.
+We also believe this could have impacted a subset of Sonnet 4 and Opus 3 on the Claude API. Third-party platforms were not affected by this issue.
+Resolution:We first observed the bug affecting Haiku 3.5 and rolled it back on September 4. We later noticed user reports of problems with Opus 3 that were compatible with this bug, and rolled it back on September 12. After extensive investigation we were unable to reproduce this bug on Sonnet 4 but decided to also roll it back out of an abundance of caution.
+Simultaneously, we have (a) been working with the XLA:TPU team on a fix for the compiler bug and (b) rolled out a fix to use exact top-k with enhanced precision. For details, see the deep dive below.</p>
+<h2>A closer look at the XLA compiler bug</h2>
+<p>To illustrate the complexity of these issues, here&#x27;s how the XLA compiler bug manifested and why it proved particularly challenging to diagnose.
+When Claude generates text, it calculates probabilities for each possible next word, then randomly chooses a sample from this probability distribution. We use &quot;top-p sampling&quot; to avoid nonsensical outputs—only considering words whose cumulative probability reaches a threshold (typically 0.99 or 0.999). On TPUs, our models run across multiple chips, with probability calculations happening in different locations. To sort these probabilities, we need to coordinate data between chips, which is complex.[2]
+In December 2024, we discovered our TPU implementation would occasionally drop the most probable token whentemperaturewas zero. We deployed a workaround to fix this case.
+The root cause involved mixed precision arithmetic. Our models compute next-token probabilities inbf16(16-bit floating point). However, the vector processor isfp32-native, so the TPU compiler (XLA) can optimize runtime by converting some operations to fp32 (32-bit). This optimization pass is guarded by thexla_allow_excess_precisionflag which defaults to true.
+xla_allow_excess_precision
+This caused a mismatch: operations that should have agreed on the highest probability token were running at different precision levels. The precision mismatch meant they didn&#x27;t agree on which token had the highest probability. This caused the highest probability token to sometimes disappear from consideration entirely.
+On August 26, we deployed a rewrite of our sampling code to fix the precision issues and improve how we handled probabilities at the limit that reach the top-p threshold. But in fixing these problems, we exposed a trickier one.
+xla_allow_excess_precision
+Our fix removed the December workaround because we believed we&#x27;d solved the root cause. This led to a deeper bug in theapproximate top-koperation—a performance optimization that quickly finds the highest probability tokens.[3]This approximation sometimes returned completely wrong results, but only for certain batch sizes and model configurations. The December workaround had been inadvertently masking this problem.
+The bug&#x27;s behavior was frustratingly inconsistent. It changed depending on unrelated factors such as what operations ran before or after it, and whether debugging tools were enabled. The same prompt might work perfectly on one request and fail on the next.
+While investigating, we also discovered that the exact top-k operation no longer had the prohibitive performance penalty it once did. We switched from approximate to exact top-k and standardized some additional operations on fp32 precision.[4]Model quality is non-negotiable, so we accepted the minor efficiency impact.</p>
+<h2>Why detection was difficult</h2>
+<p>Our validation process ordinarily relies on benchmarks alongside safety evaluations and performance metrics. Engineering teams perform spot checks and deploy to small &quot;canary&quot; groups first.
+These issues exposed critical gaps that we should have identified earlier. The evaluations we ran simply didn&#x27;t capture the degradation users were reporting, in part because Claude often recovers well from isolated mistakes. Our own privacy practices also created challenges in investigating reports. Our internal privacy and security controls limit how and when engineers can access user interactions with Claude, in particular when those interactions are not reported to us as feedback. This protects user privacy but prevents engineers from examining the problematic interactions needed to identify or reproduce bugs.
+Each bug produced different symptoms on different platforms at different rates. This created a confusing mix of reports that didn&#x27;t point to any single cause. It looked like random, inconsistent degradation.
+More fundamentally, we relied too heavily on noisy evaluations. Although we were aware of an increase in reports online, we lacked a clear way to connect these to each of our recent changes. When negative reports spiked on August 29, we didn&#x27;t immediately make the connection to an otherwise standard load balancing change.</p>
+<h2>What we&#x27;re changing</h2>
+<p>As we continue to improve our infrastructure, we&#x27;re also improving the way we evaluate and prevent bugs like those discussed above across all platforms where we serve Claude. Here&#x27;s what we&#x27;re changing:</p>
+<ul>
+<li>More sensitive evaluations:To help discover the root cause of any given issue, we’ve developed evaluations that can more reliably differentiate between working and broken implementations. We’ll keep improving these evaluations to keep a closer eye on model quality.</li>
+<li>Quality evaluations in more places:Although we run regular evaluations on our systems, we will run them continuously on true production systems to catch issues such as the context window load balancing error.</li>
+<li>Faster debugging tooling:We&#x27;ll develop infrastructure and tooling to better debug community-sourced feedback without sacrificing user privacy. Additionally, some bespoke tools developed here will be used to reduce the remediation time in future similar incidents, if those should occur.</li>
+</ul>
+<p>Evals and monitoring are important. But these incidents have shown that we also need continuous signal from users when responses from Claude aren&#x27;t up to the usual standard. Reports of specific changes observed, examples of unexpected behavior encountered, and patterns across different use cases all helped us isolate the issues.
+It remains particularly helpful for users to continue to send us their feedback directly. You can use the/bugcommand in Claude Code or you can use the &quot;thumbs down&quot; button in the Claude apps to do so. Developers and researchers often create new and interesting ways to evaluate model quality that complement our internal testing. If you&#x27;d like to share yours, reach out tofeedback@anthropic.com.
+/bug
+We remain grateful to our community for these contributions.</p>
+<h4>Acknowledgments</h4>
+<p>Written by Sam McAllister, with thanks to Stuart Ritchie, Jonathan Gray, Kashyap Murali, Brennan Saeta, Oliver Rausch, Alex Palcuie, and many others.
+[1]XLA:TPU is the optimizing compiler that translatesXLAHigh Level Optimizing language—often written usingJAX—to TPU machine instructions.
+[2]Our models are too large for single chips and are partitioned across tens of chips or more, making our sorting operation a distributed sort. TPUs (just like GPUs and Trainium) also have different performance characteristics than CPUs, requiring different implementation techniques using vectorized operations instead of serial algorithms.
+[3]We had been using this approximate operation because it yielded substantial performance improvements. The approximation works by accepting potential inaccuracies in the lowest probability tokens, which shouldn&#x27;t affect quality—except when the bug caused it to drop the highest probability token instead.
+[4]Note that the now-correct top-k implementation may result in slight differences in the inclusion of tokens near the top-p threshold, and in rare cases users may benefit from re-tuning their choice of top-p.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

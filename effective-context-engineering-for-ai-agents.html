@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 智能体的高效上下文工程 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">上下文工程与提示工程</a>
+<a class="toc-h2" href="#heading-2">为什么上下文工程对构建强大智能体至关重要</a>
+<a class="toc-h2" href="#heading-3">有效上下文的构成</a>
+<a class="toc-h2" href="#heading-4">上下文检索与智能体搜索</a>
+<a class="toc-h3" href="#heading-5">长期任务的上下文工程</a>
+<a class="toc-h2" href="#heading-6">结论</a>
+<a class="toc-h2" href="#heading-7">致谢</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">Context engineering vs. prompt engineering</a>
+<a class="toc-h2" href="#heading-2">Why context engineering is important to building capable agents</a>
+<a class="toc-h2" href="#heading-3">The anatomy of effective context</a>
+<a class="toc-h2" href="#heading-4">Tool guidance</a>
+<a class="toc-h2" href="#heading-5">Output description</a>
+<a class="toc-h2" href="#heading-6">Context retrieval and agentic search</a>
+<a class="toc-h3" href="#heading-7">Context engineering for long-horizon tasks</a>
+<a class="toc-h2" href="#heading-8">Conclusion</a>
+<a class="toc-h2" href="#heading-9">Acknowledgements</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-09-29</div>
+            <div class="title-block">
+                <h1 class="cn">AI 智能体的高效上下文工程</h1>
+                <h1 class="en">Effective context engineering for AI agents</h1>
+                <div class="en-title">Effective context engineering for AI agents</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>After a few years of prompt engineering being the focus of attention in applied AI, a new term has come to prominence:context engineering. Building with language models is becoming less about finding the right words and phrases for your prompts, and more about answering the broader question of “what configuration of context is most likely to generate our model’s desired behavior?&quot;
+Contextrefers to the set of tokens included when sampling from a large-language model (LLM). Theengineeringproblem at hand is optimizing the utility of those tokens against the inherent constraints of LLMs in order to consistently achieve a desired outcome. Effectively wrangling LLMs often requiresthinking in context— in other words: considering the holistic state available to the LLM at any given time and what potential behaviors that state might yield.
+In this post, we’ll explore the emerging art of context engineering and offer a refined mental model for building steerable, effective agents.</p></div><div class="lang-cn-block"><p>在提示工程（Prompt Engineering）作为应用人工智能领域焦点数年之后，一个新术语逐渐崭露头角：上下文工程（Context Engineering）。基于语言模型的开发正在从寻找合适的提示词和短语，转向回答一个更根本的问题：&quot;怎样的上下文配置最有可能让模型产生我们期望的行为？&quot;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Context engineering vs. prompt engineering</h2></div><div class="lang-cn-block"><p>上下文（Context）指的是从大语言模型（LLM）采样时所包含的一组 Token。而工程（Engineering）问题的核心在于：如何在 LLM 固有约束下优化这些 Token 的效用，以持续达成预期结果。有效地驾驭 LLM 往往需要以上下文的方式进行思考——换言之，需要综合考量 LLM 在任意时刻所能获取的整体状态，以及该状态可能引发的潜在行为。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>At Anthropic, we view context engineering as the natural progression of prompt engineering. Prompt engineering refers to methods for writing and organizing LLM instructions for optimal outcomes (seeour docsfor an overview and useful prompt engineering strategies).Context engineeringrefers to the set of strategies for curating and maintaining the optimal set of tokens (information) during LLM inference, including all the other information that may land there outside of the prompts.
+In the early days of engineering with LLMs, prompting was the biggest component of AI engineering work, as the majority of use cases outside of everyday chat interactions required prompts optimized for one-shot classification or text generation tasks. As the term implies, the primary focus of prompt engineering is how to write effective prompts, particularly system prompts. However, as we move towards engineering more capable agents that operate over multiple turns of inference and longer time horizons, we need strategies for managing the entire context state (system instructions, tools,Model Context Protocol(MCP), external data, message history, etc).
+An agent running in a loop generates more and more data thatcouldbe relevant for the next turn of inference, and this information must be cyclically refined. Context engineering is theart and scienceof curating what will go into the limited context window from that constantly evolving universe of possible information.</p></div><div class="lang-cn-block"><p>在本文中，我们将探索上下文工程这一新兴实践，并提供一个经过优化的心智模型，用于构建可控且高效的智能体（Agent）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Why context engineering is important to building capable agents</h2></div><div class="lang-cn-block"><h2 id="heading-1">上下文工程与提示工程</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Despite their speed and ability to manage larger and larger volumes of data, we’ve observed that LLMs, like humans, lose focus or experience confusion at a certain point. Studies on needle-in-a-haystackstyle benchmarking have uncovered the concept ofcontext rot: as the number of tokens in the context window increases, the model’s ability to accurately recall information from that context decreases.
+While some models exhibit more gentle degradation than others, this characteristic emerges across all models. Context, therefore, must be treated as a finite resource with diminishing marginal returns. Like humans, who havelimited working memory capacity, LLMs have an “attention budget” that they draw on when parsing large volumes of context. Every new token introduced depletes this budget by some amount, increasing the need to carefully curate the tokens available to the LLM.
+This attention scarcity stems from architectural constraints of LLMs. LLMs are based on thetransformer architecture, which enables every token toattend to every other tokenacross the entire context. This results in n² pairwise relationships for n tokens.
+As its context length increases, a model&#x27;s ability to capture these pairwise relationships gets stretched thin, creating a natural tension between context size and attention focus. Additionally, models develop their attention patterns from training data distributions where shorter sequences are typically more common than longer ones. This means models have less experience with, and fewer specialized parameters for, context-wide dependencies.
+Techniques likeposition encoding interpolationallow models to handle longer sequences by adapting them to the originally trained smaller context, though with some degradation in token position understanding. These factors create a performance gradient rather than a hard cliff: models remain highly capable at longer contexts but may show reduced precision for information retrieval and long-range reasoning compared to their performance on shorter contexts.
+These realities mean that thoughtful context engineering is essential for building capable agents.</p></div><div class="lang-cn-block"><p>在 Anthropic，我们将上下文工程视为提示工程的自然演进。提示工程指的是编写和组织 LLM 指令以获得最优结果的方法（参见我们的文档了解概览及实用的提示工程策略）。上下文工程则指在 LLM 推理过程中，策展和维护最优 Token（信息）集合的一整套策略，涵盖提示之外可能进入上下文的所有其他信息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The anatomy of effective context</h2></div><div class="lang-cn-block"><p>在 LLM 工程化的早期阶段，提示是 AI 工程工作的最大组成部分，因为除日常对话交互外，大多数用例都需要针对一次性分类或文本生成任务优化的提示。顾名思义，提示工程的核心关注点是如何编写有效的提示，尤其是系统提示。然而，随着我们转向构建更强大的、能够在多轮推理和更长时间跨度上运行的智能体，我们需要管理整个上下文状态的策略（系统指令、工具、模型上下文协议（Model Context Protocol, MCP）、外部数据、消息历史等）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Given that LLMs are constrained by a finite attention budget,goodcontext engineering means finding thesmallestpossibleset of high-signal tokens that maximize the likelihood of some desired outcome. Implementing this practice is much easier said than done, but in the following section, we outline what this guiding principle means in practice across the different components of context.
+System promptsshould be extremely clear and use simple, direct language that presents ideas at theright altitudefor the agent. The right altitude is the Goldilocks zone between two common failure modes. At one extreme, we see engineers hardcoding complex, brittle logic in their prompts to elicit exact agentic behavior. This approach creates fragility and increases maintenance complexity over time. At the other extreme, engineers sometimes provide vague, high-level guidance that fails to give the LLM concrete signals for desired outputs or falsely assumes shared context. The optimal altitude strikes a balance: specific enough to guide behavior effectively, yet flexible enough to provide the model with strong heuristics to guide behavior.
+We recommend organizing prompts into distinct sections (like&lt;background_information&gt;,&lt;instructions&gt;,## Tool guidance,## Output description, etc) and using techniques like XML tagging or Markdown headers to delineate these sections, although the exact formatting of prompts is likely becoming less important as models become more capable.
+&lt;background_information&gt;
+&lt;instructions&gt;</p></div><div class="lang-cn-block"><p>一个在循环中运行的智能体会产生越来越多可能与下一轮推理相关的数据，这些信息必须经过循环筛选和提炼。上下文工程就是从不断演化的海量可能信息中，策展出最适合进入有限上下文窗口的内容——这既是一门艺术，也是一门科学。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Tool guidance</h2></div><div class="lang-cn-block"><h2 id="heading-2">为什么上下文工程对构建强大智能体至关重要</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Output description</h2></div><div class="lang-cn-block"><p>尽管 LLM 处理速度极快且能管理越来越大的数据量，我们观察到 LLM 与人类一样，在达到某个临界点后会丧失注意力或产生困惑。&quot;大海捞针&quot;（Needle-in-a-Haystack）类基准测试的研究揭示了上下文衰退（Context Rot）的概念：随着上下文窗口中 Token 数量的增加，模型从该上下文中准确回忆信息的能力会下降。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Regardless of how you decide to structure your system prompt, you should be striving for the minimal set of information that fully outlines your expected behavior. (Note that minimal does not necessarily mean short; you still need to give the agent sufficient information up front to ensure it adheres to the desired behavior.) It’s best to start by testing a minimal prompt with the best model available to see how it performs on your task, and then add clear instructions and examples to improve performance based on failure modes found during initial testing.
+Toolsallow agents to operate with their environment and pull in new, additional context as they work. Because tools define the contract between agents and their information/action space, it’s extremely important that tools promote efficiency, both by returning information that is token efficient and by encouraging efficient agent behaviors.
+InWriting tools for AI agents – with AI agents, we discussed building tools that are well understood by LLMs and have minimal overlap in functionality. Similar to the functions of a well-designed codebase, tools should be self-contained, robust to error, and extremely clear with respect to their intended use. Input parameters should similarly be descriptive, unambiguous, and play to the inherent strengths of the model.
+One of the most common failure modes we see is bloated tool sets that cover too much functionality or lead to ambiguous decision points about which tool to use. If a human engineer can’t definitively say which tool should be used in a given situation, an AI agent can’t be expected to do better. As we’ll discuss later, curating a minimal viable set of tools for the agent can also lead to more reliable maintenance and pruning of context over long interactions.
+Providing examples, otherwise known as few-shot prompting, is a well known best practice that we continue to strongly advise. However, teams will often stuff a laundry list of edge cases into a prompt in an attempt to articulate every possible rule the LLM should follow for a particular task. We do not recommend this. Instead, we recommend working to curate a set of diverse, canonical examples that effectively portray the expected behavior of the agent. For an LLM, examples are the “pictures” worth a thousand words.
+Our overall guidance across the different components of context (system prompts,tools,examples,message history, etc) is to be thoughtful and keep your context informative, yet tight. Now let&#x27;s dive into dynamically retrieving context at runtime.</p></div><div class="lang-cn-block"><p>虽然某些模型的衰退比其他模型更为平缓，但这一特征在所有模型中都会出现。因此，上下文必须被视为一种边际收益递减的有限资源。与工作记忆容量有限的人类类似，LLM 在解析大量上下文时也有一个&quot;注意力预算&quot;（Attention Budget）。每引入一个新 Token 都会消耗一部分预算，从而增加了精心策展可用 Token 的必要性。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Context retrieval and agentic search</h2></div><div class="lang-cn-block"><p>这种注意力稀缺源于 LLM 的架构约束。LLM 基于 Transformer 架构，该架构使每个 Token 都能关注整个上下文中的其他所有 Token。对于 n 个 Token，这会产生 n² 的成对关系。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>InBuilding effective AI agents, we highlighted the differences between LLM-based workflows and agents. Since we wrote that post, we’ve gravitated towards asimple definitionfor agents: LLMs autonomously using tools in a loop.
+Working alongside our customers, we’ve seen the field converging on this simple paradigm. As the underlying models become more capable, the level of autonomy of agents can scale: smarter models allow agents to independently navigate nuanced problem spaces and recover from errors.
+We’re now seeing a shift in how engineers think about designing context for agents. Today, many AI-native applications employ some form of embedding-based pre-inference time retrieval to surface important context for the agent to reason over. As the field transitions to more agentic approaches, we increasingly see teams augmenting these retrieval systems with “just in time” context strategies.
+Rather than pre-processing all relevant data up front, agents built with the “just in time” approach maintain lightweight identifiers (file paths, stored queries, web links, etc.) and use these references to dynamically load data into context at runtime using tools. Anthropic’s agentic coding solutionClaude Codeuses this approach to perform complex data analysis over large databases. The model can write targeted queries, store results, and leverage Bash commands like head and tail to analyze large volumes of data without ever loading the full data objects into context. This approach mirrors human cognition: we generally don’t memorize entire corpuses of information, but rather introduce external organization and indexing systems like file systems, inboxes, and bookmarks to retrieve relevant information on demand.
+Beyond storage efficiency, the metadata of these references provides a mechanism to efficiently refine behavior, whether explicitly provided or intuitive. To an agent operating in a file system, the presence of a file namedtest_utils.pyin atestsfolder implies a different purpose than a file with the same name located insrc/core_logic/Folder hierarchies, naming conventions, and timestamps all provide important signals that help both humans and agents understand how and when to utilize information.
+test_utils.py
+tests
+src/core_logic/
+Letting agents navigate and retrieve data autonomously also enables progressive disclosure—in other words, allows agents to incrementally discover relevant context through exploration. Each interaction yields context that informs the next decision: file sizes suggest complexity; naming conventions hint at purpose; timestamps can be a proxy for relevance. Agents can assemble understanding layer by layer, maintaining only what&#x27;s necessary in working memory and leveraging note-taking strategies for additional persistence. This self-managed context window keeps the agent focused on relevant subsets rather than drowning in exhaustive but potentially irrelevant information.
+Of course, there&#x27;s a trade-off: runtime exploration is slower than retrieving pre-computed data. Not only that, but opinionated and thoughtful engineering is required to ensure that an LLM has the right tools and heuristics for effectively navigating its information landscape. Without proper guidance, an agent can waste context by misusing tools, chasing dead-ends, or failing to identify key information.
+In certain settings, the most effective agents might employ a hybrid strategy, retrieving some data up front for speed, and pursuing further autonomous exploration at its discretion. The decision boundary for the ‘right’ level of autonomy depends on the task. Claude Code is an agent that employs this hybrid model:CLAUDE.mdfiles are naively dropped into context up front, while primitives like glob and grep allow it to navigate its environment and retrieve files just-in-time, effectively bypassing the issues of stale indexing and complex syntax trees.
+The hybrid strategy might be better suited for contexts with less dynamic content, such as legal or finance work. As model capabilities improve, agentic design will trend towards letting intelligent models act intelligently, with progressively less human curation. Given the rapid pace of progress in the field, &quot;do the simplest thing that works&quot; will likely remain our best advice for teams building agents on top of Claude.</p></div><div class="lang-cn-block"><p>随着上下文长度的增加，模型捕获这些成对关系的能力会被逐渐拉薄，在上下文大小和注意力聚焦之间形成一种天然的张力。此外，模型从训练数据分布中习得注意力模式，而训练数据中较短的序列通常比较长的序列更常见。这意味着模型在上下文级依赖关系方面经验更少，专门参数也更少。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Context engineering for long-horizon tasks</h3></div><div class="lang-cn-block"><p>位置编码插值（Position Encoding Interpolation）等技术允许模型通过将较长序列适配到原始训练时较小的上下文来处理更长序列，但会带来一定程度的 Token 位置理解降级。这些因素创造的是一个性能梯度而非断崖：模型在更长上下文中仍然保持较强能力，但与较短上下文中的表现相比，信息检索和长程推理的精度可能会有所下降。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Long-horizon tasks require agents to maintain coherence, context, and goal-directed behavior over sequences of actions where the token count exceeds the LLM’s context window. For tasks that span tens of minutes to multiple hours of continuous work, like large codebase migrations or comprehensive research projects, agents require specialized techniques to work around the context window size limitation.
+Waiting for larger context windows might seem like an obvious tactic. But it&#x27;s likely that for the foreseeable future, context windows of all sizes will be subject to context pollution and information relevance concerns—at least for situations where the strongest agent performance is desired. To enable agents to work effectively across extended time horizons, we&#x27;ve developed a few techniques that address these context pollution constraints directly: compaction, structured note-taking, and multi-agent architectures.
+Compaction
+Compaction is the practice of taking a conversation nearing the context window limit, summarizing its contents, and reinitiating a new context window with the summary. Compaction typically serves as the first lever in context engineering to drive better long-term coherence. At its core, compaction distills the contents of a context window in a high-fidelity manner, enabling the agent to continue with minimal performance degradation.
+In Claude Code, for example, we implement this by passing the message history to the model to summarize and compress the most critical details. The model preserves architectural decisions, unresolved bugs, and implementation details while discarding redundant tool outputs or messages. The agent can then continue with this compressed context plus the five most recently accessed files. Users get continuity without worrying about context window limitations.
+The art of compaction lies in the selection of what to keep versus what to discard, as overly aggressive compaction can result in the loss of subtle but critical context whose importance only becomes apparent later. For engineers implementing compaction systems, we recommend carefully tuning your prompt on  complex agent traces. Start by maximizing recall to ensure your compaction prompt captures every relevant piece of information from the trace, then iterate to improve precision by eliminating superfluous content.
+An example of low-hanging superfluous content is clearing tool calls and results – once a tool has been called deep in the message history, why would the agent need to see the raw result again? One of the safest lightest touch forms of compaction is tool result clearing, most recently launched as afeature on the Claude Developer Platform.
+Structured note-taking
+Structured note-taking, or agentic memory, is a technique where the agent regularly writes notes persisted to memory outside of the context window. These notes get pulled back into the context window at later times.
+This strategy provides persistent memory with minimal overhead. Like Claude Code creating a to-do list, or your custom agent maintaining a NOTES.md file, this simple pattern allows the agent to track progress across complex tasks, maintaining critical context and dependencies that would otherwise be lost across dozens of tool calls.
+Claude playing Pokémondemonstrates how memory transforms agent capabilities in non-coding domains. The agent maintains precise tallies across thousands of game steps—tracking objectives like &quot;for the last 1,234 steps I&#x27;ve been training my Pokémon in Route 1, Pikachu has gained 8 levels toward the target of 10.&quot; Without any prompting about memory structure, it develops maps of explored regions, remembers which key achievements it has unlocked, and maintains strategic notes of combat strategies that help it learn which attacks work best against different opponents.
+After context resets, the agent reads its own notes and continues multi-hour training sequences or dungeon explorations. This coherence across summarization steps enables long-horizon strategies that would be impossible when keeping all the information in the LLM’s context window alone.
+As part of ourSonnet 4.5 launch, we releaseda memory toolin public beta on the Claude Developer Platform that makes it easier to store and consult information outside the context window through a file-based system. This allows agents to build up knowledge bases over time, maintain project state across sessions, and reference previous work without keeping everything in context.
+Sub-agent architectures
+Sub-agent architectures provide another way around context limitations. Rather than one agent attempting to maintain state across an entire project, specialized sub-agents can handle focused tasks with clean context windows. The main agent coordinates with a high-level plan while subagents perform deep technical work or use tools to find relevant information. Each subagent might explore extensively, using tens of thousands of tokens or more, but returns only a condensed, distilled summary of its work (often 1,000-2,000 tokens).
+This approach achieves a clear separation of concerns—the detailed search context remains isolated within sub-agents, while the lead agent focuses on synthesizing and analyzing the results. This pattern, discussed inHow we built our multi-agent research system, showed a substantial improvement over single-agent systems on complex research tasks.
+The choice between these approaches depends on task characteristics. For example:</p></div><div class="lang-cn-block"><p>这些现实意味着，深思熟虑的上下文工程对于构建强大智能体至关重要。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Compaction maintains conversational flow for tasks requiring extensive back-and-forth;</li><li>Note-taking excels for iterative development with clear milestones;</li><li>Multi-agent architectures handle complex research and analysis where parallel exploration pays dividends.</li></ul></div><div class="lang-cn-block"><h2 id="heading-3">有效上下文的构成</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Even as models continue to improve, the challenge of maintaining coherence across extended interactions will remain central to building more effective agents.</p></div><div class="lang-cn-block"><p>鉴于 LLM 受限于有限的注意力预算，良好的上下文工程意味着找到最小的高信号 Token 集合，以最大化期望结果的出现概率。说起来容易做起来难，但在下文中，我们将概述这一指导原则在上下文各组成要素中的实践意义。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Conclusion</h2></div><div class="lang-cn-block"><p>系统提示应极其清晰，使用简单直接的语言，在合适的高度（Right Altitude）向智能体呈现信息。合适的高度是指介于两种常见失败模式之间的&quot;金发姑娘区间&quot;。在一个极端，我们看到工程师在提示中硬编码复杂、脆弱的逻辑来触发精确的智能体行为。这种方法会造成脆弱性，并随时间增加维护复杂度。在另一个极端，工程师有时提供模糊、笼统的指引，未能给 LLM 提供关于期望输出的具体信号，或错误地假设了共享上下文。最优高度在两者之间取得平衡：既要足够具体以有效引导行为，又要足够灵活以向模型提供有力的启发式规则来指导行为。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Context engineering represents a fundamental shift in how we build with LLMs. As models become more capable, the challenge isn&#x27;t just crafting the perfect prompt—it&#x27;s thoughtfully curating what information enters the model&#x27;s limited attention budget at each step. Whether you&#x27;re implementing compaction for long-horizon tasks, designing token-efficient tools, or enabling agents to explore their environment just-in-time, the guiding principle remains the same: find the smallest set of high-signal tokens that maximize the likelihood of your desired outcome.
+The techniques we&#x27;ve outlined will continue evolving as models improve. We&#x27;re already seeing that smarter models require less prescriptive engineering, allowing agents to operate with more autonomy. But even as capabilities scale, treating context as a precious, finite resource will remain central to building reliable, effective agents.
+Get started with context engineering in the Claude Developer Platform today, and access helpful tips and best practices via ourmemory and context managementcookbook.</p></div><div class="lang-cn-block"><p>我们建议将提示组织成不同的部分（如 <code class="inline">&lt;background_information&gt;</code>、<code class="inline">&lt;instructions&gt;</code>、<code class="inline">## Tool guidance</code>、<code class="inline">## Output description</code> 等），并使用 XML 标签或 Markdown 标题来划分这些部分，尽管随着模型能力的提升，提示的精确格式可能变得不那么重要了。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Acknowledgements</h2></div><div class="lang-cn-block"><pre><code class="language-">&lt;background_information&gt;
+&lt;instructions&gt;
+## Tool guidance
+## Output description</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Anthropic&#x27;s Applied AI team: Prithvi Rajasekaran, Ethan Dixon, Carly Ryan, and Jeremy Hadfield, with contributions from team members Rafi Ayub, Hannah Moran, Cal Rueb, and Connor Jennings. Special thanks to Molly Vorwerck, Stuart Ritchie, and Maggie Vo for their support.</p></div><div class="lang-cn-block"><p>无论你如何组织系统提示，都应该力求用最少的信息完整勾勒出你期望的行为。（注意，最少并不意味着简短；你仍然需要预先为智能体提供充足的信息以确保其遵循期望行为。）最好的做法是先用最佳模型测试一个最简提示，观察其在你的任务上的表现，然后根据初始测试中发现的失败模式添加清晰的指令和示例来提升性能。</p></div></div>
+<div class="lang-cn-block"><p>工具（Tools）允许智能体与其环境交互，并在工作过程中引入新的上下文。由于工具定义了智能体与其信息/操作空间之间的契约，工具在两方面促进效率至关重要：既要在返回信息时保持 Token 效率，又要鼓励高效的智能体行为。</p></div>
+<div class="lang-cn-block"><p>在《为 AI 智体编写工具——由 AI 智能体编写》一文中，我们讨论了构建 LLM 易于理解且功能重叠最小的工具。与设计良好的代码库中的函数类似，工具应该是自包含的、对错误具有鲁棒性的，并且在用途上极其清晰。输入参数同样应具有描述性、无歧义，并发挥模型的固有能力。</p></div>
+<div class="lang-cn-block"><p>我们观察到的最常见失败模式之一是工具集臃肿，涵盖了过多功能，或导致关于使用哪个工具的决策点模糊不清。如果一个人类工程师都无法明确判断在给定情况下应使用哪个工具，就不能指望 AI 智能体做得更好。正如我们稍后将讨论的，为智能体策展最小可行工具集也能带来更可靠的维护和更高效的上下文修剪。</p></div>
+<div class="lang-cn-block"><p>提供示例，也称为少样本提示（Few-shot Prompting），是我们持续强烈推荐的知名最佳实践。然而，团队常常将大量边缘用例塞入提示中，试图阐明 LLM 在特定任务中应遵循的每一条规则。我们不建议这样做。相反，我们建议策展一组多样化的、典型的示例，来有效地展现智能体的期望行为。对于 LLM 来说，示例就是&quot;一图胜千言&quot;中的图片。</p></div>
+<div class="lang-cn-block"><p>我们对上下文各组成部分（系统提示、工具、示例、消息历史等）的总体建议是：保持思考，让上下文既信息丰富又紧凑。现在，让我们深入探讨在运行时动态检索上下文。</p></div>
+<div class="lang-cn-block"><h2 id="heading-4">上下文检索与智能体搜索</h2></div>
+<div class="lang-cn-block"><p>在《构建高效的 AI 智能体》一文中，我们强调了基于 LLM 的工作流与智能体之间的区别。自那篇文章发表以来，我们倾向于用一个简洁的定义来描述智能体：LLM 在循环中自主使用工具。</p></div>
+<div class="lang-cn-block"><p>在与客户合作的过程中，我们看到业界正在趋向于这一简洁范式。随着底层模型变得更加强大，智能体的自主性水平也能相应提升：更智能的模型允许智能体独立应对细致入微的问题空间并从错误中恢复。</p></div>
+<div class="lang-cn-block"><p>我们现在看到工程师在设计智能体上下文的方式上正在发生转变。如今，许多 AI 原生应用采用某种形式的基于嵌入（Embedding）的推理前检索来呈现重要上下文供智能体推理。随着业界向更具智能体特性的方法过渡，我们越来越多地看到团队用&quot;即时&quot;（Just-in-Time）上下文策略来增强这些检索系统。</p></div>
+<div class="lang-cn-block"><p>采用&quot;即时&quot;方法构建的智能体不会预先处理所有相关数据，而是维护轻量级标识符（文件路径、存储的查询、网页链接等），并使用这些引用在运行时通过工具将数据动态加载到上下文中。Anthropic 的智能体编码解决方案 Claude Code 就采用了这种方法对大型数据库进行复杂数据分析。模型可以编写有针对性的查询、存储结果，并利用 Bash 命令（如 <code class="inline">head</code> 和 <code class="inline">tail</code>）来分析大量数据，而无需将完整数据对象加载到上下文中。这种方法反映了人类认知的工作方式：我们通常不会将整个信息库记忆下来，而是借助文件系统、收件箱、书签等外部组织和索引系统按需检索相关信息。</p></div>
+<div class="lang-cn-block"><p>除了存储效率之外，这些引用的元数据提供了一种高效优化行为的机制，无论是显式提供的还是直觉性的。对于在文件系统中操作的智能体来说，<code class="inline">tests</code> 文件夹中名为 <code class="inline">test_utils.py</code> 的文件，与 <code class="inline">src/core_logic/</code> 下同名文件所暗示的用途截然不同。文件夹层级结构、命名规范和时间戳都提供了重要信号，帮助人类和智能体理解如何以及何时使用信息。</p></div>
+<div class="lang-cn-block"><p>让智能体自主导航和检索数据还支持渐进式披露（Progressive Disclosure）——换言之，允许智能体通过探索逐步发现相关上下文。每次交互都会产生上下文，为下一个决策提供信息：文件大小暗示复杂度；命名规范暗示用途；时间戳可以作为相关性的代理指标。智能体可以逐层构建理解，仅在工作记忆中保留必要内容，并利用笔记策略实现额外的持久化。这种自我管理的上下文窗口使智能体聚焦于相关子集，而非淹没在详尽但可能无关的信息中。</p></div>
+<div class="lang-cn-block"><p>当然，这存在权衡：运行时探索比检索预计算数据更慢。不仅如此，还需要有主见且深思熟虑的工程设计来确保 LLM 拥有正确的工具和启发式方法来有效导航其信息环境。在缺乏适当引导的情况下，智能体可能会因误用工具、追逐死胡同或未能识别关键信息而浪费上下文。</p></div>
+<div class="lang-cn-block"><p>在某些场景中，最有效的智能体可能采用混合策略：预先检索部分数据以提高速度，同时根据需要进行进一步的自主探索。&quot;正确&quot;自主程度的决策边界取决于具体任务。Claude Code 就是一个采用这种混合模型的智能体：<code class="inline">CLAUDE.md</code> 文件预先直接注入上下文，而 <code class="inline">glob</code> 和 <code class="inline">grep</code> 等原语允许它在环境中导航并即时检索文件，有效规避了索引过时和复杂语法树的问题。</p></div>
+<div class="lang-cn-block"><p>混合策略可能更适合内容动态性较低的场景，例如法律或金融工作。随着模型能力的提升，智能体设计将趋向于让智能模型发挥智能，逐步减少人工策展。鉴于该领域的快速发展步伐，&quot;做最简单且有效的事&quot;可能仍然是我们为基于 Claude 构建智能体的团队提供的最佳建议。</p></div>
+<div class="lang-cn-block"><h3 id="heading-5">长期任务的上下文工程</h3></div>
+<div class="lang-cn-block"><p>长期任务要求智能体在 Token 数量超过 LLM 上下文窗口的动作序列中保持连贯性、上下文和目标导向行为。对于持续数十分钟乃至数小时的任务（如大规模代码库迁移或综合研究项目），智能体需要专门的技术来应对上下文窗口大小的限制。</p></div>
+<div class="lang-cn-block"><p>等待更大的上下文窗口可能看起来是一个显而易见的策略。但在可预见的未来，各种大小的上下文窗口都可能面临上下文污染（Context Pollution）和信息相关性问题——至少在需要最强智能体性能的场景中是如此。为使智能体能够在延长的时间跨度上有效工作，我们开发了几种直接应对这些上下文污染约束的技术：压缩（Compaction）、结构化笔记和多智能体架构。</p></div>
+<div class="lang-cn-block"><p><strong>压缩（Compaction）</strong></p></div>
+<div class="lang-cn-block"><p>压缩是指将接近上下文窗口限制的对话内容进行摘要总结，并以该摘要重新初始化一个新的上下文窗口。压缩通常作为上下文工程中提升长期连贯性的首要手段。其核心是以前高保真的方式提炼上下文窗口的内容，使智能体能够以最小的性能降级继续工作。</p></div>
+<div class="lang-cn-block"><p>例如，在 Claude Code 中，我们通过将消息历史传递给模型来总结和压缩最关键的信息。模型会保留架构决策、未解决的 Bug 和实现细节，同时丢弃冗余的工具输出或消息。随后智能体可以基于这个压缩后的上下文加上最近访问的五个文件继续工作。用户获得连续性体验而无需担心上下文窗口限制。</p></div>
+<div class="lang-cn-block"><p>压缩的艺术在于保留什么与丢弃什么的选择，因为过于激进的压缩可能导致微妙但关键的上下文丢失，而其重要性可能在稍后才会显现。对于实施压缩系统的工程师，我们建议在复杂的智能体轨迹上仔细调优你的提示。首先最大化召回率，确保压缩提示能捕捉轨迹中的每一条相关信息，然后通过消除多余内容来迭代提高精度。</p></div>
+<div class="lang-cn-block"><p>清除工具调用和结果是一种简单的多余内容清理方式——一旦工具在消息历史深处被调用过，智能体为什么还需要再次查看原始结果？最安全、最轻量的压缩形式之一是工具结果清除（Tool Result Clearing），最近已作为 Claude Developer Platform 的一项功能发布。</p></div>
+<div class="lang-cn-block"><p><strong>结构化笔记（Structured Note-taking）</strong></p></div>
+<div class="lang-cn-block"><p>结构化笔记，也称为智能体记忆（Agentic Memory），是一种智能体定期将笔记写入上下文窗口之外的持久化存储的技术。这些笔记会在稍后被拉回上下文窗口。</p></div>
+<div class="lang-cn-block"><p>这种策略以最小开销提供持久记忆。就像 Claude Code 创建待办事项列表，或你的自定义智能体维护一个 <code class="inline">NOTES.md</code> 文件一样，这个简单的模式允许智能体在复杂任务中跟踪进度，维护那些在数十次工具调用中可能丢失的关键上下文和依赖关系。</p></div>
+<div class="lang-cn-block"><p>Claude 玩宝可梦（Pokémon）展示了记忆如何在非编码领域转变智能体的能力。智能体在数千个游戏步骤中维持精确的统计——跟踪目标，如&quot;在过去的 1,234 步中，我一直在 1 号道路训练宝可梦，皮卡丘距离 10 级目标已提升 8 级&quot;。在没有任何关于记忆结构的提示下，它会自主绘制已探索区域的地图，记住已解锁的关键成就，并维护战斗策略的笔记，帮助它学习哪些招式对不同对手最有效。</p></div>
+<div class="lang-cn-block"><p>在上下文重置后，智能体会阅读自己的笔记并继续多小时的训练序列或地牢探索。这种跨摘要步骤的连贯性使得长期策略成为可能，而仅靠将所有信息保持在 LLM 上下文窗口中是无法实现的。</p></div>
+<div class="lang-cn-block"><p>作为 Sonnet 4.5 发布的一部分，我们在 Claude Developer Platform 上发布了记忆工具（Memory Tool）的公开测试版，该工具通过基于文件的系统使存储和查阅上下文窗口之外的信息变得更加便捷。这使得智能体能够逐步构建知识库、跨会话维护项目状态，并在不必将所有内容保留在上下文中的情况下引用之前的工作。</p></div>
+<div class="lang-cn-block"><p><strong>子智能体架构（Sub-agent Architectures）</strong></p></div>
+<div class="lang-cn-block"><p>子智能体架构提供了另一种绕过上下文限制的方式。与其让一个智能体在整个项目中维护状态，不如让专门的子智能体在干净的上下文窗口中处理聚焦的任务。主智能体以高层计划进行协调，而子智能体执行深入的技术工作或使用工具查找相关信息。每个子智能体可能进行大量探索，使用数万个甚至更多 Token，但只返回浓缩、精炼的工作摘要（通常 1,000-2,000 Token）。</p></div>
+<div class="lang-cn-block"><p>这种方法实现了清晰的关注点分离——详细的搜索上下文保持在子智能体内部隔离，而主智能体专注于综合和分析结果。在《我们如何构建多智能体研究系统》中讨论的这种模式，在复杂研究任务上相较单智能体系统展现了显著的性能提升。</p></div>
+<div class="lang-cn-block"><p>这些方法之间的选择取决于任务特征。例如：</p></div>
+<div class="lang-cn-block"><ul><li>压缩适用于需要大量反复交互的任务，保持对话流畅性；</li></ul></div>
+<div class="lang-cn-block"><ul><li>结构化笔记适合有明确里程碑的迭代开发；</li></ul></div>
+<div class="lang-cn-block"><ul><li>多智能体架构处理复杂的研接和分析任务，其中并行探索能带来收益。</li></ul></div>
+<div class="lang-cn-block"><p>即使模型持续改进，在扩展交互中保持连贯性这一挑战仍将是构建更有效智能体的核心。</p></div>
+<div class="lang-cn-block"><h2 id="heading-6">结论</h2></div>
+<div class="lang-cn-block"><p>上下文工程代表了我们使用 LLM 进行开发方式的根本性转变。随着模型变得更加强大，挑战不仅仅在于精心编写完美的提示——更在于深思熟虑地策展在每个步骤中进入模型有限注意力预算的信息。无论你是在为长期任务实施压缩、设计 Token 高效的工具，还是让智能体即时探索环境，指导原则始终如一：找到最小的高信号 Token 集合，最大化期望结果的出现概率。</p></div>
+<div class="lang-cn-block"><p>我们概述的技术将随着模型的改进而持续演进。我们已经看到，更智能的模型需要更少的规范性工程，允许智能体以更大的自主性运行。但即使能力在扩展，将上下文视为一种宝贵的有限资源，仍将是构建可靠、有效智能体的核心。</p></div>
+<div class="lang-cn-block"><p>立即在 Claude Developer Platform 开始上下文工程实践，并通过我们的记忆和上下文管理 Cookbook 获取有用的技巧和最佳实践。</p></div>
+<div class="lang-cn-block"><h2 id="heading-7">致谢</h2></div>
+<div class="lang-cn-block"><p>由 Anthropic 应用 AI 团队撰写：Prithvi Rajasekaran、Ethan Dixon、Carly Ryan 和 Jeremy Hadfield，团队成员 Rafi Ayub、Hannah Moran、Cal Rueb 和 Connor Jennings 亦有贡献。特别感谢 Molly Vorwerck、Stuart Ritchie 和 Maggie Vo 的支持。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>在提示工程（Prompt Engineering）作为应用人工智能领域焦点数年之后，一个新术语逐渐崭露头角：上下文工程（Context Engineering）。基于语言模型的开发正在从寻找合适的提示词和短语，转向回答一个更根本的问题：&quot;怎样的上下文配置最有可能让模型产生我们期望的行为？&quot;</p>
+<p>上下文（Context）指的是从大语言模型（LLM）采样时所包含的一组 Token。而工程（Engineering）问题的核心在于：如何在 LLM 固有约束下优化这些 Token 的效用，以持续达成预期结果。有效地驾驭 LLM 往往需要以上下文的方式进行思考——换言之，需要综合考量 LLM 在任意时刻所能获取的整体状态，以及该状态可能引发的潜在行为。</p>
+<p>在本文中，我们将探索上下文工程这一新兴实践，并提供一个经过优化的心智模型，用于构建可控且高效的智能体（Agent）。</p>
+<h2>上下文工程与提示工程</h2>
+<p>在 Anthropic，我们将上下文工程视为提示工程的自然演进。提示工程指的是编写和组织 LLM 指令以获得最优结果的方法（参见我们的文档了解概览及实用的提示工程策略）。上下文工程则指在 LLM 推理过程中，策展和维护最优 Token（信息）集合的一整套策略，涵盖提示之外可能进入上下文的所有其他信息。</p>
+<p>在 LLM 工程化的早期阶段，提示是 AI 工程工作的最大组成部分，因为除日常对话交互外，大多数用例都需要针对一次性分类或文本生成任务优化的提示。顾名思义，提示工程的核心关注点是如何编写有效的提示，尤其是系统提示。然而，随着我们转向构建更强大的、能够在多轮推理和更长时间跨度上运行的智能体，我们需要管理整个上下文状态的策略（系统指令、工具、模型上下文协议（Model Context Protocol, MCP）、外部数据、消息历史等）。</p>
+<p>一个在循环中运行的智能体会产生越来越多可能与下一轮推理相关的数据，这些信息必须经过循环筛选和提炼。上下文工程就是从不断演化的海量可能信息中，策展出最适合进入有限上下文窗口的内容——这既是一门艺术，也是一门科学。</p>
+<h2>为什么上下文工程对构建强大智能体至关重要</h2>
+<p>尽管 LLM 处理速度极快且能管理越来越大的数据量，我们观察到 LLM 与人类一样，在达到某个临界点后会丧失注意力或产生困惑。&quot;大海捞针&quot;（Needle-in-a-Haystack）类基准测试的研究揭示了上下文衰退（Context Rot）的概念：随着上下文窗口中 Token 数量的增加，模型从该上下文中准确回忆信息的能力会下降。</p>
+<p>虽然某些模型的衰退比其他模型更为平缓，但这一特征在所有模型中都会出现。因此，上下文必须被视为一种边际收益递减的有限资源。与工作记忆容量有限的人类类似，LLM 在解析大量上下文时也有一个&quot;注意力预算&quot;（Attention Budget）。每引入一个新 Token 都会消耗一部分预算，从而增加了精心策展可用 Token 的必要性。</p>
+<p>这种注意力稀缺源于 LLM 的架构约束。LLM 基于 Transformer 架构，该架构使每个 Token 都能关注整个上下文中的其他所有 Token。对于 n 个 Token，这会产生 n² 的成对关系。</p>
+<p>随着上下文长度的增加，模型捕获这些成对关系的能力会被逐渐拉薄，在上下文大小和注意力聚焦之间形成一种天然的张力。此外，模型从训练数据分布中习得注意力模式，而训练数据中较短的序列通常比较长的序列更常见。这意味着模型在上下文级依赖关系方面经验更少，专门参数也更少。</p>
+<p>位置编码插值（Position Encoding Interpolation）等技术允许模型通过将较长序列适配到原始训练时较小的上下文来处理更长序列，但会带来一定程度的 Token 位置理解降级。这些因素创造的是一个性能梯度而非断崖：模型在更长上下文中仍然保持较强能力，但与较短上下文中的表现相比，信息检索和长程推理的精度可能会有所下降。</p>
+<p>这些现实意味着，深思熟虑的上下文工程对于构建强大智能体至关重要。</p>
+<h2>有效上下文的构成</h2>
+<p>鉴于 LLM 受限于有限的注意力预算，良好的上下文工程意味着找到最小的高信号 Token 集合，以最大化期望结果的出现概率。说起来容易做起来难，但在下文中，我们将概述这一指导原则在上下文各组成要素中的实践意义。</p>
+<p>系统提示应极其清晰，使用简单直接的语言，在合适的高度（Right Altitude）向智能体呈现信息。合适的高度是指介于两种常见失败模式之间的&quot;金发姑娘区间&quot;。在一个极端，我们看到工程师在提示中硬编码复杂、脆弱的逻辑来触发精确的智能体行为。这种方法会造成脆弱性，并随时间增加维护复杂度。在另一个极端，工程师有时提供模糊、笼统的指引，未能给 LLM 提供关于期望输出的具体信号，或错误地假设了共享上下文。最优高度在两者之间取得平衡：既要足够具体以有效引导行为，又要足够灵活以向模型提供有力的启发式规则来指导行为。</p>
+<p>我们建议将提示组织成不同的部分（如 <code class="inline">&lt;background_information&gt;</code>、<code class="inline">&lt;instructions&gt;</code>、<code class="inline">## Tool guidance</code>、<code class="inline">## Output description</code> 等），并使用 XML 标签或 Markdown 标题来划分这些部分，尽管随着模型能力的提升，提示的精确格式可能变得不那么重要了。</p>
+<pre><code class="language-">&lt;background_information&gt;
+&lt;instructions&gt;
+## Tool guidance
+## Output description</code></pre>
+<p>无论你如何组织系统提示，都应该力求用最少的信息完整勾勒出你期望的行为。（注意，最少并不意味着简短；你仍然需要预先为智能体提供充足的信息以确保其遵循期望行为。）最好的做法是先用最佳模型测试一个最简提示，观察其在你的任务上的表现，然后根据初始测试中发现的失败模式添加清晰的指令和示例来提升性能。</p>
+<p>工具（Tools）允许智能体与其环境交互，并在工作过程中引入新的上下文。由于工具定义了智能体与其信息/操作空间之间的契约，工具在两方面促进效率至关重要：既要在返回信息时保持 Token 效率，又要鼓励高效的智能体行为。</p>
+<p>在《为 AI 智体编写工具——由 AI 智能体编写》一文中，我们讨论了构建 LLM 易于理解且功能重叠最小的工具。与设计良好的代码库中的函数类似，工具应该是自包含的、对错误具有鲁棒性的，并且在用途上极其清晰。输入参数同样应具有描述性、无歧义，并发挥模型的固有能力。</p>
+<p>我们观察到的最常见失败模式之一是工具集臃肿，涵盖了过多功能，或导致关于使用哪个工具的决策点模糊不清。如果一个人类工程师都无法明确判断在给定情况下应使用哪个工具，就不能指望 AI 智能体做得更好。正如我们稍后将讨论的，为智能体策展最小可行工具集也能带来更可靠的维护和更高效的上下文修剪。</p>
+<p>提供示例，也称为少样本提示（Few-shot Prompting），是我们持续强烈推荐的知名最佳实践。然而，团队常常将大量边缘用例塞入提示中，试图阐明 LLM 在特定任务中应遵循的每一条规则。我们不建议这样做。相反，我们建议策展一组多样化的、典型的示例，来有效地展现智能体的期望行为。对于 LLM 来说，示例就是&quot;一图胜千言&quot;中的图片。</p>
+<p>我们对上下文各组成部分（系统提示、工具、示例、消息历史等）的总体建议是：保持思考，让上下文既信息丰富又紧凑。现在，让我们深入探讨在运行时动态检索上下文。</p>
+<h2>上下文检索与智能体搜索</h2>
+<p>在《构建高效的 AI 智能体》一文中，我们强调了基于 LLM 的工作流与智能体之间的区别。自那篇文章发表以来，我们倾向于用一个简洁的定义来描述智能体：LLM 在循环中自主使用工具。</p>
+<p>在与客户合作的过程中，我们看到业界正在趋向于这一简洁范式。随着底层模型变得更加强大，智能体的自主性水平也能相应提升：更智能的模型允许智能体独立应对细致入微的问题空间并从错误中恢复。</p>
+<p>我们现在看到工程师在设计智能体上下文的方式上正在发生转变。如今，许多 AI 原生应用采用某种形式的基于嵌入（Embedding）的推理前检索来呈现重要上下文供智能体推理。随着业界向更具智能体特性的方法过渡，我们越来越多地看到团队用&quot;即时&quot;（Just-in-Time）上下文策略来增强这些检索系统。</p>
+<p>采用&quot;即时&quot;方法构建的智能体不会预先处理所有相关数据，而是维护轻量级标识符（文件路径、存储的查询、网页链接等），并使用这些引用在运行时通过工具将数据动态加载到上下文中。Anthropic 的智能体编码解决方案 Claude Code 就采用了这种方法对大型数据库进行复杂数据分析。模型可以编写有针对性的查询、存储结果，并利用 Bash 命令（如 <code class="inline">head</code> 和 <code class="inline">tail</code>）来分析大量数据，而无需将完整数据对象加载到上下文中。这种方法反映了人类认知的工作方式：我们通常不会将整个信息库记忆下来，而是借助文件系统、收件箱、书签等外部组织和索引系统按需检索相关信息。</p>
+<p>除了存储效率之外，这些引用的元数据提供了一种高效优化行为的机制，无论是显式提供的还是直觉性的。对于在文件系统中操作的智能体来说，<code class="inline">tests</code> 文件夹中名为 <code class="inline">test_utils.py</code> 的文件，与 <code class="inline">src/core_logic/</code> 下同名文件所暗示的用途截然不同。文件夹层级结构、命名规范和时间戳都提供了重要信号，帮助人类和智能体理解如何以及何时使用信息。</p>
+<p>让智能体自主导航和检索数据还支持渐进式披露（Progressive Disclosure）——换言之，允许智能体通过探索逐步发现相关上下文。每次交互都会产生上下文，为下一个决策提供信息：文件大小暗示复杂度；命名规范暗示用途；时间戳可以作为相关性的代理指标。智能体可以逐层构建理解，仅在工作记忆中保留必要内容，并利用笔记策略实现额外的持久化。这种自我管理的上下文窗口使智能体聚焦于相关子集，而非淹没在详尽但可能无关的信息中。</p>
+<p>当然，这存在权衡：运行时探索比检索预计算数据更慢。不仅如此，还需要有主见且深思熟虑的工程设计来确保 LLM 拥有正确的工具和启发式方法来有效导航其信息环境。在缺乏适当引导的情况下，智能体可能会因误用工具、追逐死胡同或未能识别关键信息而浪费上下文。</p>
+<p>在某些场景中，最有效的智能体可能采用混合策略：预先检索部分数据以提高速度，同时根据需要进行进一步的自主探索。&quot;正确&quot;自主程度的决策边界取决于具体任务。Claude Code 就是一个采用这种混合模型的智能体：<code class="inline">CLAUDE.md</code> 文件预先直接注入上下文，而 <code class="inline">glob</code> 和 <code class="inline">grep</code> 等原语允许它在环境中导航并即时检索文件，有效规避了索引过时和复杂语法树的问题。</p>
+<p>混合策略可能更适合内容动态性较低的场景，例如法律或金融工作。随着模型能力的提升，智能体设计将趋向于让智能模型发挥智能，逐步减少人工策展。鉴于该领域的快速发展步伐，&quot;做最简单且有效的事&quot;可能仍然是我们为基于 Claude 构建智能体的团队提供的最佳建议。</p>
+<h3>长期任务的上下文工程</h3>
+<p>长期任务要求智能体在 Token 数量超过 LLM 上下文窗口的动作序列中保持连贯性、上下文和目标导向行为。对于持续数十分钟乃至数小时的任务（如大规模代码库迁移或综合研究项目），智能体需要专门的技术来应对上下文窗口大小的限制。</p>
+<p>等待更大的上下文窗口可能看起来是一个显而易见的策略。但在可预见的未来，各种大小的上下文窗口都可能面临上下文污染（Context Pollution）和信息相关性问题——至少在需要最强智能体性能的场景中是如此。为使智能体能够在延长的时间跨度上有效工作，我们开发了几种直接应对这些上下文污染约束的技术：压缩（Compaction）、结构化笔记和多智能体架构。</p>
+<p><strong>压缩（Compaction）</strong></p>
+<p>压缩是指将接近上下文窗口限制的对话内容进行摘要总结，并以该摘要重新初始化一个新的上下文窗口。压缩通常作为上下文工程中提升长期连贯性的首要手段。其核心是以前高保真的方式提炼上下文窗口的内容，使智能体能够以最小的性能降级继续工作。</p>
+<p>例如，在 Claude Code 中，我们通过将消息历史传递给模型来总结和压缩最关键的信息。模型会保留架构决策、未解决的 Bug 和实现细节，同时丢弃冗余的工具输出或消息。随后智能体可以基于这个压缩后的上下文加上最近访问的五个文件继续工作。用户获得连续性体验而无需担心上下文窗口限制。</p>
+<p>压缩的艺术在于保留什么与丢弃什么的选择，因为过于激进的压缩可能导致微妙但关键的上下文丢失，而其重要性可能在稍后才会显现。对于实施压缩系统的工程师，我们建议在复杂的智能体轨迹上仔细调优你的提示。首先最大化召回率，确保压缩提示能捕捉轨迹中的每一条相关信息，然后通过消除多余内容来迭代提高精度。</p>
+<p>清除工具调用和结果是一种简单的多余内容清理方式——一旦工具在消息历史深处被调用过，智能体为什么还需要再次查看原始结果？最安全、最轻量的压缩形式之一是工具结果清除（Tool Result Clearing），最近已作为 Claude Developer Platform 的一项功能发布。</p>
+<p><strong>结构化笔记（Structured Note-taking）</strong></p>
+<p>结构化笔记，也称为智能体记忆（Agentic Memory），是一种智能体定期将笔记写入上下文窗口之外的持久化存储的技术。这些笔记会在稍后被拉回上下文窗口。</p>
+<p>这种策略以最小开销提供持久记忆。就像 Claude Code 创建待办事项列表，或你的自定义智能体维护一个 <code class="inline">NOTES.md</code> 文件一样，这个简单的模式允许智能体在复杂任务中跟踪进度，维护那些在数十次工具调用中可能丢失的关键上下文和依赖关系。</p>
+<p>Claude 玩宝可梦（Pokémon）展示了记忆如何在非编码领域转变智能体的能力。智能体在数千个游戏步骤中维持精确的统计——跟踪目标，如&quot;在过去的 1,234 步中，我一直在 1 号道路训练宝可梦，皮卡丘距离 10 级目标已提升 8 级&quot;。在没有任何关于记忆结构的提示下，它会自主绘制已探索区域的地图，记住已解锁的关键成就，并维护战斗策略的笔记，帮助它学习哪些招式对不同对手最有效。</p>
+<p>在上下文重置后，智能体会阅读自己的笔记并继续多小时的训练序列或地牢探索。这种跨摘要步骤的连贯性使得长期策略成为可能，而仅靠将所有信息保持在 LLM 上下文窗口中是无法实现的。</p>
+<p>作为 Sonnet 4.5 发布的一部分，我们在 Claude Developer Platform 上发布了记忆工具（Memory Tool）的公开测试版，该工具通过基于文件的系统使存储和查阅上下文窗口之外的信息变得更加便捷。这使得智能体能够逐步构建知识库、跨会话维护项目状态，并在不必将所有内容保留在上下文中的情况下引用之前的工作。</p>
+<p><strong>子智能体架构（Sub-agent Architectures）</strong></p>
+<p>子智能体架构提供了另一种绕过上下文限制的方式。与其让一个智能体在整个项目中维护状态，不如让专门的子智能体在干净的上下文窗口中处理聚焦的任务。主智能体以高层计划进行协调，而子智能体执行深入的技术工作或使用工具查找相关信息。每个子智能体可能进行大量探索，使用数万个甚至更多 Token，但只返回浓缩、精炼的工作摘要（通常 1,000-2,000 Token）。</p>
+<p>这种方法实现了清晰的关注点分离——详细的搜索上下文保持在子智能体内部隔离，而主智能体专注于综合和分析结果。在《我们如何构建多智能体研究系统》中讨论的这种模式，在复杂研究任务上相较单智能体系统展现了显著的性能提升。</p>
+<p>这些方法之间的选择取决于任务特征。例如：</p>
+<ul>
+<li>压缩适用于需要大量反复交互的任务，保持对话流畅性；</li>
+<li>结构化笔记适合有明确里程碑的迭代开发；</li>
+<li>多智能体架构处理复杂的研接和分析任务，其中并行探索能带来收益。</li>
+</ul>
+<p>即使模型持续改进，在扩展交互中保持连贯性这一挑战仍将是构建更有效智能体的核心。</p>
+<h2>结论</h2>
+<p>上下文工程代表了我们使用 LLM 进行开发方式的根本性转变。随着模型变得更加强大，挑战不仅仅在于精心编写完美的提示——更在于深思熟虑地策展在每个步骤中进入模型有限注意力预算的信息。无论你是在为长期任务实施压缩、设计 Token 高效的工具，还是让智能体即时探索环境，指导原则始终如一：找到最小的高信号 Token 集合，最大化期望结果的出现概率。</p>
+<p>我们概述的技术将随着模型的改进而持续演进。我们已经看到，更智能的模型需要更少的规范性工程，允许智能体以更大的自主性运行。但即使能力在扩展，将上下文视为一种宝贵的有限资源，仍将是构建可靠、有效智能体的核心。</p>
+<p>立即在 Claude Developer Platform 开始上下文工程实践，并通过我们的记忆和上下文管理 Cookbook 获取有用的技巧和最佳实践。</p>
+<h2>致谢</h2>
+<p>由 Anthropic 应用 AI 团队撰写：Prithvi Rajasekaran、Ethan Dixon、Carly Ryan 和 Jeremy Hadfield，团队成员 Rafi Ayub、Hannah Moran、Cal Rueb 和 Connor Jennings 亦有贡献。特别感谢 Molly Vorwerck、Stuart Ritchie 和 Maggie Vo 的支持。</p></div>
+                <div class="lang-en"><p>After a few years of prompt engineering being the focus of attention in applied AI, a new term has come to prominence:context engineering. Building with language models is becoming less about finding the right words and phrases for your prompts, and more about answering the broader question of “what configuration of context is most likely to generate our model’s desired behavior?&quot;
+Contextrefers to the set of tokens included when sampling from a large-language model (LLM). Theengineeringproblem at hand is optimizing the utility of those tokens against the inherent constraints of LLMs in order to consistently achieve a desired outcome. Effectively wrangling LLMs often requiresthinking in context— in other words: considering the holistic state available to the LLM at any given time and what potential behaviors that state might yield.
+In this post, we’ll explore the emerging art of context engineering and offer a refined mental model for building steerable, effective agents.</p>
+<h2>Context engineering vs. prompt engineering</h2>
+<p>At Anthropic, we view context engineering as the natural progression of prompt engineering. Prompt engineering refers to methods for writing and organizing LLM instructions for optimal outcomes (seeour docsfor an overview and useful prompt engineering strategies).Context engineeringrefers to the set of strategies for curating and maintaining the optimal set of tokens (information) during LLM inference, including all the other information that may land there outside of the prompts.
+In the early days of engineering with LLMs, prompting was the biggest component of AI engineering work, as the majority of use cases outside of everyday chat interactions required prompts optimized for one-shot classification or text generation tasks. As the term implies, the primary focus of prompt engineering is how to write effective prompts, particularly system prompts. However, as we move towards engineering more capable agents that operate over multiple turns of inference and longer time horizons, we need strategies for managing the entire context state (system instructions, tools,Model Context Protocol(MCP), external data, message history, etc).
+An agent running in a loop generates more and more data thatcouldbe relevant for the next turn of inference, and this information must be cyclically refined. Context engineering is theart and scienceof curating what will go into the limited context window from that constantly evolving universe of possible information.</p>
+<h2>Why context engineering is important to building capable agents</h2>
+<p>Despite their speed and ability to manage larger and larger volumes of data, we’ve observed that LLMs, like humans, lose focus or experience confusion at a certain point. Studies on needle-in-a-haystackstyle benchmarking have uncovered the concept ofcontext rot: as the number of tokens in the context window increases, the model’s ability to accurately recall information from that context decreases.
+While some models exhibit more gentle degradation than others, this characteristic emerges across all models. Context, therefore, must be treated as a finite resource with diminishing marginal returns. Like humans, who havelimited working memory capacity, LLMs have an “attention budget” that they draw on when parsing large volumes of context. Every new token introduced depletes this budget by some amount, increasing the need to carefully curate the tokens available to the LLM.
+This attention scarcity stems from architectural constraints of LLMs. LLMs are based on thetransformer architecture, which enables every token toattend to every other tokenacross the entire context. This results in n² pairwise relationships for n tokens.
+As its context length increases, a model&#x27;s ability to capture these pairwise relationships gets stretched thin, creating a natural tension between context size and attention focus. Additionally, models develop their attention patterns from training data distributions where shorter sequences are typically more common than longer ones. This means models have less experience with, and fewer specialized parameters for, context-wide dependencies.
+Techniques likeposition encoding interpolationallow models to handle longer sequences by adapting them to the originally trained smaller context, though with some degradation in token position understanding. These factors create a performance gradient rather than a hard cliff: models remain highly capable at longer contexts but may show reduced precision for information retrieval and long-range reasoning compared to their performance on shorter contexts.
+These realities mean that thoughtful context engineering is essential for building capable agents.</p>
+<h2>The anatomy of effective context</h2>
+<p>Given that LLMs are constrained by a finite attention budget,goodcontext engineering means finding thesmallestpossibleset of high-signal tokens that maximize the likelihood of some desired outcome. Implementing this practice is much easier said than done, but in the following section, we outline what this guiding principle means in practice across the different components of context.
+System promptsshould be extremely clear and use simple, direct language that presents ideas at theright altitudefor the agent. The right altitude is the Goldilocks zone between two common failure modes. At one extreme, we see engineers hardcoding complex, brittle logic in their prompts to elicit exact agentic behavior. This approach creates fragility and increases maintenance complexity over time. At the other extreme, engineers sometimes provide vague, high-level guidance that fails to give the LLM concrete signals for desired outputs or falsely assumes shared context. The optimal altitude strikes a balance: specific enough to guide behavior effectively, yet flexible enough to provide the model with strong heuristics to guide behavior.
+We recommend organizing prompts into distinct sections (like&lt;background_information&gt;,&lt;instructions&gt;,## Tool guidance,## Output description, etc) and using techniques like XML tagging or Markdown headers to delineate these sections, although the exact formatting of prompts is likely becoming less important as models become more capable.
+&lt;background_information&gt;
+&lt;instructions&gt;</p>
+<h2>Tool guidance</h2>
+<h2>Output description</h2>
+<p>Regardless of how you decide to structure your system prompt, you should be striving for the minimal set of information that fully outlines your expected behavior. (Note that minimal does not necessarily mean short; you still need to give the agent sufficient information up front to ensure it adheres to the desired behavior.) It’s best to start by testing a minimal prompt with the best model available to see how it performs on your task, and then add clear instructions and examples to improve performance based on failure modes found during initial testing.
+Toolsallow agents to operate with their environment and pull in new, additional context as they work. Because tools define the contract between agents and their information/action space, it’s extremely important that tools promote efficiency, both by returning information that is token efficient and by encouraging efficient agent behaviors.
+InWriting tools for AI agents – with AI agents, we discussed building tools that are well understood by LLMs and have minimal overlap in functionality. Similar to the functions of a well-designed codebase, tools should be self-contained, robust to error, and extremely clear with respect to their intended use. Input parameters should similarly be descriptive, unambiguous, and play to the inherent strengths of the model.
+One of the most common failure modes we see is bloated tool sets that cover too much functionality or lead to ambiguous decision points about which tool to use. If a human engineer can’t definitively say which tool should be used in a given situation, an AI agent can’t be expected to do better. As we’ll discuss later, curating a minimal viable set of tools for the agent can also lead to more reliable maintenance and pruning of context over long interactions.
+Providing examples, otherwise known as few-shot prompting, is a well known best practice that we continue to strongly advise. However, teams will often stuff a laundry list of edge cases into a prompt in an attempt to articulate every possible rule the LLM should follow for a particular task. We do not recommend this. Instead, we recommend working to curate a set of diverse, canonical examples that effectively portray the expected behavior of the agent. For an LLM, examples are the “pictures” worth a thousand words.
+Our overall guidance across the different components of context (system prompts,tools,examples,message history, etc) is to be thoughtful and keep your context informative, yet tight. Now let&#x27;s dive into dynamically retrieving context at runtime.</p>
+<h2>Context retrieval and agentic search</h2>
+<p>InBuilding effective AI agents, we highlighted the differences between LLM-based workflows and agents. Since we wrote that post, we’ve gravitated towards asimple definitionfor agents: LLMs autonomously using tools in a loop.
+Working alongside our customers, we’ve seen the field converging on this simple paradigm. As the underlying models become more capable, the level of autonomy of agents can scale: smarter models allow agents to independently navigate nuanced problem spaces and recover from errors.
+We’re now seeing a shift in how engineers think about designing context for agents. Today, many AI-native applications employ some form of embedding-based pre-inference time retrieval to surface important context for the agent to reason over. As the field transitions to more agentic approaches, we increasingly see teams augmenting these retrieval systems with “just in time” context strategies.
+Rather than pre-processing all relevant data up front, agents built with the “just in time” approach maintain lightweight identifiers (file paths, stored queries, web links, etc.) and use these references to dynamically load data into context at runtime using tools. Anthropic’s agentic coding solutionClaude Codeuses this approach to perform complex data analysis over large databases. The model can write targeted queries, store results, and leverage Bash commands like head and tail to analyze large volumes of data without ever loading the full data objects into context. This approach mirrors human cognition: we generally don’t memorize entire corpuses of information, but rather introduce external organization and indexing systems like file systems, inboxes, and bookmarks to retrieve relevant information on demand.
+Beyond storage efficiency, the metadata of these references provides a mechanism to efficiently refine behavior, whether explicitly provided or intuitive. To an agent operating in a file system, the presence of a file namedtest_utils.pyin atestsfolder implies a different purpose than a file with the same name located insrc/core_logic/Folder hierarchies, naming conventions, and timestamps all provide important signals that help both humans and agents understand how and when to utilize information.
+test_utils.py
+tests
+src/core_logic/
+Letting agents navigate and retrieve data autonomously also enables progressive disclosure—in other words, allows agents to incrementally discover relevant context through exploration. Each interaction yields context that informs the next decision: file sizes suggest complexity; naming conventions hint at purpose; timestamps can be a proxy for relevance. Agents can assemble understanding layer by layer, maintaining only what&#x27;s necessary in working memory and leveraging note-taking strategies for additional persistence. This self-managed context window keeps the agent focused on relevant subsets rather than drowning in exhaustive but potentially irrelevant information.
+Of course, there&#x27;s a trade-off: runtime exploration is slower than retrieving pre-computed data. Not only that, but opinionated and thoughtful engineering is required to ensure that an LLM has the right tools and heuristics for effectively navigating its information landscape. Without proper guidance, an agent can waste context by misusing tools, chasing dead-ends, or failing to identify key information.
+In certain settings, the most effective agents might employ a hybrid strategy, retrieving some data up front for speed, and pursuing further autonomous exploration at its discretion. The decision boundary for the ‘right’ level of autonomy depends on the task. Claude Code is an agent that employs this hybrid model:CLAUDE.mdfiles are naively dropped into context up front, while primitives like glob and grep allow it to navigate its environment and retrieve files just-in-time, effectively bypassing the issues of stale indexing and complex syntax trees.
+The hybrid strategy might be better suited for contexts with less dynamic content, such as legal or finance work. As model capabilities improve, agentic design will trend towards letting intelligent models act intelligently, with progressively less human curation. Given the rapid pace of progress in the field, &quot;do the simplest thing that works&quot; will likely remain our best advice for teams building agents on top of Claude.</p>
+<h3>Context engineering for long-horizon tasks</h3>
+<p>Long-horizon tasks require agents to maintain coherence, context, and goal-directed behavior over sequences of actions where the token count exceeds the LLM’s context window. For tasks that span tens of minutes to multiple hours of continuous work, like large codebase migrations or comprehensive research projects, agents require specialized techniques to work around the context window size limitation.
+Waiting for larger context windows might seem like an obvious tactic. But it&#x27;s likely that for the foreseeable future, context windows of all sizes will be subject to context pollution and information relevance concerns—at least for situations where the strongest agent performance is desired. To enable agents to work effectively across extended time horizons, we&#x27;ve developed a few techniques that address these context pollution constraints directly: compaction, structured note-taking, and multi-agent architectures.
+Compaction
+Compaction is the practice of taking a conversation nearing the context window limit, summarizing its contents, and reinitiating a new context window with the summary. Compaction typically serves as the first lever in context engineering to drive better long-term coherence. At its core, compaction distills the contents of a context window in a high-fidelity manner, enabling the agent to continue with minimal performance degradation.
+In Claude Code, for example, we implement this by passing the message history to the model to summarize and compress the most critical details. The model preserves architectural decisions, unresolved bugs, and implementation details while discarding redundant tool outputs or messages. The agent can then continue with this compressed context plus the five most recently accessed files. Users get continuity without worrying about context window limitations.
+The art of compaction lies in the selection of what to keep versus what to discard, as overly aggressive compaction can result in the loss of subtle but critical context whose importance only becomes apparent later. For engineers implementing compaction systems, we recommend carefully tuning your prompt on  complex agent traces. Start by maximizing recall to ensure your compaction prompt captures every relevant piece of information from the trace, then iterate to improve precision by eliminating superfluous content.
+An example of low-hanging superfluous content is clearing tool calls and results – once a tool has been called deep in the message history, why would the agent need to see the raw result again? One of the safest lightest touch forms of compaction is tool result clearing, most recently launched as afeature on the Claude Developer Platform.
+Structured note-taking
+Structured note-taking, or agentic memory, is a technique where the agent regularly writes notes persisted to memory outside of the context window. These notes get pulled back into the context window at later times.
+This strategy provides persistent memory with minimal overhead. Like Claude Code creating a to-do list, or your custom agent maintaining a NOTES.md file, this simple pattern allows the agent to track progress across complex tasks, maintaining critical context and dependencies that would otherwise be lost across dozens of tool calls.
+Claude playing Pokémondemonstrates how memory transforms agent capabilities in non-coding domains. The agent maintains precise tallies across thousands of game steps—tracking objectives like &quot;for the last 1,234 steps I&#x27;ve been training my Pokémon in Route 1, Pikachu has gained 8 levels toward the target of 10.&quot; Without any prompting about memory structure, it develops maps of explored regions, remembers which key achievements it has unlocked, and maintains strategic notes of combat strategies that help it learn which attacks work best against different opponents.
+After context resets, the agent reads its own notes and continues multi-hour training sequences or dungeon explorations. This coherence across summarization steps enables long-horizon strategies that would be impossible when keeping all the information in the LLM’s context window alone.
+As part of ourSonnet 4.5 launch, we releaseda memory toolin public beta on the Claude Developer Platform that makes it easier to store and consult information outside the context window through a file-based system. This allows agents to build up knowledge bases over time, maintain project state across sessions, and reference previous work without keeping everything in context.
+Sub-agent architectures
+Sub-agent architectures provide another way around context limitations. Rather than one agent attempting to maintain state across an entire project, specialized sub-agents can handle focused tasks with clean context windows. The main agent coordinates with a high-level plan while subagents perform deep technical work or use tools to find relevant information. Each subagent might explore extensively, using tens of thousands of tokens or more, but returns only a condensed, distilled summary of its work (often 1,000-2,000 tokens).
+This approach achieves a clear separation of concerns—the detailed search context remains isolated within sub-agents, while the lead agent focuses on synthesizing and analyzing the results. This pattern, discussed inHow we built our multi-agent research system, showed a substantial improvement over single-agent systems on complex research tasks.
+The choice between these approaches depends on task characteristics. For example:</p>
+<ul>
+<li>Compaction maintains conversational flow for tasks requiring extensive back-and-forth;</li>
+<li>Note-taking excels for iterative development with clear milestones;</li>
+<li>Multi-agent architectures handle complex research and analysis where parallel exploration pays dividends.</li>
+</ul>
+<p>Even as models continue to improve, the challenge of maintaining coherence across extended interactions will remain central to building more effective agents.</p>
+<h2>Conclusion</h2>
+<p>Context engineering represents a fundamental shift in how we build with LLMs. As models become more capable, the challenge isn&#x27;t just crafting the perfect prompt—it&#x27;s thoughtfully curating what information enters the model&#x27;s limited attention budget at each step. Whether you&#x27;re implementing compaction for long-horizon tasks, designing token-efficient tools, or enabling agents to explore their environment just-in-time, the guiding principle remains the same: find the smallest set of high-signal tokens that maximize the likelihood of your desired outcome.
+The techniques we&#x27;ve outlined will continue evolving as models improve. We&#x27;re already seeing that smarter models require less prescriptive engineering, allowing agents to operate with more autonomy. But even as capabilities scale, treating context as a precious, finite resource will remain central to building reliable, effective agents.
+Get started with context engineering in the Claude Developer Platform today, and access helpful tips and best practices via ourmemory and context managementcookbook.</p>
+<h2>Acknowledgements</h2>
+<p>Written by Anthropic&#x27;s Applied AI team: Prithvi Rajasekaran, Ethan Dixon, Carly Ryan, and Jeremy Hadfield, with contributions from team members Rafi Ayub, Hannah Moran, Cal Rueb, and Connor Jennings. Special thanks to Molly Vorwerck, Stuart Ritchie, and Maggie Vo for their support.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

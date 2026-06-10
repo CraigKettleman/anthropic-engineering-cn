@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>&quot;思考&quot;工具：让Claude在复杂工具使用场景中停下来思考 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h3" href="#heading-1">什么是&quot;思考&quot;工具？</a>
+<a class="toc-h3" href="#heading-2">τ-Bench上的性能表现</a>
+<a class="toc-h3" href="#heading-3">SWE-Bench上的性能表现</a>
+<a class="toc-h3" href="#heading-4">何时使用&quot;思考&quot;工具</a>
+<a class="toc-h2" href="#heading-5">实现最佳实践</a>
+<a class="toc-h3" href="#heading-6">何时*不*使用&quot;思考&quot;工具</a>
+<a class="toc-h3" href="#heading-7">入门指南</a>
+<a class="toc-h3" href="#heading-8">结论</a></div>
+            <div class="toc-en"><a class="toc-h3" href="#heading-1">What is the &quot;think&quot; tool?</a>
+<a class="toc-h3" href="#heading-2">Performance on τ-Bench</a>
+<a class="toc-h2" href="#heading-3">Using the think tool</a>
+<a class="toc-h3" href="#heading-4">Performance on SWE-Bench</a>
+<a class="toc-h3" href="#heading-5">When to use the &quot;think&quot; tool</a>
+<a class="toc-h2" href="#heading-6">Implementation best practices</a>
+<a class="toc-h3" href="#heading-7">Whennotto use the &quot;think&quot; tool</a>
+<a class="toc-h3" href="#heading-8">Getting started</a>
+<a class="toc-h3" href="#heading-9">Conclusion</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-03-20</div>
+            <div class="title-block">
+                <h1 class="cn">&quot;思考&quot;工具：让Claude在复杂工具使用场景中停下来思考</h1>
+                <h1 class="en">The &quot;think&quot; tool: Enabling Claude to stop and think in complex tool use situations</h1>
+                <div class="en-title">The &quot;think&quot; tool: Enabling Claude to stop and think in complex tool use situations</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><ul><li>Extended thinking updateDec 15, 2025Extended thinking capabilities have improved since its initial release, such that we recommend using that feature instead of a dedicated think tool in most cases. Extended thinking provides similar benefits—giving Claude space to reason through complex problems—with better integration and performance. See our extended thinking documentation for implementation details.</li></ul></div><div class="lang-cn-block"><ul><li>扩展思维更新  2025年12月15日  自首次发布以来，扩展思维（Extended Thinking）功能已得到显著改进，因此在大多数情况下，我们建议使用该功能而非专门的思考工具。扩展思维提供了类似的好处——给予Claude空间来推理复杂问题——同时具有更好的集成性和性能。有关实现细节，请参阅我们的扩展思维文档。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Extended thinking update
+Dec 15, 2025
+Extended thinking capabilities have improved since its initial release, such that we recommend using that feature instead of a dedicated think tool in most cases. Extended thinking provides similar benefits—giving Claude space to reason through complex problems—with better integration and performance. See our extended thinking documentation for implementation details.
+As we continue to enhance Claude&#x27;s complex problem-solving abilities, we&#x27;ve discovered a particularly effective approach: a &quot;think&quot; tool that creates dedicated space for structured thinking during complex tasks.
+This simple yet powerful technique—which, as we’ll explain below, is different from Claude’s new “extended thinking” capability (see here forextended thinking implementation details)—has resulted in remarkable improvements in Claude&#x27;s agentic tool use ability. This includes following policies, making consistent decisions, and handling multi-step problems, all with minimal implementation overhead.
+In this post, we&#x27;ll explore how to implement the “think” tool on different applications, sharing practical guidance for developers based on verified benchmark results.</p></div><div class="lang-cn-block"><p>扩展思维更新
+2025年15日
+自首次发布以来，扩展思维功能已得到显著改进，因此在大多数情况下，我们建议使用该功能而非专门的思考工具。扩展思维提供了类似的好处——给予Claude空间来推理复杂问题——同时具有更好的集成性和性能。有关实现细节，请参阅我们的扩展思维文档。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>What is the &quot;think&quot; tool?</h3></div><div class="lang-cn-block"><p>在我们持续增强Claude复杂问题解决能力的过程中，我们发现了一种特别有效的方法：一个&quot;思考&quot;工具，它能在复杂任务期间为结构化思考创建专用空间。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>With the &quot;think&quot; tool, we&#x27;re giving Claude the ability to include an additional thinking step—complete with its own designated space—as part of getting to its final answer.
+While it sounds similar to extended thinking, it&#x27;s a different concept. Extended thinking is all about what Claude does before it starts generating a response. With extended thinking, Claude deeply considers and iterates on its plan before taking action. The &quot;think&quot; tool is for Claude, once it starts generating a response, to add a step to stop and think about whether it has all the information it needs to move forward. This is particularly helpful when performing long chains of tool calls or in long multi-step conversations with the user.
+This makes the “think” tool more suitable for cases where Claude does not have all the information needed to formulate its response from the user query alone, and where it needs to process external information (e.g. information in tool call results). The reasoning Claude performs with the “think” tool is less comprehensive than what can be obtained with extended thinking, and is more focused onnewinformation that the model discovers.
+We recommend using extended thinking for simpler tool use scenarios like non-sequential tool calls or straightforward instruction following. Extended thinking is also useful for use cases, like coding, math, and physics, when you don’t need Claude to call tools. The “think” tool is better suited for when Claude needs to call complex tools, analyze tool outputs carefully in long chains of tool calls, navigate policy-heavy environments with detailed guidelines, or make sequential decisions where each step builds on previous ones and mistakes are costly.
+Here&#x27;s a sample implementation using the standard tool specification format that comes fromτ-Bench:</p></div><div class="lang-cn-block"><p>这种简单而强大的技术——正如我们将在下文解释的，它与Claude的新&quot;扩展思维&quot;功能不同（有关扩展思维实现细节，请参阅此处）——在Claude的智能体（Agentic）工具使用能力方面取得了显著改进。这包括遵循策略、做出一致决策以及处理多步骤问题，且只需最少的实现开销。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</p></div><div class="lang-cn-block"><h3 id="heading-1">什么是&quot;思考&quot;工具？</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Performance on τ-Bench</h3></div><div class="lang-cn-block"><p>通过&quot;思考&quot;工具，我们赋予Claude在得出最终答案的过程中，加入一个额外思考步骤的能力——该步骤拥有自己专用的空间。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We evaluated the &quot;think&quot; tool using τ-bench (tau-bench), a comprehensive benchmark designed to test a model’s ability to use tools in realistic customer service scenarios, where the &quot;think&quot; tool is part of the evaluation’s standard environment.
+τ-bench evaluates Claude&#x27;s ability to:</p></div><div class="lang-cn-block"><p>虽然它听起来与扩展思维类似，但这是一个不同的概念。扩展思维关注的是Claude在开始生成响应之前所做的事情。通过扩展思维，Claude在采取行动之前会深入考虑并迭代其计划。而&quot;思考&quot;工具是让Claude在开始生成响应后，增加一个步骤来停下来思考是否已获得推进所需的所有信息。这在执行长链工具调用或与用户进行长多步骤对话时尤其有用。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Navigate realistic conversations with simulated users</li><li>Follow complex customer service agent policy guidelines consistently</li><li>Use a variety of tools to access and manipulate the environment database</li></ul></div><div class="lang-cn-block"><p>这使得&quot;思考&quot;工具更适合Claude无法仅从用户查询中获得制定响应所需的全部信息，且需要处理外部信息（例如工具调用结果中的信息）的场景。Claude使用&quot;思考&quot;工具进行的推理不如扩展思维全面，更侧重于模型发现的新信息。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The primary evaluation metric used in τ-bench is pass^k, which measures the probability that allkindependent task trials are successful for a given task, averaged across all tasks. Unlike the pass@kmetric that is common for other LLM evaluations (which measures if at least one ofktrials succeeds), pass^kevaluates consistency and reliability—critical qualities for customer service applications where consistent adherence to policies is essential.</p></div><div class="lang-cn-block"><p>对于较简单的工具使用场景，如非顺序工具调用或直接指令遵循，我们建议使用扩展思维。当您不需要Claude调用工具时，扩展思维也适用于编码、数学和物理等用例。&quot;思考&quot;工具更适合Claude需要调用复杂工具、在长链工具调用中仔细分析工具输出、在具有详细指南的策略密集环境中导航，或在每一步都建立在前一步基础上且错误代价高昂的场景中做出顺序决策。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Performance Analysis</h4></div><div class="lang-cn-block"><p>以下是来自τ-Bench的标准工具规范格式的示例实现：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our evaluation compared several different configurations:</p></div><div class="lang-cn-block"><pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Baseline (no &quot;think&quot; tool, no extended thinking mode)</li><li>Extended thinking mode alone</li><li>&quot;Think&quot; tool alone</li><li>&quot;Think&quot; tool with optimized prompt (for airline domain)</li></ul></div><div class="lang-cn-block"><h3 id="heading-2">τ-Bench上的性能表现</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The results showed dramatic improvements when Claude 3.7 effectively used the &quot;think&quot; tool in both the “airline” and “retail” customer service domains of the benchmark:</p></div><div class="lang-cn-block"><p>我们使用τ-bench（tau-bench）评估了&quot;思考&quot;工具，这是一个综合性基准测试，旨在测试模型在真实客户服务场景中使用工具的能力，其中&quot;思考&quot;工具是评估标准环境的一部分。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Airline domain: The &quot;think&quot; tool with an optimized prompt achieved 0.570 on the pass^1 metric, compared to just 0.370 for the baseline—a 54% relative improvement;</li><li>Retail domain: The &quot;think&quot; tool alone achieves 0.812, compared to 0.783 for the baseline.</li></ul></div><div class="lang-cn-block"><p>τ-bench评估Claude的以下能力：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Claude 3.7 Sonnet&#x27;s performance on the &quot;Airline&quot; domain of the Tau-Bench eval
+The best performance in the airline domain was achieved by pairing the “think” tool with an optimized prompt that gives examples of the type of reasoning approaches to use when analyzing customer requests. Below is an example of the optimized prompt:</p></div><div class="lang-cn-block"><ul><li>与模拟用户进行真实对话</li><li>始终遵循复杂的客服智能体策略指南</li><li>使用各种工具访问和操作环境数据库</li></ul></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">## Using the think tool
+
+Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:
+- List the specific rules that apply to the current request
+- Check if all required information is collected
+- Verify that the planned action complies with all policies
+- Iterate over tool results for correctness 
+
+Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123
+- Need to verify: user ID, reservation ID, reason
+- Check cancellation rules:
+  * Is it within 24h of booking?
+  * If not, check ticket class and insurance
+- Verify no segments flown or are in the past
+- Plan: collect missing info, verify rules, get confirmation
+&lt;/think_tool_example_1&gt;
+
+&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each
+- Need user ID to check:
+  * Membership tier for baggage allowance
+  * Which payments methods exist in profile
+- Baggage calculation:
+  * Economy class × 3 passengers
+  * If regular member: 1 free bag each → 3 extra bags = $150
+  * If silver member: 2 free bags each → 0 extra bags = $0
+  * If gold member: 3 free bags each → 0 extra bags = $0
+- Payment rules to verify:
+  * Max 1 travel certificate, 1 credit card, 3 gift cards
+  * All payment methods must be in profile
+  * Travel certificate remainder goes to waste
+- Plan:
+1. Get user ID
+2. Verify membership level for bag fees
+3. Check which payment methods in profile and if their combination is allowed
+4. Calculate total: ticket price + any bag fees
+5. Get explicit confirmation for booking
+&lt;/think_tool_example_2&gt;</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Using the think tool</h2></div><div class="lang-cn-block"><h4>性能分析</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:</p></div><div class="lang-cn-block"><p>我们的评估比较了几种不同的配置：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>List the specific rules that apply to the current request</li><li>Check if all required information is collected</li><li>Verify that the planned action complies with all policies</li><li>Iterate over tool results for correctness</li></ul></div><div class="lang-cn-block"><ul><li>基线（无&quot;思考&quot;工具，无扩展思维模式）</li><li>仅扩展思维模式</li><li>仅&quot;思考&quot;工具</li><li>&quot;思考&quot;工具加优化提示（针对航空领域）</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123</p></div><div class="lang-cn-block"><p>结果表明，当Claude 3.7在基准测试的&quot;航空&quot;和&quot;零售&quot;客户服务领域中有效使用&quot;思考&quot;工具时，取得了显著的改进：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Need to verify: user ID, reservation ID, reason</li><li>Check cancellation rules:</li><li>Is it within 24h of booking?</li><li>If not, check ticket class and insurance</li><li>Verify no segments flown or are in the past</li><li>Plan: collect missing info, verify rules, get confirmation</li></ul></div><div class="lang-cn-block"><ul><li>航空领域：&quot;思考&quot;工具配合优化提示在pass^1指标上达到了0.570，而基线仅为0.370——相对改进54%；</li><li>零售领域：仅&quot;思考&quot;工具就达到了0.812，而基线为0.783。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&lt;/think_tool_example_1&gt;</p></div><div class="lang-cn-block"><p>Claude 3.7 Sonnet在Tau-Bench评估&quot;航空&quot;领域的表现</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each</p></div><div class="lang-cn-block"><p>航空领域的最佳性能是通过将&quot;思考&quot;工具与优化提示配对实现的，该提示提供了在分析客户请求时应使用的推理方法示例。以下是优化提示的示例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Need user ID to check:</li><li>Membership tier for baggage allowance</li><li>Which payments methods exist in profile</li><li>Baggage calculation:</li><li>Economy class × 3 passengers</li><li>If regular member: 1 free bag each → 3 extra bags = $150</li><li>If silver member: 2 free bags each → 0 extra bags = $0</li><li>If gold member: 3 free bags each → 0 extra bags = $0</li><li>Payment rules to verify:</li><li>Max 1 travel certificate, 1 credit card, 3 gift cards</li><li>All payment methods must be in profile</li><li>Travel certificate remainder goes to waste</li><li>Plan:</li></ul></div><div class="lang-cn-block"><pre><code class="language-">## Using the think tool
+
+Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:
+- List the specific rules that apply to the current request
+- Check if all required information is collected
+- Verify that the planned action complies with all policies
+- Iterate over tool results for correctness 
+
+Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123
+- Need to verify: user ID, reservation ID, reason
+- Check cancellation rules:
+  * Is it within 24h of booking?
+  * If not, check ticket class and insurance
+- Verify no segments flown or are in the past
+- Plan: collect missing info, verify rules, get confirmation
+&lt;/think_tool_example_1&gt;
+
+&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each
+- Need user ID to check:
+  * Membership tier for baggage allowance
+  * Which payments methods exist in profile
+- Baggage calculation:
+  * Economy class × 3 passengers
+  * If regular member: 1 free bag each → 3 extra bags = $150
+  * If silver member: 2 free bags each → 0 extra bags = $0
+  * If gold member: 3 free bags each → 0 extra bags = $0
+- Payment rules to verify:
+  * Max 1 travel certificate, 1 credit card, 3 gift cards
+  * All payment methods must be in profile
+  * Travel certificate remainder goes to waste
+- Plan:
+1. Get user ID
+2. Verify membership level for bag fees
+3. Check which payment methods in profile and if their combination is allowed
+4. Calculate total: ticket price + any bag fees
+5. Get explicit confirmation for booking
+&lt;/think_tool_example_2&gt;</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ol><li>Get user ID</li><li>Verify membership level for bag fees</li><li>Check which payment methods in profile and if their combination is allowed</li><li>Calculate total: ticket price + any bag fees</li><li>Get explicit confirmation for booking</li></ol></div><div class="lang-cn-block"><p>特别有趣的是不同方法之间的比较。使用&quot;思考&quot;工具配合优化提示，相比扩展思维模式（其表现与未提示的&quot;思考&quot;工具相似）取得了明显更好的结果。单独使用&quot;思考&quot;工具（无提示）相比基线提高了性能，但仍不及优化方法。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>&lt;/think_tool_example_2&gt;
+What&#x27;s particularly interesting is how the different approaches compared. Using the “think” tool with the optimized prompt achieved significantly better results over extended thinking mode (which showed similar performance to the unprompted “think” tool). Using the &quot;think&quot; tool alone (without prompting) improved performance over baseline, but still fell short of the optimized approach.
+The combination of the &quot;think&quot; tool with optimized prompting delivered the strongest performance by a significant margin, likely due to the high complexity of theairline policypart of the benchmark, where the model benefitted the most from being given examples of how to “think.”
+In the retail domain, we also tested various configurations to understand the specific impact of each approach
+Claude 3.7 Sonnet&#x27;s performance on the &quot;Retail&quot; domain of the Tau-Bench eval
+The &quot;think&quot; tool achieved the highest pass^1 score of 0.812 even without additional prompting. Theretail policyis noticeably easier to navigate compared to the airline domain, and Claude was able to improve just by having a space to think without further guidance.</p></div><div class="lang-cn-block"><p>&quot;思考&quot;工具与优化提示的组合以显著优势提供了最强的性能，这可能是由于基准测试中航空策略部分的高复杂度，模型从获得如何&quot;思考&quot;的示例中获益最多。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>Key Insights from τ-Bench Analysis</h4></div><div class="lang-cn-block"><p>在零售领域，我们也测试了各种配置以了解每种方法的具体影响。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our detailed analysis revealed several patterns that can help you implement the &quot;think&quot; tool effectively:</p></div><div class="lang-cn-block"><p>Claude 3.7 Sonnet在Tau-Bench评估&quot;零售&quot;领域的表现</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Prompting matters significantly on difficult domains. Simply making the &quot;think&quot; tool available might improve performance somewhat, but pairing it with optimized prompting yielded dramatically better results for difficult domains. However, easier domains may benefit from simply having access to “think.”</li><li>Improved consistency across trials. The improvements from using “think” were maintained for pass^k up to k=5, indicating that the tool helped Claude handle edge cases and unusual scenarios more effectively.</li></ul></div><div class="lang-cn-block"><p>&quot;思考&quot;工具即使在没有额外提示的情况下也取得了最高的pass^1分数0.812。零售策略相比航空领域明显更容易处理，Claude仅通过拥有一个思考空间就能在没有进一步指导的情况下有所改进。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Performance on SWE-Bench</h3></div><div class="lang-cn-block"><h4>τ-Bench分析的关键发现</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>A similar “think” tool was added to our SWE-bench setup when evaluating Claude 3.7 Sonnet, contributing to the achieved state-of-the-art score of 0.623. The adapted “think” tool definition is given below:</p></div><div class="lang-cn-block"><p>我们的详细分析揭示了几种模式，可以帮助您有效实现&quot;思考&quot;工具：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}
+Our experiments (n=30 samples with &quot;think&quot; tool,n=144 samples without) showed the isolated effects of including this tool improved performance by 1.6% on average (Welch&#x27;st-test:t(38.89) = 6.71,p&lt; .001,d= 1.47).</p></div><div class="lang-cn-block"><h3 id="heading-3">SWE-Bench上的性能表现</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>When to use the &quot;think&quot; tool</h3></div><div class="lang-cn-block"><p>在评估Claude 3.7 Sonnet时，我们向SWE-bench设置中添加了类似的&quot;思考&quot;工具，为达到0.623的最先进分数做出了贡献。以下是改编后的&quot;思考&quot;工具定义：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Based on these evaluation results, we&#x27;ve identified specific scenarios where Claude benefits most from the &quot;think&quot; tool:</p></div><div class="lang-cn-block"><pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Tool output analysis.When Claude needs to carefully process the output of previous tool calls before acting and might need to backtrack in its approach;</li><li>Policy-heavy environments. When Claude needs to follow detailed guidelines and verify compliance; and</li><li>Sequential decision making. When each action builds on previous ones and mistakes are costly (often found in multi-step domains).</li></ul></div><div class="lang-cn-block"><p>我们的实验（使用&quot;思考&quot;工具n=30个样本，不使用n=144个样本）表明，包含该工具的单独效果使性能平均提高了1.6%（Welch&#x27;s t检验：t(38.89) = 6.71，p &lt; .001，d = 1.47）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Implementation best practices</h2></div><div class="lang-cn-block"><h3 id="heading-4">何时使用&quot;思考&quot;工具</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>To get the most out of the &quot;think&quot; tool with Claude, we recommend the following implementation practices based on our τ-bench experiments.</p></div><div class="lang-cn-block"><p>根据这些评估结果，我们确定了Claude从&quot;思考&quot;工具中获益最多的特定场景：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>1. Strategic prompting with domain-specific examples</h4></div><div class="lang-cn-block"><ul><li>工具输出分析。当Claude在行动前需要仔细处理先前工具调用的输出，且可能需要回溯其方法时；</li><li>策略密集环境。当Claude需要遵循详细指南并验证合规性时；以及</li><li>顺序决策。当每个行动都建立在前一步基础上，且错误代价高昂时（常见于多步骤领域）。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The most effective approach is to provide clear instructions on when and how to use the &quot;think&quot; tool, such as the one used for the τ-bench airline domain. Providing examples tailored to your specific use case significantly improves how effectively the model uses the &quot;think&quot; tool:</p></div><div class="lang-cn-block"><h2 id="heading-5">实现最佳实践</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>The level of detail expected in the reasoning process;</li><li>How to break down complex instructions into actionable steps;</li><li>Decision trees for handling common scenarios; and</li><li>How to check if all necessary information has been collected.</li></ul></div><div class="lang-cn-block"><p>为了充分利用Claude的&quot;思考&quot;工具，我们基于τ-bench实验推荐以下实现实践。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>2. Place complex guidance in the system prompt</h4></div><div class="lang-cn-block"><h4>1. 使用领域特定示例进行策略性提示</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We found that, when they were long and/or complex, including instructions about the &quot;think&quot; tool in the system prompt was more effective than placing them in the tool description itself. This approach provides broader context and helps the model better integrate the thinking process into its overall behavior.</p></div><div class="lang-cn-block"><p>最有效的方法是提供关于何时以及如何使用&quot;思考&quot;工具的清晰说明，例如τ-bench航空领域所使用的。提供针对您特定用例的示例可以显著提高模型使用&quot;思考&quot;工具的效果：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Whennotto use the &quot;think&quot; tool</h3></div><div class="lang-cn-block"><ul><li>推理过程中期望的详细程度；</li><li>如何将复杂指令分解为可执行的步骤；</li><li>处理常见场景的决策树；以及</li><li>如何检查是否已收集所有必要信息。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Whereas the “think” tool can offer substantial improvements, it is not applicable to all tool use use cases, and does come at the cost of increased prompt length and output tokens. Specifically, we have found the “think” tool does not offer any improvements in the following use cases:</p></div><div class="lang-cn-block"><h4>2. 将复杂指导放在系统提示中</h4></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Non-sequential tool calls. If Claude only needs to make a single tool call or multiple parallel calls to complete a task, there is unlikely to be any improvements from adding in “think.”</li><li>Simple instruction following. When there are not many constraints to which Claude needs to adhere, and its default behaviour is good enough, there are unlikely to be gains from additional “think”-ing.</li></ul></div><div class="lang-cn-block"><p>我们发现，当说明较长和/或较复杂时，将关于&quot;思考&quot;工具的说明放在系统提示中比放在工具描述本身中更有效。这种方法提供了更广泛的上下文，并帮助模型更好地将思考过程整合到其整体行为中。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Getting started</h3></div><div class="lang-cn-block"><h3 id="heading-6">何时*不*使用&quot;思考&quot;工具</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The &quot;think&quot; tool is a straightforward addition to your Claude implementation that can yield meaningful improvements in just a few steps:</p></div><div class="lang-cn-block"><p>虽然&quot;思考&quot;工具可以提供实质性改进，但它并非适用于所有工具使用用例，而且确实会以增加提示长度和输出token为代价。具体而言，我们发现&quot;思考&quot;工具在以下用例中不会提供任何改进：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Test with agentic tool use scenarios.Start with challenging use cases—ones where Claude currently struggles with policy compliance or complex reasoning in long tool call chains.</li><li>Add the tool definition. Implement a &quot;think&quot; tool customized to your domain. It requires minimal code but enables more structured reasoning. Also consider including instructions on when and how to use the tool, with examples relevant to your domain to the system prompt.</li><li>Monitor and refine. Watch how Claude uses the tool in practice, and adjust your prompts to encourage more effective thinking patterns.</li></ul></div><div class="lang-cn-block"><ul><li>非顺序工具调用。如果Claude只需进行单次工具调用或多次并行调用即可完成任务，添加&quot;思考&quot;不太可能带来任何改进。</li><li>简单指令遵循。当Claude需要遵守的约束不多，且其默认行为已足够好时，额外的&quot;思考&quot;不太可能带来收益。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The best part is that adding this tool has minimal downside in terms of performance outcomes. It doesn&#x27;t change external behavior unless Claude decides to use it, and doesn&#x27;t interfere with your existing tools or workflows.</p></div><div class="lang-cn-block"><h3 id="heading-7">入门指南</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Conclusion</h3></div><div class="lang-cn-block"><p>&quot;思考&quot;工具是对Claude实现的简单添加，只需几个步骤即可产生有意义的改进：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our research has demonstrated that the &quot;think&quot; tool can significantly enhance Claude 3.7 Sonnet&#x27;s performance1on complex tasks requiring policy adherence and reasoning in long chains of tool calls. “Think” is not a one-size-fits-all solution, but it offers substantial benefits for the correct use cases, all with minimal implementation complexity.
+We look forward to seeing how you&#x27;ll use the &quot;think&quot; tool to build more capable, reliable, and transparent AI systems with Claude.</p></div><div class="lang-cn-block"><ul><li>在智能体工具使用场景中进行测试。从具有挑战性的用例开始——即Claude目前在策略合规性或长工具调用链中的复杂推理方面存在困难的场景。</li><li>添加工具定义。实现一个针对您领域定制的&quot;思考&quot;工具。它只需最少的代码，但能实现更结构化的推理。同时考虑在系统提示中包含关于何时以及如何使用该工具的说明，以及与您领域相关的示例。</li><li>监控和改进。观察Claude在实践中如何使用该工具，并调整您的提示以鼓励更有效的思考模式。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ol><li>While our τ-Bench results focused on the improvement of Claude 3.7 Sonnet with the “think” tool, our experiments show Claude 3.5 Sonnet (New) is also able to achieve performance gains with the same configuration as 3.7 Sonnet, indicating that this improvement generalizes to other Claude models as well.</li></ol></div><div class="lang-cn-block"><p>最棒的是，添加此工具在性能结果方面的负面影响极小。除非Claude决定使用它，否则它不会改变外部行为，也不会干扰您现有的工具或工作流程。</p></div></div>
+<div class="lang-cn-block"><h3 id="heading-8">结论</h3></div>
+<div class="lang-cn-block"><p>我们的研究表明，&quot;思考&quot;工具可以显著提升Claude 3.7 Sonnet在需要策略遵循和长工具调用链推理的复杂任务中的性能。&quot;思考&quot;并非万能解决方案，但它为正确的用例提供了实质性收益，且实现复杂度极低。</p></div>
+<div class="lang-cn-block"><p>我们期待看到您如何使用&quot;思考&quot;工具与Claude一起构建更强大、更可靠、更透明的AI系统。</p></div>
+<div class="lang-cn-block"><ol><li>虽然我们的τ-Bench结果聚焦于Claude 3.7 Sonnet使用&quot;思考&quot;工具的改进，但我们的实验表明，Claude 3.5 Sonnet（新版本）在与3.7 Sonnet相同的配置下也能获得性能提升，表明这种改进可以推广到其他Claude模型。</li></ol></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><ul>
+<li>扩展思维更新  2025年12月15日  自首次发布以来，扩展思维（Extended Thinking）功能已得到显著改进，因此在大多数情况下，我们建议使用该功能而非专门的思考工具。扩展思维提供了类似的好处——给予Claude空间来推理复杂问题——同时具有更好的集成性和性能。有关实现细节，请参阅我们的扩展思维文档。</li>
+</ul>
+<p>扩展思维更新
+2025年15日
+自首次发布以来，扩展思维功能已得到显著改进，因此在大多数情况下，我们建议使用该功能而非专门的思考工具。扩展思维提供了类似的好处——给予Claude空间来推理复杂问题——同时具有更好的集成性和性能。有关实现细节，请参阅我们的扩展思维文档。</p>
+<p>在我们持续增强Claude复杂问题解决能力的过程中，我们发现了一种特别有效的方法：一个&quot;思考&quot;工具，它能在复杂任务期间为结构化思考创建专用空间。</p>
+<p>这种简单而强大的技术——正如我们将在下文解释的，它与Claude的新&quot;扩展思维&quot;功能不同（有关扩展思维实现细节，请参阅此处）——在Claude的智能体（Agentic）工具使用能力方面取得了显著改进。这包括遵循策略、做出一致决策以及处理多步骤问题，且只需最少的实现开销。</p>
+<p>在本文中，我们将探讨如何在不同应用中实现&quot;思考&quot;工具，基于经过验证的基准测试结果为开发者提供实用指导。</p>
+<h3>什么是&quot;思考&quot;工具？</h3>
+<p>通过&quot;思考&quot;工具，我们赋予Claude在得出最终答案的过程中，加入一个额外思考步骤的能力——该步骤拥有自己专用的空间。</p>
+<p>虽然它听起来与扩展思维类似，但这是一个不同的概念。扩展思维关注的是Claude在开始生成响应之前所做的事情。通过扩展思维，Claude在采取行动之前会深入考虑并迭代其计划。而&quot;思考&quot;工具是让Claude在开始生成响应后，增加一个步骤来停下来思考是否已获得推进所需的所有信息。这在执行长链工具调用或与用户进行长多步骤对话时尤其有用。</p>
+<p>这使得&quot;思考&quot;工具更适合Claude无法仅从用户查询中获得制定响应所需的全部信息，且需要处理外部信息（例如工具调用结果中的信息）的场景。Claude使用&quot;思考&quot;工具进行的推理不如扩展思维全面，更侧重于模型发现的新信息。</p>
+<p>对于较简单的工具使用场景，如非顺序工具调用或直接指令遵循，我们建议使用扩展思维。当您不需要Claude调用工具时，扩展思维也适用于编码、数学和物理等用例。&quot;思考&quot;工具更适合Claude需要调用复杂工具、在长链工具调用中仔细分析工具输出、在具有详细指南的策略密集环境中导航，或在每一步都建立在前一步基础上且错误代价高昂的场景中做出顺序决策。</p>
+<p>以下是来自τ-Bench的标准工具规范格式的示例实现：</p>
+<pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre>
+<h3>τ-Bench上的性能表现</h3>
+<p>我们使用τ-bench（tau-bench）评估了&quot;思考&quot;工具，这是一个综合性基准测试，旨在测试模型在真实客户服务场景中使用工具的能力，其中&quot;思考&quot;工具是评估标准环境的一部分。</p>
+<p>τ-bench评估Claude的以下能力：</p>
+<ul>
+<li>与模拟用户进行真实对话</li>
+<li>始终遵循复杂的客服智能体策略指南</li>
+<li>使用各种工具访问和操作环境数据库</li>
+</ul>
+<p>τ-bench中使用的主要评估指标是pass^k，它衡量给定任务中所有k次独立试验都成功的概率，在所有任务上取平均值。与其他LLM评估中常见的pass@k指标（衡量k次试验中至少有一次成功）不同，pass^k评估的是一致性和可靠性——这对于需要一致遵循策略的客户服务应用来说是至关重要的品质。</p>
+<h4>性能分析</h4>
+<p>我们的评估比较了几种不同的配置：</p>
+<ul>
+<li>基线（无&quot;思考&quot;工具，无扩展思维模式）</li>
+<li>仅扩展思维模式</li>
+<li>仅&quot;思考&quot;工具</li>
+<li>&quot;思考&quot;工具加优化提示（针对航空领域）</li>
+</ul>
+<p>结果表明，当Claude 3.7在基准测试的&quot;航空&quot;和&quot;零售&quot;客户服务领域中有效使用&quot;思考&quot;工具时，取得了显著的改进：</p>
+<ul>
+<li>航空领域：&quot;思考&quot;工具配合优化提示在pass^1指标上达到了0.570，而基线仅为0.370——相对改进54%；</li>
+<li>零售领域：仅&quot;思考&quot;工具就达到了0.812，而基线为0.783。</li>
+</ul>
+<p>Claude 3.7 Sonnet在Tau-Bench评估&quot;航空&quot;领域的表现</p>
+<p>航空领域的最佳性能是通过将&quot;思考&quot;工具与优化提示配对实现的，该提示提供了在分析客户请求时应使用的推理方法示例。以下是优化提示的示例：</p>
+<pre><code class="language-">## Using the think tool
+
+Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:
+- List the specific rules that apply to the current request
+- Check if all required information is collected
+- Verify that the planned action complies with all policies
+- Iterate over tool results for correctness 
+
+Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123
+- Need to verify: user ID, reservation ID, reason
+- Check cancellation rules:
+  * Is it within 24h of booking?
+  * If not, check ticket class and insurance
+- Verify no segments flown or are in the past
+- Plan: collect missing info, verify rules, get confirmation
+&lt;/think_tool_example_1&gt;
+
+&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each
+- Need user ID to check:
+  * Membership tier for baggage allowance
+  * Which payments methods exist in profile
+- Baggage calculation:
+  * Economy class × 3 passengers
+  * If regular member: 1 free bag each → 3 extra bags = $150
+  * If silver member: 2 free bags each → 0 extra bags = $0
+  * If gold member: 3 free bags each → 0 extra bags = $0
+- Payment rules to verify:
+  * Max 1 travel certificate, 1 credit card, 3 gift cards
+  * All payment methods must be in profile
+  * Travel certificate remainder goes to waste
+- Plan:
+1. Get user ID
+2. Verify membership level for bag fees
+3. Check which payment methods in profile and if their combination is allowed
+4. Calculate total: ticket price + any bag fees
+5. Get explicit confirmation for booking
+&lt;/think_tool_example_2&gt;</code></pre>
+<p>特别有趣的是不同方法之间的比较。使用&quot;思考&quot;工具配合优化提示，相比扩展思维模式（其表现与未提示的&quot;思考&quot;工具相似）取得了明显更好的结果。单独使用&quot;思考&quot;工具（无提示）相比基线提高了性能，但仍不及优化方法。</p>
+<p>&quot;思考&quot;工具与优化提示的组合以显著优势提供了最强的性能，这可能是由于基准测试中航空策略部分的高复杂度，模型从获得如何&quot;思考&quot;的示例中获益最多。</p>
+<p>在零售领域，我们也测试了各种配置以了解每种方法的具体影响。</p>
+<p>Claude 3.7 Sonnet在Tau-Bench评估&quot;零售&quot;领域的表现</p>
+<p>&quot;思考&quot;工具即使在没有额外提示的情况下也取得了最高的pass^1分数0.812。零售策略相比航空领域明显更容易处理，Claude仅通过拥有一个思考空间就能在没有进一步指导的情况下有所改进。</p>
+<h4>τ-Bench分析的关键发现</h4>
+<p>我们的详细分析揭示了几种模式，可以帮助您有效实现&quot;思考&quot;工具：</p>
+<ul>
+<li>提示在困难领域中至关重要。仅仅让&quot;思考&quot;工具可用可能会稍微提高性能，但将其与优化提示配对，在困难领域中会产生显著更好的结果。然而，较简单的领域可能仅从能够使用&quot;思考&quot;中获益。</li>
+<li>跨试验的一致性提升。使用&quot;思考&quot;带来的改进在k达到5的pass^k中得以保持，表明该工具帮助Claude更有效地处理边缘情况和异常场景。</li>
+</ul>
+<h3>SWE-Bench上的性能表现</h3>
+<p>在评估Claude 3.7 Sonnet时，我们向SWE-bench设置中添加了类似的&quot;思考&quot;工具，为达到0.623的最先进分数做出了贡献。以下是改编后的&quot;思考&quot;工具定义：</p>
+<pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre>
+<p>我们的实验（使用&quot;思考&quot;工具n=30个样本，不使用n=144个样本）表明，包含该工具的单独效果使性能平均提高了1.6%（Welch&#x27;s t检验：t(38.89) = 6.71，p &lt; .001，d = 1.47）。</p>
+<h3>何时使用&quot;思考&quot;工具</h3>
+<p>根据这些评估结果，我们确定了Claude从&quot;思考&quot;工具中获益最多的特定场景：</p>
+<ul>
+<li>工具输出分析。当Claude在行动前需要仔细处理先前工具调用的输出，且可能需要回溯其方法时；</li>
+<li>策略密集环境。当Claude需要遵循详细指南并验证合规性时；以及</li>
+<li>顺序决策。当每个行动都建立在前一步基础上，且错误代价高昂时（常见于多步骤领域）。</li>
+</ul>
+<h2>实现最佳实践</h2>
+<p>为了充分利用Claude的&quot;思考&quot;工具，我们基于τ-bench实验推荐以下实现实践。</p>
+<h4>1. 使用领域特定示例进行策略性提示</h4>
+<p>最有效的方法是提供关于何时以及如何使用&quot;思考&quot;工具的清晰说明，例如τ-bench航空领域所使用的。提供针对您特定用例的示例可以显著提高模型使用&quot;思考&quot;工具的效果：</p>
+<ul>
+<li>推理过程中期望的详细程度；</li>
+<li>如何将复杂指令分解为可执行的步骤；</li>
+<li>处理常见场景的决策树；以及</li>
+<li>如何检查是否已收集所有必要信息。</li>
+</ul>
+<h4>2. 将复杂指导放在系统提示中</h4>
+<p>我们发现，当说明较长和/或较复杂时，将关于&quot;思考&quot;工具的说明放在系统提示中比放在工具描述本身中更有效。这种方法提供了更广泛的上下文，并帮助模型更好地将思考过程整合到其整体行为中。</p>
+<h3>何时*不*使用&quot;思考&quot;工具</h3>
+<p>虽然&quot;思考&quot;工具可以提供实质性改进，但它并非适用于所有工具使用用例，而且确实会以增加提示长度和输出token为代价。具体而言，我们发现&quot;思考&quot;工具在以下用例中不会提供任何改进：</p>
+<ul>
+<li>非顺序工具调用。如果Claude只需进行单次工具调用或多次并行调用即可完成任务，添加&quot;思考&quot;不太可能带来任何改进。</li>
+<li>简单指令遵循。当Claude需要遵守的约束不多，且其默认行为已足够好时，额外的&quot;思考&quot;不太可能带来收益。</li>
+</ul>
+<h3>入门指南</h3>
+<p>&quot;思考&quot;工具是对Claude实现的简单添加，只需几个步骤即可产生有意义的改进：</p>
+<ul>
+<li>在智能体工具使用场景中进行测试。从具有挑战性的用例开始——即Claude目前在策略合规性或长工具调用链中的复杂推理方面存在困难的场景。</li>
+<li>添加工具定义。实现一个针对您领域定制的&quot;思考&quot;工具。它只需最少的代码，但能实现更结构化的推理。同时考虑在系统提示中包含关于何时以及如何使用该工具的说明，以及与您领域相关的示例。</li>
+<li>监控和改进。观察Claude在实践中如何使用该工具，并调整您的提示以鼓励更有效的思考模式。</li>
+</ul>
+<p>最棒的是，添加此工具在性能结果方面的负面影响极小。除非Claude决定使用它，否则它不会改变外部行为，也不会干扰您现有的工具或工作流程。</p>
+<h3>结论</h3>
+<p>我们的研究表明，&quot;思考&quot;工具可以显著提升Claude 3.7 Sonnet在需要策略遵循和长工具调用链推理的复杂任务中的性能。&quot;思考&quot;并非万能解决方案，但它为正确的用例提供了实质性收益，且实现复杂度极低。</p>
+<p>我们期待看到您如何使用&quot;思考&quot;工具与Claude一起构建更强大、更可靠、更透明的AI系统。</p>
+<ol>
+<li>虽然我们的τ-Bench结果聚焦于Claude 3.7 Sonnet使用&quot;思考&quot;工具的改进，但我们的实验表明，Claude 3.5 Sonnet（新版本）在与3.7 Sonnet相同的配置下也能获得性能提升，表明这种改进可以推广到其他Claude模型。</li>
+</ol></div>
+                <div class="lang-en"><ul>
+<li>Extended thinking updateDec 15, 2025Extended thinking capabilities have improved since its initial release, such that we recommend using that feature instead of a dedicated think tool in most cases. Extended thinking provides similar benefits—giving Claude space to reason through complex problems—with better integration and performance. See our extended thinking documentation for implementation details.</li>
+</ul>
+<p>Extended thinking update
+Dec 15, 2025
+Extended thinking capabilities have improved since its initial release, such that we recommend using that feature instead of a dedicated think tool in most cases. Extended thinking provides similar benefits—giving Claude space to reason through complex problems—with better integration and performance. See our extended thinking documentation for implementation details.
+As we continue to enhance Claude&#x27;s complex problem-solving abilities, we&#x27;ve discovered a particularly effective approach: a &quot;think&quot; tool that creates dedicated space for structured thinking during complex tasks.
+This simple yet powerful technique—which, as we’ll explain below, is different from Claude’s new “extended thinking” capability (see here forextended thinking implementation details)—has resulted in remarkable improvements in Claude&#x27;s agentic tool use ability. This includes following policies, making consistent decisions, and handling multi-step problems, all with minimal implementation overhead.
+In this post, we&#x27;ll explore how to implement the “think” tool on different applications, sharing practical guidance for developers based on verified benchmark results.</p>
+<h3>What is the &quot;think&quot; tool?</h3>
+<p>With the &quot;think&quot; tool, we&#x27;re giving Claude the ability to include an additional thinking step—complete with its own designated space—as part of getting to its final answer.
+While it sounds similar to extended thinking, it&#x27;s a different concept. Extended thinking is all about what Claude does before it starts generating a response. With extended thinking, Claude deeply considers and iterates on its plan before taking action. The &quot;think&quot; tool is for Claude, once it starts generating a response, to add a step to stop and think about whether it has all the information it needs to move forward. This is particularly helpful when performing long chains of tool calls or in long multi-step conversations with the user.
+This makes the “think” tool more suitable for cases where Claude does not have all the information needed to formulate its response from the user query alone, and where it needs to process external information (e.g. information in tool call results). The reasoning Claude performs with the “think” tool is less comprehensive than what can be obtained with extended thinking, and is more focused onnewinformation that the model discovers.
+We recommend using extended thinking for simpler tool use scenarios like non-sequential tool calls or straightforward instruction following. Extended thinking is also useful for use cases, like coding, math, and physics, when you don’t need Claude to call tools. The “think” tool is better suited for when Claude needs to call complex tools, analyze tool outputs carefully in long chains of tool calls, navigate policy-heavy environments with detailed guidelines, or make sequential decisions where each step builds on previous ones and mistakes are costly.
+Here&#x27;s a sample implementation using the standard tool specification format that comes fromτ-Bench:</p>
+<pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre>
+<p>{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;A thought to think about.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</p>
+<h3>Performance on τ-Bench</h3>
+<p>We evaluated the &quot;think&quot; tool using τ-bench (tau-bench), a comprehensive benchmark designed to test a model’s ability to use tools in realistic customer service scenarios, where the &quot;think&quot; tool is part of the evaluation’s standard environment.
+τ-bench evaluates Claude&#x27;s ability to:</p>
+<ul>
+<li>Navigate realistic conversations with simulated users</li>
+<li>Follow complex customer service agent policy guidelines consistently</li>
+<li>Use a variety of tools to access and manipulate the environment database</li>
+</ul>
+<p>The primary evaluation metric used in τ-bench is pass^k, which measures the probability that allkindependent task trials are successful for a given task, averaged across all tasks. Unlike the pass@kmetric that is common for other LLM evaluations (which measures if at least one ofktrials succeeds), pass^kevaluates consistency and reliability—critical qualities for customer service applications where consistent adherence to policies is essential.</p>
+<h4>Performance Analysis</h4>
+<p>Our evaluation compared several different configurations:</p>
+<ul>
+<li>Baseline (no &quot;think&quot; tool, no extended thinking mode)</li>
+<li>Extended thinking mode alone</li>
+<li>&quot;Think&quot; tool alone</li>
+<li>&quot;Think&quot; tool with optimized prompt (for airline domain)</li>
+</ul>
+<p>The results showed dramatic improvements when Claude 3.7 effectively used the &quot;think&quot; tool in both the “airline” and “retail” customer service domains of the benchmark:</p>
+<ul>
+<li>Airline domain: The &quot;think&quot; tool with an optimized prompt achieved 0.570 on the pass^1 metric, compared to just 0.370 for the baseline—a 54% relative improvement;</li>
+<li>Retail domain: The &quot;think&quot; tool alone achieves 0.812, compared to 0.783 for the baseline.</li>
+</ul>
+<p>Claude 3.7 Sonnet&#x27;s performance on the &quot;Airline&quot; domain of the Tau-Bench eval
+The best performance in the airline domain was achieved by pairing the “think” tool with an optimized prompt that gives examples of the type of reasoning approaches to use when analyzing customer requests. Below is an example of the optimized prompt:</p>
+<pre><code class="language-">## Using the think tool
+
+Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:
+- List the specific rules that apply to the current request
+- Check if all required information is collected
+- Verify that the planned action complies with all policies
+- Iterate over tool results for correctness 
+
+Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123
+- Need to verify: user ID, reservation ID, reason
+- Check cancellation rules:
+  * Is it within 24h of booking?
+  * If not, check ticket class and insurance
+- Verify no segments flown or are in the past
+- Plan: collect missing info, verify rules, get confirmation
+&lt;/think_tool_example_1&gt;
+
+&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each
+- Need user ID to check:
+  * Membership tier for baggage allowance
+  * Which payments methods exist in profile
+- Baggage calculation:
+  * Economy class × 3 passengers
+  * If regular member: 1 free bag each → 3 extra bags = $150
+  * If silver member: 2 free bags each → 0 extra bags = $0
+  * If gold member: 3 free bags each → 0 extra bags = $0
+- Payment rules to verify:
+  * Max 1 travel certificate, 1 credit card, 3 gift cards
+  * All payment methods must be in profile
+  * Travel certificate remainder goes to waste
+- Plan:
+1. Get user ID
+2. Verify membership level for bag fees
+3. Check which payment methods in profile and if their combination is allowed
+4. Calculate total: ticket price + any bag fees
+5. Get explicit confirmation for booking
+&lt;/think_tool_example_2&gt;</code></pre>
+<h2>Using the think tool</h2>
+<p>Before taking any action or responding to the user after receiving tool results, use the think tool as a scratchpad to:</p>
+<ul>
+<li>List the specific rules that apply to the current request</li>
+<li>Check if all required information is collected</li>
+<li>Verify that the planned action complies with all policies</li>
+<li>Iterate over tool results for correctness</li>
+</ul>
+<p>Here are some examples of what to iterate over inside the think tool:
+&lt;think_tool_example_1&gt;
+User wants to cancel flight ABC123</p>
+<ul>
+<li>Need to verify: user ID, reservation ID, reason</li>
+<li>Check cancellation rules:</li>
+<li>Is it within 24h of booking?</li>
+<li>If not, check ticket class and insurance</li>
+<li>Verify no segments flown or are in the past</li>
+<li>Plan: collect missing info, verify rules, get confirmation</li>
+</ul>
+<p>&lt;/think_tool_example_1&gt;</p>
+<p>&lt;think_tool_example_2&gt;
+User wants to book 3 tickets to NYC with 2 checked bags each</p>
+<ul>
+<li>Need user ID to check:</li>
+<li>Membership tier for baggage allowance</li>
+<li>Which payments methods exist in profile</li>
+<li>Baggage calculation:</li>
+<li>Economy class × 3 passengers</li>
+<li>If regular member: 1 free bag each → 3 extra bags = $150</li>
+<li>If silver member: 2 free bags each → 0 extra bags = $0</li>
+<li>If gold member: 3 free bags each → 0 extra bags = $0</li>
+<li>Payment rules to verify:</li>
+<li>Max 1 travel certificate, 1 credit card, 3 gift cards</li>
+<li>All payment methods must be in profile</li>
+<li>Travel certificate remainder goes to waste</li>
+<li>Plan:</li>
+</ul>
+<ol>
+<li>Get user ID</li>
+<li>Verify membership level for bag fees</li>
+<li>Check which payment methods in profile and if their combination is allowed</li>
+<li>Calculate total: ticket price + any bag fees</li>
+<li>Get explicit confirmation for booking</li>
+</ol>
+<p>&lt;/think_tool_example_2&gt;
+What&#x27;s particularly interesting is how the different approaches compared. Using the “think” tool with the optimized prompt achieved significantly better results over extended thinking mode (which showed similar performance to the unprompted “think” tool). Using the &quot;think&quot; tool alone (without prompting) improved performance over baseline, but still fell short of the optimized approach.
+The combination of the &quot;think&quot; tool with optimized prompting delivered the strongest performance by a significant margin, likely due to the high complexity of theairline policypart of the benchmark, where the model benefitted the most from being given examples of how to “think.”
+In the retail domain, we also tested various configurations to understand the specific impact of each approach
+Claude 3.7 Sonnet&#x27;s performance on the &quot;Retail&quot; domain of the Tau-Bench eval
+The &quot;think&quot; tool achieved the highest pass^1 score of 0.812 even without additional prompting. Theretail policyis noticeably easier to navigate compared to the airline domain, and Claude was able to improve just by having a space to think without further guidance.</p>
+<h4>Key Insights from τ-Bench Analysis</h4>
+<p>Our detailed analysis revealed several patterns that can help you implement the &quot;think&quot; tool effectively:</p>
+<ul>
+<li>Prompting matters significantly on difficult domains. Simply making the &quot;think&quot; tool available might improve performance somewhat, but pairing it with optimized prompting yielded dramatically better results for difficult domains. However, easier domains may benefit from simply having access to “think.”</li>
+<li>Improved consistency across trials. The improvements from using “think” were maintained for pass^k up to k=5, indicating that the tool helped Claude handle edge cases and unusual scenarios more effectively.</li>
+</ul>
+<h3>Performance on SWE-Bench</h3>
+<p>A similar “think” tool was added to our SWE-bench setup when evaluating Claude 3.7 Sonnet, contributing to the achieved state-of-the-art score of 0.623. The adapted “think” tool definition is given below:</p>
+<pre><code class="language-">{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}</code></pre>
+<p>{
+  &quot;name&quot;: &quot;think&quot;,
+  &quot;description&quot;: &quot;Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed. For example, if you explore the repo and discover the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective. Alternatively, if you receive some test results, call this tool to brainstorm ways to fix the failing tests.&quot;,
+  &quot;input_schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+      &quot;thought&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;description&quot;: &quot;Your thoughts.&quot;
+      }
+    },
+    &quot;required&quot;: [&quot;thought&quot;]
+  }
+}
+Our experiments (n=30 samples with &quot;think&quot; tool,n=144 samples without) showed the isolated effects of including this tool improved performance by 1.6% on average (Welch&#x27;st-test:t(38.89) = 6.71,p&lt; .001,d= 1.47).</p>
+<h3>When to use the &quot;think&quot; tool</h3>
+<p>Based on these evaluation results, we&#x27;ve identified specific scenarios where Claude benefits most from the &quot;think&quot; tool:</p>
+<ul>
+<li>Tool output analysis.When Claude needs to carefully process the output of previous tool calls before acting and might need to backtrack in its approach;</li>
+<li>Policy-heavy environments. When Claude needs to follow detailed guidelines and verify compliance; and</li>
+<li>Sequential decision making. When each action builds on previous ones and mistakes are costly (often found in multi-step domains).</li>
+</ul>
+<h2>Implementation best practices</h2>
+<p>To get the most out of the &quot;think&quot; tool with Claude, we recommend the following implementation practices based on our τ-bench experiments.</p>
+<h4>1. Strategic prompting with domain-specific examples</h4>
+<p>The most effective approach is to provide clear instructions on when and how to use the &quot;think&quot; tool, such as the one used for the τ-bench airline domain. Providing examples tailored to your specific use case significantly improves how effectively the model uses the &quot;think&quot; tool:</p>
+<ul>
+<li>The level of detail expected in the reasoning process;</li>
+<li>How to break down complex instructions into actionable steps;</li>
+<li>Decision trees for handling common scenarios; and</li>
+<li>How to check if all necessary information has been collected.</li>
+</ul>
+<h4>2. Place complex guidance in the system prompt</h4>
+<p>We found that, when they were long and/or complex, including instructions about the &quot;think&quot; tool in the system prompt was more effective than placing them in the tool description itself. This approach provides broader context and helps the model better integrate the thinking process into its overall behavior.</p>
+<h3>Whennotto use the &quot;think&quot; tool</h3>
+<p>Whereas the “think” tool can offer substantial improvements, it is not applicable to all tool use use cases, and does come at the cost of increased prompt length and output tokens. Specifically, we have found the “think” tool does not offer any improvements in the following use cases:</p>
+<ul>
+<li>Non-sequential tool calls. If Claude only needs to make a single tool call or multiple parallel calls to complete a task, there is unlikely to be any improvements from adding in “think.”</li>
+<li>Simple instruction following. When there are not many constraints to which Claude needs to adhere, and its default behaviour is good enough, there are unlikely to be gains from additional “think”-ing.</li>
+</ul>
+<h3>Getting started</h3>
+<p>The &quot;think&quot; tool is a straightforward addition to your Claude implementation that can yield meaningful improvements in just a few steps:</p>
+<ul>
+<li>Test with agentic tool use scenarios.Start with challenging use cases—ones where Claude currently struggles with policy compliance or complex reasoning in long tool call chains.</li>
+<li>Add the tool definition. Implement a &quot;think&quot; tool customized to your domain. It requires minimal code but enables more structured reasoning. Also consider including instructions on when and how to use the tool, with examples relevant to your domain to the system prompt.</li>
+<li>Monitor and refine. Watch how Claude uses the tool in practice, and adjust your prompts to encourage more effective thinking patterns.</li>
+</ul>
+<p>The best part is that adding this tool has minimal downside in terms of performance outcomes. It doesn&#x27;t change external behavior unless Claude decides to use it, and doesn&#x27;t interfere with your existing tools or workflows.</p>
+<h3>Conclusion</h3>
+<p>Our research has demonstrated that the &quot;think&quot; tool can significantly enhance Claude 3.7 Sonnet&#x27;s performance1on complex tasks requiring policy adherence and reasoning in long chains of tool calls. “Think” is not a one-size-fits-all solution, but it offers substantial benefits for the correct use cases, all with minimal implementation complexity.
+We look forward to seeing how you&#x27;ll use the &quot;think&quot; tool to build more capable, reliable, and transparent AI systems with Claude.</p>
+<ol>
+<li>While our τ-Bench results focused on the improvement of Claude 3.7 Sonnet with the “think” tool, our experiments show Claude 3.5 Sonnet (New) is also able to achieve performance gains with the same configuration as 3.7 Sonnet, indicating that this improvement generalizes to other Claude models as well.</li>
+</ol></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/claude-think-tool" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

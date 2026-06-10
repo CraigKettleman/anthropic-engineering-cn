@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扩展托管智能体：将大脑与双手解耦 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">不要养宠物</a>
+<a class="toc-h2" href="#heading-2">将大脑与双手解耦</a>
+<a class="toc-h2" href="#heading-3">会话不是 Claude 的上下文窗口</a>
+<a class="toc-h2" href="#heading-4">多个大脑，多只双手</a>
+<a class="toc-h2" href="#heading-5">结论</a>
+<a class="toc-h2" href="#heading-6">致谢</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">Don’t adopt a pet</a>
+<a class="toc-h2" href="#heading-2">Decouple the brain from the hands</a>
+<a class="toc-h2" href="#heading-3">The session is not Claude’s context window</a>
+<a class="toc-h2" href="#heading-4">Many brains, many hands</a>
+<a class="toc-h2" href="#heading-5">Conclusion</a>
+<a class="toc-h2" href="#heading-6">Acknowledgements</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2026-04-08</div>
+            <div class="title-block">
+                <h1 class="cn">扩展托管智能体：将大脑与双手解耦</h1>
+                <h1 class="en">Scaling Managed Agents: Decoupling the brain from the hands</h1>
+                <div class="en-title">Scaling Managed Agents: Decoupling the brain from the hands</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Get started with Claude Managed Agents by following ourdocs.A running topic on the Engineering Blog is how tobuild effective agentsanddesign harnessesforlong-running work. A common thread across this work is that harnesses encode assumptions about what Claude can’t do on its own. However, those assumptions need to be frequently questioned because they cango staleas models improve.
+As just one example, in prior workwe foundthat Claude Sonnet 4.5 would wrap up tasks prematurely as it sensed its context limit approaching—a behavior sometimes called “context anxiety.” We addressed this by adding context resets to the harness. But when we used the same harness on Claude Opus 4.5, we found that the behavior was gone. The resets had become dead weight.
+We expect harnesses to continue evolving. So we built Managed Agents: a hosted service in the Claude Platform that runs long-horizon agents on your behalf through a small set of interfaces meant to outlast any particular implementation—including the ones we run today.
+Building Managed Agents meant solving an old problem in computing: how to design a system for “programs as yet unthought of.” Decades ago, operating systems solved this problem by virtualizing hardware into abstractions—process, file—general enough for programs that didn&#x27;t exist yet. The abstractions outlasted the hardware. Theread()command is agnostic as to whether it’s accessing a disk pack from the 1970s or a modern SSD. The abstractions on top stayed stable while the implementations underneath changed freely.
+read()
+Managed Agents follow the same pattern. We virtualized the components of an agent: a session (the append-only log of everything that happened), a harness (the loop that calls Claude and routes Claude’s tool calls to the relevant infrastructure), and a sandbox (an execution environment where Claude can run code and edit files). This allows the implementation of each to be swapped without disturbing the others. We&#x27;re opinionated about the shape of these interfaces, not about what runs behind them.</p></div><div class="lang-cn-block"><p>请参阅我们的文档开始使用 Claude 托管智能体（Managed Agents）。工程博客上一个持续讨论的话题是如何构建有效的智能体（Agent）以及为长时间运行的工作设计运行框架（Harness）。这些工作的一个共同线索是，运行框架编码了关于 Claude 无法独立完成的事项的假设。然而，这些假设需要被频繁质疑，因为随着模型的进步，它们可能会过时。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Don’t adopt a pet</h2></div><div class="lang-cn-block"><p>举一个例子，在之前的工作中，我们发现 Claude Sonnet 4.5 会在感知到上下文窗口即将到达限制时过早地结束任务——这种行为有时被称为&quot;上下文焦虑&quot;（context anxiety）。我们通过在运行框架中添加上下文重置来解决这个问题。但当我们在 Claude Opus 4.5 上使用相同的运行框架时，我们发现这种行为已经消失了。那些重置操作变成了多余的负担。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We started by placing all agent components into a single container, which meant the session, agent harness, and sandbox all shared an environment. There were benefits to this approach, including that file edits are direct syscalls, and there were no service boundaries to design.
+But by coupling everything into one container, we ran into an old infrastructure problem: we’d adopted apet. In the pets-vs-cattle analogy, a pet is a named, hand-tended individual you can’t afford to lose, while cattle are interchangeable. In our case, the server became that pet; if a container failed, the session was lost. If a container was unresponsive, we had to nurse it back to health.
+Nursing containers meant debugging unresponsive stuck sessions. Our only window in was the WebSocket event stream, but that couldn’t tell uswherefailures arose, which meant that a bug in the harness, a packet drop in the event stream, or a container going offline all presented the same. To figure out what went wrong, an engineer had to open a shell inside the container, but because that container often also held user data, that approach essentially meant we lacked the ability to debug.
+A second issue was that the harness assumed that whatever Claude worked on lived in the container with it. When customers asked us to connect Claude to their virtual private cloud, they had to either peer their network with ours, or run our harness in their own environment. An assumption baked into the harness became a problem when we wanted to connect it to different infrastructure.</p></div><div class="lang-cn-block"><p>我们预计运行框架会持续演进。因此我们构建了托管智能体（Managed Agents）：Claude 平台中的一个托管服务，通过一小组旨在超越任何特定实现（包括我们当前运行的实现）的接口，代表你运行长期智能体。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Decouple the brain from the hands</h2></div><div class="lang-cn-block"><p>构建托管智能体意味着解决计算领域的一个古老问题：如何为&quot;尚未构想出的程序&quot;设计系统。几十年前，操作系统通过将硬件虚拟化为抽象——进程、文件——来解决这个问题，这些抽象足够通用，可以容纳尚不存在的程序。抽象的寿命超越了硬件。<code class="inline">read()</code> 命令无需关心它访问的是 1970 年代的磁盘组还是现代 SSD。上层的抽象保持稳定，而底层的实现可以自由变更。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The solution we arrived at was to decouple what we thought of as the “brain” (Claude and its harness) from both the “hands” (sandboxes and tools that perform actions) and the “session” (the log of session events). Each became an interface that made few assumptions about the others, and each could fail or be replaced independently.
+The harness leaves the container.Decoupling the brain from the hands meant the harness no longer lived inside the container. It called the container the way it called any other tool:execute(name, input) → string. The container became cattle. If the container died, the harness caught the failure as a tool-call error and passed it back to Claude. If Claude decided to retry, a new container could be reinitialized with a standard recipe:provision({resources}). We no longer had to nurse failed containers back to health.
+execute(name, input) → string
+provision({resources})
+Recovering from harness failure.The harness also became cattle. Because the session log sits outside the harness, nothing in the harness needs to survive a crash. When one fails, a new one can be rebooted withwake(sessionId), usegetSession(id)to get back the event log, and resume from the last event. During the agent loop, the harness writes to the session withemitEvent(id, event)in order to keep a durable record of events.
+wake(sessionId)
+getSession(id)
+emitEvent(id, event)
+The security boundary.In the coupled design, any untrusted code that Claude generated was run in the same container as credentials—so a prompt injection only had to convince Claude to read its own environment. Once an attacker has those tokens, they can spawn fresh, unrestricted sessions and delegate work to them. Narrow scoping is an obvious mitigation, but this encodes an assumption about what Claude can&#x27;t do with a limited token—and Claude is getting increasingly smart. The structural fix was to make sure the tokens are never reachable from the sandbox where Claude’s generated code runs.
+We used two patterns to ensure this. Auth can be bundled with a resource or held in a vault outside the sandbox. For Git, we use each repository’s access token to clone the repo during sandbox initialization and wire it into the local git remote. Gitpushandpullwork from inside the sandbox without the agent ever handling the token itself. For custom tools, we support MCP and store OAuth tokens in a secure vault. Claude calls MCP tools via a dedicated proxy; this proxy takes in a token associated with the session. The proxy can then fetch the corresponding credentials from the vault and make the call to the external service. The harness is never made aware of any credentials.
+push
+pull</p></div><div class="lang-cn-block"><p>托管智能体遵循相同的模式。我们将智能体的组件虚拟化：会话（session）——所有发生事件的仅追加日志；运行框架（harness）——调用 Claude 并将 Claude 的工具调用路由到相关基础设施的循环；沙箱（sandbox）——Claude 可以运行代码和编辑文件的执行环境。这使得每个组件的实现都可以在不干扰其他组件的情况下被替换。我们对接口的形态有明确的主张，但对背后运行的内容不做限定。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The session is not Claude’s context window</h2></div><div class="lang-cn-block"><h2 id="heading-1">不要养宠物</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Long-horizon tasks often exceed the length of Claude’s context window, and the standard ways to address this all involve irreversible decisions about what to keep. We’ve explored these techniques inprior workon context engineering. For example, compaction lets Claude save a summary of its context window and the memory tool lets Claude write context to files, enabling learning across sessions. This can be paired with context trimming, which selectively removes tokens such as old tool results or thinking blocks.
+But irreversible decisions to selectively retain or discard context can lead to failures. It is difficult to know which tokens the future turns will need. If messages are transformed by a compaction step, the harness removes compacted messages from Claude’s context window, and these are recoverable only if they are stored. Prior workhas exploredways to address this by storing context as an object that livesoutsidethe context window. For example, context can be an object in a REPL that the LLM programmatically accesses by writing code to filter or slice it.
+In Managed Agents, the session provides this same benefit, serving as a context object that lives outside Claude’s context window. But rather than be stored within the sandbox or REPL, context is durably stored in the session log. The interface,getEvents(),allows the brain to interrogate context by selecting positional slices of the event stream. The interface can be used flexibly, allowing the brain to pick up from wherever it last stopped reading, rewinding a few events before a specific moment to see the lead up, or rereading context before a specific action.
+getEvents(),
+Any fetched events can also be transformed in the harness before being passed to Claude’s context window. These transformations can be whatever the harness encodes, including context organization to achieve a high prompt cache hit rate and context engineering. We separated the concerns of recoverable context storage in the session and arbitrary context management in the harness because we can’t predict what specific context engineering will be required in future models. The interfaces push that context management into the harness, and only guarantee that the session is durable and available for interrogation.</p></div><div class="lang-cn-block"><p>我们最初将所有智能体组件放入单个容器中，这意味着会话、智能体运行框架和沙箱共享同一个环境。这种方法有一些好处，包括文件编辑是直接的系统调用，且无需设计服务边界。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Many brains, many hands</h2></div><div class="lang-cn-block"><p>但将所有内容耦合到一个容器中，我们遇到了一个老生常谈的基础设施问题：我们养了一只宠物。在宠物与牛的类比中，宠物是你无法承受失去的、有名字的、被精心照料的个体，而牛是可互换的。在我们的案例中，服务器成了那只宠物；如果容器崩溃，会话就丢失了。如果容器无响应，我们就得悉心照料让它恢复健康。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Many brains.Decoupling the brain from the hands solved one of our earliest customer complaints. When teams wanted Claude to work against resources in their own VPC, the only path was to peer their network with ours, because the container holding the harness assumed every resource sat next to it. Once the harness was no longer in the container, that assumption went away. The same change had a performance payoff. When we initially put the brain in a container, it meant that many brains required as many containers. For each brain, no inference could happen until that container was provisioned; every session paid the full container setup cost up front. Every session, even ones that would never touch the sandbox, had to clone the repo, boot the process, fetch pending events from our servers.
+That dead time is expressed in time-to-first-token (TTFT), which measures how long a session waits between accepting work and producing its first response token. TTFT is the latency the user most acutelyfeels.
+Decoupling the brain from the hands means that containers are provisioned by the brain via a tool call(execute(name, input) → string)only if they are needed. So a session that didn&#x27;t need a container right away didn&#x27;t wait for one. Inference could start as soon as the orchestration layer pulled pending events from the session log. Using this architecture, our p50 TTFT dropped roughly 60% and p95 dropped over 90%. Scaling to many brains just meant starting many stateless harnesses, and connecting them to hands only if needed.
+(execute(name, input) → string)
+Many hands.We also wanted the ability to connect each brain to many hands. In practice, this means Claude must reason about many execution environments and decide where to send work—a harder cognitive task than operating in a single shell. We started with the brain in a single container because earlier models weren&#x27;t capable of this. As intelligence scaled, the single container became the limitation instead: when that container failed, we lost state for every hand that the brain was reaching into.
+Decoupling the brain from the hands makes each hand a tool,execute(name, input) → string: a name and input go in, and a string is returned. That interface supports any custom tool, any MCP server, and our own tools. The harness doesn’t know whether the sandbox is a container, a phone, or a Pokémon emulator. And because no hand is coupled to any brain, brains can pass hands to one another.
+execute(name, input) → string</p></div><div class="lang-cn-block"><p>照料容器意味着调试无响应的卡死会话。我们唯一的入口是 WebSocket 事件流，但它无法告诉我们故障发生在哪里，这意味着运行框架中的 bug、事件流中的丢包，或者容器离线都会表现得一模一样。为了弄清楚出了什么问题，工程师必须在容器内部打开 shell，但由于该容器通常也存放着用户数据，这种方法实质上意味着我们缺乏调试能力。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Conclusion</h2></div><div class="lang-cn-block"><p>第二个问题是，运行框架假设 Claude 处理的所有内容都与它存放在同一个容器中。当客户要求我们将 Claude 连接到他们的虚拟私有云（VPC）时，他们必须要么将他们的网络与我们的网络对等连接，要么在他们自己的环境中运行我们的运行框架。一个嵌入运行框架的假设在我们想要将其连接到不同基础设施时成了问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The challenge we faced is an old one: how to design a system for “programs as yet unthought of.” Operating systems have lasted decades by virtualizing the hardware into abstractions general enough for programs that didn&#x27;t exist yet. With Managed Agents, we aimed to design a system that accommodates future harnesses, sandboxes, or other components around Claude.
+Managed Agents is a meta-harness in the same spirit, unopinionated about thespecificharness that Claude will need in the future. Rather, it is a system with general interfaces that allow many different harnesses. For example, Claude Code is an excellent harness that we use widely across tasks. We’ve also shown that task-specific agent harnesses excel in narrow domains. Managed Agents can accommodate any of these, matching Claude’s intelligence over time.
+Meta-harness design means being opinionated about the interfaces around Claude: we expect that Claude will need the ability to manipulate state (the session) and perform computation (the sandbox). We also expect that Claude will require the ability to scale to many brains and many hands. We designed the interfaces so that these can be run reliably and securely over long time horizons. But we make no assumptions about the number or location of brains or hands that Claude will need.</p></div><div class="lang-cn-block"><h2 id="heading-2">将大脑与双手解耦</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Acknowledgements</h2></div><div class="lang-cn-block"><p>我们最终找到的解决方案是将我们所认为的&quot;大脑&quot;（Claude 及其运行框架）与&quot;双手&quot;（执行操作的沙箱和工具）以及&quot;会话&quot;（会话事件日志）解耦。每个部分都成为一个对其他部分做出最少假设的接口，每个部分都可以独立地失败或被替换。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Lance Martin, Gabe Cemaj, and Michael Cohen. Thanks to Nodir Turakulov and Jeremy Fox for helpful conversations on these topics. Special thanks to the Agents API team and Jake Eaton for their contributions.</p></div><div class="lang-cn-block"><p><strong>运行框架离开容器。</strong> 将大脑与双手解耦意味着运行框架不再位于容器内部。它像调用任何其他工具一样调用容器：<code class="inline">execute(name, input) → string</code>。容器变成了牛。如果容器死了，运行框架将故障作为工具调用错误捕获并传回给 Claude。如果 Claude 决定重试，可以用标准配方重新初始化一个新容器：<code class="inline">provision({resources})</code>。我们不再需要照料失败的容器恢复健康。</p></div></div>
+<div class="lang-cn-block"><p><strong>从运行框架故障中恢复。</strong> 运行框架也变成了牛。由于会话日志存放在运行框架之外，运行框架中没有任何内容需要在崩溃后存活。当一个运行框架失败时，可以用 <code class="inline">wake(sessionId)</code> 重启一个新的运行框架，用 <code class="inline">getSession(id)</code> 获取事件日志，然后从最后一个事件恢复。在智能体循环期间，运行框架通过 <code class="inline">emitEvent(id, event)</code> 写入会话，以保持事件的持久记录。</p></div>
+<div class="lang-cn-block"><p><strong>安全边界。</strong> 在耦合设计中，Claude 生成的任何不受信任的代码都在与凭据相同的容器中运行——因此提示注入（prompt injection）只需要说服 Claude 读取自己的环境即可。一旦攻击者获得这些令牌，他们就可以生成全新的、不受限制的会话，并将工作委派给这些会话。缩小作用范围是一个显而易见的缓解措施，但这编码了一个关于 Claude 无法用有限令牌做什么的假设——而 Claude 正变得越来越聪明。结构性修复是确保令牌永远不会从 Claude 生成代码运行的沙箱中可达。</p></div>
+<div class="lang-cn-block"><p>我们使用两种模式来确保这一点。认证可以与资源捆绑，或存放在沙箱之外的保险库（vault）中。对于 Git，我们在沙箱初始化期间使用每个仓库的访问令牌来克隆仓库，并将其连接到本地 git remote。Git 的 <code class="inline">push</code> 和 <code class="inline">pull</code> 在沙箱内部工作，智能体本身永远不处理令牌。对于自定义工具，我们支持 MCP 并将 OAuth 令牌存储在安全保险库中。Claude 通过专用代理调用 MCP 工具；该代理接收与会话关联的令牌，然后代理可以从保险库中获取相应的凭据并调用外部服务。运行框架永远不会知道任何凭据。</p></div>
+<div class="lang-cn-block"><h2 id="heading-3">会话不是 Claude 的上下文窗口</h2></div>
+<div class="lang-cn-block"><p>长期任务经常超出 Claude 上下文窗口的长度，而解决这个问题的标准方法都涉及关于保留什么内容的不可逆决策。我们在之前关于上下文工程（context engineering）的工作中探索过这些技术。例如，压缩（compaction）让 Claude 保存其上下文窗口的摘要，记忆工具让 Claude 将上下文写入文件，从而实现跨会话的学习。这可以与上下文裁剪（context trimming）配对使用，后者有选择地移除令牌，例如旧的工具结果或思考块。</p></div>
+<div class="lang-cn-block"><p>但有选择地保留或丢弃上下文的不可逆决策可能导致失败。很难知道未来的轮次需要哪些令牌。如果消息被压缩步骤转换，运行框架会将压缩后的消息从 Claude 的上下文窗口中移除，而这些消息只有在被存储的情况下才能恢复。之前的工作探索了通过将上下文存储为存在于上下文窗口之外的对象来解决这个问题的方法。例如，上下文可以是 REPL 中的一个对象，LLM 通过编写代码来过滤或切片以编程方式访问它。</p></div>
+<div class="lang-cn-block"><p>在托管智能体中，会话提供了同样的好处，充当存在于 Claude 上下文窗口之外的上下文对象。但上下文不是存储在沙箱或 REPL 中，而是持久地存储在会话日志中。接口 <code class="inline">getEvents()</code> 允许大脑通过选择事件流的位置切片来查询上下文。该接口可以灵活使用，允许大脑从上次停止读取的位置继续，回退到特定时刻之前的几个事件以查看前因，或重新阅读特定操作之前的上下文。</p></div>
+<div class="lang-cn-block"><p>任何获取的事件也可以在运行框架中进行转换后再传递给 Claude 的上下文窗口。这些转换可以是运行框架编码的任何内容，包括为实现高提示缓存命中率的上下文组织和上下文工程。我们将会话中可恢复上下文存储的职责与运行框架中任意上下文管理的职责分离开来，因为我们无法预测未来的模型将需要什么样的特定上下文工程。这些接口将上下文管理推入运行框架，只保证会话是持久的且可供查询。</p></div>
+<div class="lang-cn-block"><h2 id="heading-4">多个大脑，多只双手</h2></div>
+<div class="lang-cn-block"><p><strong>多个大脑。</strong> 将大脑与双手解耦解决了我们最早的客户投诉之一。当团队希望 Claude 访问他们自己 VPC 中的资源时，唯一的途径是将他们的网络与我们的网络对等连接，因为存放运行框架的容器假设每个资源都位于它旁边。一旦运行框架不再在容器中，这个假设就消失了。同样的改变还带来了性能收益。当我们最初将大脑放在容器中时，意味着多个大脑需要同样多的容器。对于每个大脑，在容器被配置完成之前无法进行推理；每个会话都预先支付了完整的容器启动成本。每个会话，即使是那些永远不会接触沙箱的会话，也必须克隆仓库、启动进程、从我们的服务器获取待处理事件。</p></div>
+<div class="lang-cn-block"><p>这段空闲时间体现在首令牌时间（TTFT, time-to-first-token）中，它衡量的是会话从接受工作到产生第一个响应令牌之间的等待时长。TTFT 是用户最直接感受到的延迟。</p></div>
+<div class="lang-cn-block"><p>将大脑与双手解耦意味着容器仅在需要时才由大脑通过工具调用 <code class="inline">execute(name, input) → string</code> 进行配置。因此，不需要容器的会话无需等待。一旦编排层从会话日志中拉取待处理事件，推理就可以立即开始。使用这种架构，我们的 p50 TTFT 降低了约 60%，p95 降低了超过 90%。扩展到多个大脑只需启动多个无状态的运行框架，并仅在需要时将它们连接到双手。</p></div>
+<div class="lang-cn-block"><p><strong>多只双手。</strong> 我们还希望具备将每个大脑连接到多只双手的能力。在实践中，这意味着 Claude 必须对多个执行环境进行推理并决定将工作发送到哪里——这比在单个 shell 中操作是一个更困难的认知任务。我们将大脑放在单个容器中是因为早期的模型不具备这种能力。随着智能的提升，单个容器反而成了限制：当那个容器失败时，我们会丢失大脑正在触及的每只双手的状态。</p></div>
+<div class="lang-cn-block"><p>将大脑与双手解耦使得每只双手成为一个工具 <code class="inline">execute(name, input) → string</code>：输入一个名称和输入内容，返回一个字符串。该接口支持任何自定义工具、任何 MCP 服务器以及我们自己的工具。运行框架不知道沙箱是容器、手机还是宝可梦模拟器。而且因为没有双手与任何大脑耦合，大脑可以将双手传递给彼此。</p></div>
+<div class="lang-cn-block"><h2 id="heading-5">结论</h2></div>
+<div class="lang-cn-block"><p>我们面临的挑战是一个古老的问题：如何为&quot;尚未构想出的程序&quot;设计系统。操作系统通过将硬件虚拟化为足够通用的抽象来容纳尚不存在的程序，从而延续了数十年。通过托管智能体，我们旨在设计一个能够围绕 Claude 适应未来运行框架、沙箱或其他组件的系统。</p></div>
+<div class="lang-cn-block"><p>托管智能体是同一理念下的元运行框架（meta-harness），对 Claude 未来需要的具体运行框架不持特定立场。相反，它是一个具有通用接口的系统，允许许多不同的运行框架。例如，Claude Code 是一个出色的运行框架，我们在各种任务中广泛使用。我们还展示了针对特定任务的智能体运行框架在细分领域表现出色。托管智能体可以容纳其中任何一种，并随着时间匹配 Claude 的智能水平。</p></div>
+<div class="lang-cn-block"><p>元运行框架设计意味着对 Claude 周围的接口有明确的主张：我们期望 Claude 需要操控状态（会话）和执行计算（沙箱）的能力。我们还期望 Claude 需要扩展到多个大脑和多只双手的能力。我们设计的接口使这些能够在长时间跨度上可靠且安全地运行。但我们不对 Claude 将需要的大脑或双手的数量或位置做任何假设。</p></div>
+<div class="lang-cn-block"><h2 id="heading-6">致谢</h2></div>
+<div class="lang-cn-block"><p>由 Lance Martin、Gabe Cemaj 和 Michael Cohen 撰写。感谢 Nodir Turakulov 和 Jeremy Fox 在这些话题上有益的交流。特别感谢 Agents API 团队和 Jake Eaton 的贡献。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>请参阅我们的文档开始使用 Claude 托管智能体（Managed Agents）。工程博客上一个持续讨论的话题是如何构建有效的智能体（Agent）以及为长时间运行的工作设计运行框架（Harness）。这些工作的一个共同线索是，运行框架编码了关于 Claude 无法独立完成的事项的假设。然而，这些假设需要被频繁质疑，因为随着模型的进步，它们可能会过时。</p>
+<p>举一个例子，在之前的工作中，我们发现 Claude Sonnet 4.5 会在感知到上下文窗口即将到达限制时过早地结束任务——这种行为有时被称为&quot;上下文焦虑&quot;（context anxiety）。我们通过在运行框架中添加上下文重置来解决这个问题。但当我们在 Claude Opus 4.5 上使用相同的运行框架时，我们发现这种行为已经消失了。那些重置操作变成了多余的负担。</p>
+<p>我们预计运行框架会持续演进。因此我们构建了托管智能体（Managed Agents）：Claude 平台中的一个托管服务，通过一小组旨在超越任何特定实现（包括我们当前运行的实现）的接口，代表你运行长期智能体。</p>
+<p>构建托管智能体意味着解决计算领域的一个古老问题：如何为&quot;尚未构想出的程序&quot;设计系统。几十年前，操作系统通过将硬件虚拟化为抽象——进程、文件——来解决这个问题，这些抽象足够通用，可以容纳尚不存在的程序。抽象的寿命超越了硬件。<code class="inline">read()</code> 命令无需关心它访问的是 1970 年代的磁盘组还是现代 SSD。上层的抽象保持稳定，而底层的实现可以自由变更。</p>
+<p>托管智能体遵循相同的模式。我们将智能体的组件虚拟化：会话（session）——所有发生事件的仅追加日志；运行框架（harness）——调用 Claude 并将 Claude 的工具调用路由到相关基础设施的循环；沙箱（sandbox）——Claude 可以运行代码和编辑文件的执行环境。这使得每个组件的实现都可以在不干扰其他组件的情况下被替换。我们对接口的形态有明确的主张，但对背后运行的内容不做限定。</p>
+<h2>不要养宠物</h2>
+<p>我们最初将所有智能体组件放入单个容器中，这意味着会话、智能体运行框架和沙箱共享同一个环境。这种方法有一些好处，包括文件编辑是直接的系统调用，且无需设计服务边界。</p>
+<p>但将所有内容耦合到一个容器中，我们遇到了一个老生常谈的基础设施问题：我们养了一只宠物。在宠物与牛的类比中，宠物是你无法承受失去的、有名字的、被精心照料的个体，而牛是可互换的。在我们的案例中，服务器成了那只宠物；如果容器崩溃，会话就丢失了。如果容器无响应，我们就得悉心照料让它恢复健康。</p>
+<p>照料容器意味着调试无响应的卡死会话。我们唯一的入口是 WebSocket 事件流，但它无法告诉我们故障发生在哪里，这意味着运行框架中的 bug、事件流中的丢包，或者容器离线都会表现得一模一样。为了弄清楚出了什么问题，工程师必须在容器内部打开 shell，但由于该容器通常也存放着用户数据，这种方法实质上意味着我们缺乏调试能力。</p>
+<p>第二个问题是，运行框架假设 Claude 处理的所有内容都与它存放在同一个容器中。当客户要求我们将 Claude 连接到他们的虚拟私有云（VPC）时，他们必须要么将他们的网络与我们的网络对等连接，要么在他们自己的环境中运行我们的运行框架。一个嵌入运行框架的假设在我们想要将其连接到不同基础设施时成了问题。</p>
+<h2>将大脑与双手解耦</h2>
+<p>我们最终找到的解决方案是将我们所认为的&quot;大脑&quot;（Claude 及其运行框架）与&quot;双手&quot;（执行操作的沙箱和工具）以及&quot;会话&quot;（会话事件日志）解耦。每个部分都成为一个对其他部分做出最少假设的接口，每个部分都可以独立地失败或被替换。</p>
+<p><strong>运行框架离开容器。</strong> 将大脑与双手解耦意味着运行框架不再位于容器内部。它像调用任何其他工具一样调用容器：<code class="inline">execute(name, input) → string</code>。容器变成了牛。如果容器死了，运行框架将故障作为工具调用错误捕获并传回给 Claude。如果 Claude 决定重试，可以用标准配方重新初始化一个新容器：<code class="inline">provision({resources})</code>。我们不再需要照料失败的容器恢复健康。</p>
+<p><strong>从运行框架故障中恢复。</strong> 运行框架也变成了牛。由于会话日志存放在运行框架之外，运行框架中没有任何内容需要在崩溃后存活。当一个运行框架失败时，可以用 <code class="inline">wake(sessionId)</code> 重启一个新的运行框架，用 <code class="inline">getSession(id)</code> 获取事件日志，然后从最后一个事件恢复。在智能体循环期间，运行框架通过 <code class="inline">emitEvent(id, event)</code> 写入会话，以保持事件的持久记录。</p>
+<p><strong>安全边界。</strong> 在耦合设计中，Claude 生成的任何不受信任的代码都在与凭据相同的容器中运行——因此提示注入（prompt injection）只需要说服 Claude 读取自己的环境即可。一旦攻击者获得这些令牌，他们就可以生成全新的、不受限制的会话，并将工作委派给这些会话。缩小作用范围是一个显而易见的缓解措施，但这编码了一个关于 Claude 无法用有限令牌做什么的假设——而 Claude 正变得越来越聪明。结构性修复是确保令牌永远不会从 Claude 生成代码运行的沙箱中可达。</p>
+<p>我们使用两种模式来确保这一点。认证可以与资源捆绑，或存放在沙箱之外的保险库（vault）中。对于 Git，我们在沙箱初始化期间使用每个仓库的访问令牌来克隆仓库，并将其连接到本地 git remote。Git 的 <code class="inline">push</code> 和 <code class="inline">pull</code> 在沙箱内部工作，智能体本身永远不处理令牌。对于自定义工具，我们支持 MCP 并将 OAuth 令牌存储在安全保险库中。Claude 通过专用代理调用 MCP 工具；该代理接收与会话关联的令牌，然后代理可以从保险库中获取相应的凭据并调用外部服务。运行框架永远不会知道任何凭据。</p>
+<h2>会话不是 Claude 的上下文窗口</h2>
+<p>长期任务经常超出 Claude 上下文窗口的长度，而解决这个问题的标准方法都涉及关于保留什么内容的不可逆决策。我们在之前关于上下文工程（context engineering）的工作中探索过这些技术。例如，压缩（compaction）让 Claude 保存其上下文窗口的摘要，记忆工具让 Claude 将上下文写入文件，从而实现跨会话的学习。这可以与上下文裁剪（context trimming）配对使用，后者有选择地移除令牌，例如旧的工具结果或思考块。</p>
+<p>但有选择地保留或丢弃上下文的不可逆决策可能导致失败。很难知道未来的轮次需要哪些令牌。如果消息被压缩步骤转换，运行框架会将压缩后的消息从 Claude 的上下文窗口中移除，而这些消息只有在被存储的情况下才能恢复。之前的工作探索了通过将上下文存储为存在于上下文窗口之外的对象来解决这个问题的方法。例如，上下文可以是 REPL 中的一个对象，LLM 通过编写代码来过滤或切片以编程方式访问它。</p>
+<p>在托管智能体中，会话提供了同样的好处，充当存在于 Claude 上下文窗口之外的上下文对象。但上下文不是存储在沙箱或 REPL 中，而是持久地存储在会话日志中。接口 <code class="inline">getEvents()</code> 允许大脑通过选择事件流的位置切片来查询上下文。该接口可以灵活使用，允许大脑从上次停止读取的位置继续，回退到特定时刻之前的几个事件以查看前因，或重新阅读特定操作之前的上下文。</p>
+<p>任何获取的事件也可以在运行框架中进行转换后再传递给 Claude 的上下文窗口。这些转换可以是运行框架编码的任何内容，包括为实现高提示缓存命中率的上下文组织和上下文工程。我们将会话中可恢复上下文存储的职责与运行框架中任意上下文管理的职责分离开来，因为我们无法预测未来的模型将需要什么样的特定上下文工程。这些接口将上下文管理推入运行框架，只保证会话是持久的且可供查询。</p>
+<h2>多个大脑，多只双手</h2>
+<p><strong>多个大脑。</strong> 将大脑与双手解耦解决了我们最早的客户投诉之一。当团队希望 Claude 访问他们自己 VPC 中的资源时，唯一的途径是将他们的网络与我们的网络对等连接，因为存放运行框架的容器假设每个资源都位于它旁边。一旦运行框架不再在容器中，这个假设就消失了。同样的改变还带来了性能收益。当我们最初将大脑放在容器中时，意味着多个大脑需要同样多的容器。对于每个大脑，在容器被配置完成之前无法进行推理；每个会话都预先支付了完整的容器启动成本。每个会话，即使是那些永远不会接触沙箱的会话，也必须克隆仓库、启动进程、从我们的服务器获取待处理事件。</p>
+<p>这段空闲时间体现在首令牌时间（TTFT, time-to-first-token）中，它衡量的是会话从接受工作到产生第一个响应令牌之间的等待时长。TTFT 是用户最直接感受到的延迟。</p>
+<p>将大脑与双手解耦意味着容器仅在需要时才由大脑通过工具调用 <code class="inline">execute(name, input) → string</code> 进行配置。因此，不需要容器的会话无需等待。一旦编排层从会话日志中拉取待处理事件，推理就可以立即开始。使用这种架构，我们的 p50 TTFT 降低了约 60%，p95 降低了超过 90%。扩展到多个大脑只需启动多个无状态的运行框架，并仅在需要时将它们连接到双手。</p>
+<p><strong>多只双手。</strong> 我们还希望具备将每个大脑连接到多只双手的能力。在实践中，这意味着 Claude 必须对多个执行环境进行推理并决定将工作发送到哪里——这比在单个 shell 中操作是一个更困难的认知任务。我们将大脑放在单个容器中是因为早期的模型不具备这种能力。随着智能的提升，单个容器反而成了限制：当那个容器失败时，我们会丢失大脑正在触及的每只双手的状态。</p>
+<p>将大脑与双手解耦使得每只双手成为一个工具 <code class="inline">execute(name, input) → string</code>：输入一个名称和输入内容，返回一个字符串。该接口支持任何自定义工具、任何 MCP 服务器以及我们自己的工具。运行框架不知道沙箱是容器、手机还是宝可梦模拟器。而且因为没有双手与任何大脑耦合，大脑可以将双手传递给彼此。</p>
+<h2>结论</h2>
+<p>我们面临的挑战是一个古老的问题：如何为&quot;尚未构想出的程序&quot;设计系统。操作系统通过将硬件虚拟化为足够通用的抽象来容纳尚不存在的程序，从而延续了数十年。通过托管智能体，我们旨在设计一个能够围绕 Claude 适应未来运行框架、沙箱或其他组件的系统。</p>
+<p>托管智能体是同一理念下的元运行框架（meta-harness），对 Claude 未来需要的具体运行框架不持特定立场。相反，它是一个具有通用接口的系统，允许许多不同的运行框架。例如，Claude Code 是一个出色的运行框架，我们在各种任务中广泛使用。我们还展示了针对特定任务的智能体运行框架在细分领域表现出色。托管智能体可以容纳其中任何一种，并随着时间匹配 Claude 的智能水平。</p>
+<p>元运行框架设计意味着对 Claude 周围的接口有明确的主张：我们期望 Claude 需要操控状态（会话）和执行计算（沙箱）的能力。我们还期望 Claude 需要扩展到多个大脑和多只双手的能力。我们设计的接口使这些能够在长时间跨度上可靠且安全地运行。但我们不对 Claude 将需要的大脑或双手的数量或位置做任何假设。</p>
+<h2>致谢</h2>
+<p>由 Lance Martin、Gabe Cemaj 和 Michael Cohen 撰写。感谢 Nodir Turakulov 和 Jeremy Fox 在这些话题上有益的交流。特别感谢 Agents API 团队和 Jake Eaton 的贡献。</p></div>
+                <div class="lang-en"><p>Get started with Claude Managed Agents by following ourdocs.A running topic on the Engineering Blog is how tobuild effective agentsanddesign harnessesforlong-running work. A common thread across this work is that harnesses encode assumptions about what Claude can’t do on its own. However, those assumptions need to be frequently questioned because they cango staleas models improve.
+As just one example, in prior workwe foundthat Claude Sonnet 4.5 would wrap up tasks prematurely as it sensed its context limit approaching—a behavior sometimes called “context anxiety.” We addressed this by adding context resets to the harness. But when we used the same harness on Claude Opus 4.5, we found that the behavior was gone. The resets had become dead weight.
+We expect harnesses to continue evolving. So we built Managed Agents: a hosted service in the Claude Platform that runs long-horizon agents on your behalf through a small set of interfaces meant to outlast any particular implementation—including the ones we run today.
+Building Managed Agents meant solving an old problem in computing: how to design a system for “programs as yet unthought of.” Decades ago, operating systems solved this problem by virtualizing hardware into abstractions—process, file—general enough for programs that didn&#x27;t exist yet. The abstractions outlasted the hardware. Theread()command is agnostic as to whether it’s accessing a disk pack from the 1970s or a modern SSD. The abstractions on top stayed stable while the implementations underneath changed freely.
+read()
+Managed Agents follow the same pattern. We virtualized the components of an agent: a session (the append-only log of everything that happened), a harness (the loop that calls Claude and routes Claude’s tool calls to the relevant infrastructure), and a sandbox (an execution environment where Claude can run code and edit files). This allows the implementation of each to be swapped without disturbing the others. We&#x27;re opinionated about the shape of these interfaces, not about what runs behind them.</p>
+<h2>Don’t adopt a pet</h2>
+<p>We started by placing all agent components into a single container, which meant the session, agent harness, and sandbox all shared an environment. There were benefits to this approach, including that file edits are direct syscalls, and there were no service boundaries to design.
+But by coupling everything into one container, we ran into an old infrastructure problem: we’d adopted apet. In the pets-vs-cattle analogy, a pet is a named, hand-tended individual you can’t afford to lose, while cattle are interchangeable. In our case, the server became that pet; if a container failed, the session was lost. If a container was unresponsive, we had to nurse it back to health.
+Nursing containers meant debugging unresponsive stuck sessions. Our only window in was the WebSocket event stream, but that couldn’t tell uswherefailures arose, which meant that a bug in the harness, a packet drop in the event stream, or a container going offline all presented the same. To figure out what went wrong, an engineer had to open a shell inside the container, but because that container often also held user data, that approach essentially meant we lacked the ability to debug.
+A second issue was that the harness assumed that whatever Claude worked on lived in the container with it. When customers asked us to connect Claude to their virtual private cloud, they had to either peer their network with ours, or run our harness in their own environment. An assumption baked into the harness became a problem when we wanted to connect it to different infrastructure.</p>
+<h2>Decouple the brain from the hands</h2>
+<p>The solution we arrived at was to decouple what we thought of as the “brain” (Claude and its harness) from both the “hands” (sandboxes and tools that perform actions) and the “session” (the log of session events). Each became an interface that made few assumptions about the others, and each could fail or be replaced independently.
+The harness leaves the container.Decoupling the brain from the hands meant the harness no longer lived inside the container. It called the container the way it called any other tool:execute(name, input) → string. The container became cattle. If the container died, the harness caught the failure as a tool-call error and passed it back to Claude. If Claude decided to retry, a new container could be reinitialized with a standard recipe:provision({resources}). We no longer had to nurse failed containers back to health.
+execute(name, input) → string
+provision({resources})
+Recovering from harness failure.The harness also became cattle. Because the session log sits outside the harness, nothing in the harness needs to survive a crash. When one fails, a new one can be rebooted withwake(sessionId), usegetSession(id)to get back the event log, and resume from the last event. During the agent loop, the harness writes to the session withemitEvent(id, event)in order to keep a durable record of events.
+wake(sessionId)
+getSession(id)
+emitEvent(id, event)
+The security boundary.In the coupled design, any untrusted code that Claude generated was run in the same container as credentials—so a prompt injection only had to convince Claude to read its own environment. Once an attacker has those tokens, they can spawn fresh, unrestricted sessions and delegate work to them. Narrow scoping is an obvious mitigation, but this encodes an assumption about what Claude can&#x27;t do with a limited token—and Claude is getting increasingly smart. The structural fix was to make sure the tokens are never reachable from the sandbox where Claude’s generated code runs.
+We used two patterns to ensure this. Auth can be bundled with a resource or held in a vault outside the sandbox. For Git, we use each repository’s access token to clone the repo during sandbox initialization and wire it into the local git remote. Gitpushandpullwork from inside the sandbox without the agent ever handling the token itself. For custom tools, we support MCP and store OAuth tokens in a secure vault. Claude calls MCP tools via a dedicated proxy; this proxy takes in a token associated with the session. The proxy can then fetch the corresponding credentials from the vault and make the call to the external service. The harness is never made aware of any credentials.
+push
+pull</p>
+<h2>The session is not Claude’s context window</h2>
+<p>Long-horizon tasks often exceed the length of Claude’s context window, and the standard ways to address this all involve irreversible decisions about what to keep. We’ve explored these techniques inprior workon context engineering. For example, compaction lets Claude save a summary of its context window and the memory tool lets Claude write context to files, enabling learning across sessions. This can be paired with context trimming, which selectively removes tokens such as old tool results or thinking blocks.
+But irreversible decisions to selectively retain or discard context can lead to failures. It is difficult to know which tokens the future turns will need. If messages are transformed by a compaction step, the harness removes compacted messages from Claude’s context window, and these are recoverable only if they are stored. Prior workhas exploredways to address this by storing context as an object that livesoutsidethe context window. For example, context can be an object in a REPL that the LLM programmatically accesses by writing code to filter or slice it.
+In Managed Agents, the session provides this same benefit, serving as a context object that lives outside Claude’s context window. But rather than be stored within the sandbox or REPL, context is durably stored in the session log. The interface,getEvents(),allows the brain to interrogate context by selecting positional slices of the event stream. The interface can be used flexibly, allowing the brain to pick up from wherever it last stopped reading, rewinding a few events before a specific moment to see the lead up, or rereading context before a specific action.
+getEvents(),
+Any fetched events can also be transformed in the harness before being passed to Claude’s context window. These transformations can be whatever the harness encodes, including context organization to achieve a high prompt cache hit rate and context engineering. We separated the concerns of recoverable context storage in the session and arbitrary context management in the harness because we can’t predict what specific context engineering will be required in future models. The interfaces push that context management into the harness, and only guarantee that the session is durable and available for interrogation.</p>
+<h2>Many brains, many hands</h2>
+<p>Many brains.Decoupling the brain from the hands solved one of our earliest customer complaints. When teams wanted Claude to work against resources in their own VPC, the only path was to peer their network with ours, because the container holding the harness assumed every resource sat next to it. Once the harness was no longer in the container, that assumption went away. The same change had a performance payoff. When we initially put the brain in a container, it meant that many brains required as many containers. For each brain, no inference could happen until that container was provisioned; every session paid the full container setup cost up front. Every session, even ones that would never touch the sandbox, had to clone the repo, boot the process, fetch pending events from our servers.
+That dead time is expressed in time-to-first-token (TTFT), which measures how long a session waits between accepting work and producing its first response token. TTFT is the latency the user most acutelyfeels.
+Decoupling the brain from the hands means that containers are provisioned by the brain via a tool call(execute(name, input) → string)only if they are needed. So a session that didn&#x27;t need a container right away didn&#x27;t wait for one. Inference could start as soon as the orchestration layer pulled pending events from the session log. Using this architecture, our p50 TTFT dropped roughly 60% and p95 dropped over 90%. Scaling to many brains just meant starting many stateless harnesses, and connecting them to hands only if needed.
+(execute(name, input) → string)
+Many hands.We also wanted the ability to connect each brain to many hands. In practice, this means Claude must reason about many execution environments and decide where to send work—a harder cognitive task than operating in a single shell. We started with the brain in a single container because earlier models weren&#x27;t capable of this. As intelligence scaled, the single container became the limitation instead: when that container failed, we lost state for every hand that the brain was reaching into.
+Decoupling the brain from the hands makes each hand a tool,execute(name, input) → string: a name and input go in, and a string is returned. That interface supports any custom tool, any MCP server, and our own tools. The harness doesn’t know whether the sandbox is a container, a phone, or a Pokémon emulator. And because no hand is coupled to any brain, brains can pass hands to one another.
+execute(name, input) → string</p>
+<h2>Conclusion</h2>
+<p>The challenge we faced is an old one: how to design a system for “programs as yet unthought of.” Operating systems have lasted decades by virtualizing the hardware into abstractions general enough for programs that didn&#x27;t exist yet. With Managed Agents, we aimed to design a system that accommodates future harnesses, sandboxes, or other components around Claude.
+Managed Agents is a meta-harness in the same spirit, unopinionated about thespecificharness that Claude will need in the future. Rather, it is a system with general interfaces that allow many different harnesses. For example, Claude Code is an excellent harness that we use widely across tasks. We’ve also shown that task-specific agent harnesses excel in narrow domains. Managed Agents can accommodate any of these, matching Claude’s intelligence over time.
+Meta-harness design means being opinionated about the interfaces around Claude: we expect that Claude will need the ability to manipulate state (the session) and perform computation (the sandbox). We also expect that Claude will require the ability to scale to many brains and many hands. We designed the interfaces so that these can be run reliably and securely over long time horizons. But we make no assumptions about the number or location of brains or hands that Claude will need.</p>
+<h2>Acknowledgements</h2>
+<p>Written by Lance Martin, Gabe Cemaj, and Michael Cohen. Thanks to Nodir Turakulov and Jeremy Fox for helpful conversations on these topics. Special thanks to the Agents API team and Jake Eaton for their contributions.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/managed-agents" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

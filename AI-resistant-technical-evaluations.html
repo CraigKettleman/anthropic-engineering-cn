@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设计抗AI的技术评估 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">带回家测试的起源</a>
+<a class="toc-h3" href="#heading-2">设计目标</a>
+<a class="toc-h3" href="#heading-3">模拟机器</a>
+<a class="toc-h2" href="#heading-4">早期结果</a>
+<a class="toc-h3" href="#heading-5">然后 Claude Opus 4 击败了它</a>
+<a class="toc-h3" href="#heading-6">然后 Claude Opus 4.5 又击败了它</a>
+<a class="toc-h2" href="#heading-7">考虑各种选择</a>
+<a class="toc-h3" href="#heading-8">尝试 1：不同的优化问题</a>
+<a class="toc-h3" href="#heading-9">尝试 2：更奇特的方向</a>
+<a class="toc-h2" href="#heading-10">一个开放挑战</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">The origin of the take-home</a>
+<a class="toc-h3" href="#heading-2">Design goals</a>
+<a class="toc-h3" href="#heading-3">The simulated machine</a>
+<a class="toc-h2" href="#heading-4">Early results</a>
+<a class="toc-h3" href="#heading-5">Then Claude Opus 4 defeated it</a>
+<a class="toc-h3" href="#heading-6">Then Claude Opus 4.5 defeated that</a>
+<a class="toc-h2" href="#heading-7">Considering the options</a>
+<a class="toc-h3" href="#heading-8">Attempt 1: A different optimization problem</a>
+<a class="toc-h3" href="#heading-9">Attempt 2: Going weirder</a>
+<a class="toc-h2" href="#heading-10">An open challenge</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2026-01-21</div>
+            <div class="title-block">
+                <h1 class="cn">设计抗AI的技术评估</h1>
+                <h1 class="en">Designing AI-resistant technical evaluations</h1>
+                <div class="en-title">Designing AI-resistant technical evaluations</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Written by Tristan Hume, a lead on Anthropic&#x27;s performance optimization team. Tristan designed—and redesigned—the take-home test that&#x27;s helped Anthropic hire dozens of performance engineers.
+Evaluating technical candidates becomes harder as AI capabilities improve. A take-home that distinguishes well between human skill levels today may be trivially solved by models tomorrow—rendering it useless for evaluation.
+Since early 2024, our performance engineering team has used a take-home test where candidates optimize code for a simulated accelerator. Over 1,000 candidates have completed it, and dozens now work here, including engineers who brought up our Trainium cluster and shipped every model since Claude 3 Opus.
+But each new Claude model has forced us to redesign the test. When given the same time limit, Claude Opus 4 outperformed most human applicants. That still allowed us to distinguish the strongest candidates—but then Claude Opus 4.5 matched even those. Humans can still outperform models when given unlimited time, but under the constraints of the take-home test, we no longer had a way to distinguish between the output of our top candidates and our most capable model.
+I&#x27;ve now iterated through three versions of our take-home in an attempt to ensure it still carries signal. Each time, I’ve learned something new about what makes evaluations robust to AI assistance and what doesn&#x27;t.
+This post describes the original take-home design, how each Claude model defeated it, and the increasingly unusual approaches I&#x27;ve had to take to ensure our test stays ahead of our top model’s capabilities. While the work we do has evolved alongside our models, we still need more strong engineers—just increasingly creative ways to find them.
+To that end, we&#x27;re releasing the original take-home as an open challenge, since with unlimited time the best human performance still exceeds what Claude can achieve. If you can best Opus 4.5, we’d love to hear from you—details are at the bottom of this post.</p></div><div class="lang-cn-block"><p>作者：Tristan Hume，Anthropic 性能优化团队负责人。Tristan 设计——并重新设计了——帮助 Anthropic 招聘了数十名性能工程师的带回家测试。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The origin of the take-home</h2></div><div class="lang-cn-block"><p>随着 AI 能力的提升，评估技术候选人变得越来越困难。一个今天能很好区分人类技能水平的带回家测试，明天可能被模型轻松解决——使其失去评估价值。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>In November 2023, we were preparing to train and launch Claude Opus 3. We’d secured new TPU and GPU clusters, our large Trainium cluster was coming, and we were spending considerably more than we had in the past on accelerators, but we didn&#x27;t have enough performance engineers for our new scale. Iposted on Twitterasking people to email us, which brought in more promising candidates than we could evaluate through our standard interview pipeline, a process that consumes significant time for staff and candidates
+We needed a way to evaluate candidates more efficiently. So, I took two weeks to design a take-home test that could adequately capture the demands of the role and identify the most capable applicants.</p></div><div class="lang-cn-block"><p>自 2024 年初以来，我们的性能工程团队一直使用一个带回家测试，要求候选人为一个模拟加速器优化代码。超过 1,000 名候选人完成了该测试，数十人现在在这里工作，包括那些搭建了我们的 Trainium 集群并交付了自 Claude 3 Opus 以来所有模型的工程师。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Design goals</h3></div><div class="lang-cn-block"><p>但每个新的 Claude 模型都迫使我们重新设计测试。在相同的时间限制下，Claude Opus 4 超过了大多数人类候选人。这仍然让我们能够区分最强的候选人——但随后 Claude Opus 4.5 甚至追平了这些候选人。在不受时间限制的情况下，人类仍然可以超越模型，但在带回家测试的约束下，我们已无法区分顶尖候选人和我们最强模型的输出。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Take-homes have a bad reputation. Usually they’re filled with generic problems which engineers find boring, and which make for poor filters. My goal was different: create something genuinely engaging that would make candidates excited to participate and allow us to capture their technical skills at a high-level of resolution.
+The format also offers advantages over live interviews for evaluating performance engineering skills:
+Longer time horizon:Engineers rarely face deadlines of less than an hour when coding. A 4-hour window (later reduced to 2 hours) better reflects the actual nature of the job. It&#x27;s still shorter than most real tasks, but we need to balance that with how onerous it is.
+Realistic environment:No one watching or expecting narration. Candidates work in their own editor without distraction.
+Time for comprehension and tooling:Performance optimization requires understanding existing systems and sometimes building debugging tools. Both are hard to realistically evaluate in a normal 50 minute interview.
+Compatibility with AI assistance:Anthropic&#x27;sgeneral candidate guidanceasks candidates to complete take-homes without AI unless indicated otherwise. For this take-home, we explicitly indicate otherwise.
+Longer-horizon problems are harder for AI to solve completely, so candidates can use AI tools (as they would on the job) while still needing to demonstrate their own skills.
+Beyond these format-specific goals, I applied the same principles I use when designing any interview to make the take-home:
+Representative of real work:The problem should give candidates a taste of what the job actually involves.
+High signal:The take-home should avoid problems that hinge on a single insight and ensure candidates have many chances to show their full abilities — leaving as little as possible to chance. It should also have a wide scoring distribution,and ensure enough depth that even strong candidates don&#x27;t finish everything.
+No specific domain knowledge:People with good fundamentals can learn specifics on the job. Requiring narrow expertise unnecessarily limits the candidate pool.
+Fun:Fast development loops, interesting problems with depth, and room for creativity.</p></div><div class="lang-cn-block"><p>我已经迭代了三个版本的带回家测试，试图确保它仍然具有信号价值。每一次，我都学到了新的东西——什么使评估能够抵御 AI 辅助，什么不能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>The simulated machine</h3></div><div class="lang-cn-block"><p>这篇文章描述了原始带回家测试的设计、每个 Claude 模型如何击败它，以及我不得不采取的越来越不寻常的方法来确保我们的测试始终领先于最强模型的能力。虽然我们的工作随着模型的发展而演进，但我们仍然需要更多强大的工程师——只是需要越来越有创意的方法来找到他们。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>I built a Python simulator for a fake accelerator with characteristics that resemble TPUs. Candidates optimize code running on this machine, using a hot-reloadingPerfettotrace that shows every instruction, similar tothe tooling we have on Trainium.
+The machine includes features that make accelerator optimization interesting: manually managed scratchpad memory (unlike CPUs, accelerators often require explicit memory management), VLIW (multiple execution units running in parallel each cycle, requiring efficient instruction packing), SIMD (vector operations on many elements per instruction), and multicore (distributing work across cores).
+The task is a parallel tree traversal, deliberately not deep learning flavored, since most performance engineers hadn&#x27;t worked on deep learning yet and could learn domain specifics on the job. The problem was inspired by branchless SIMD decision tree inference, a classical ML optimization challenge as a nod to the past, which only a few candidates had encountered before.
+Candidates start with a fully serial implementation and progressively exploit the machine&#x27;s parallelism. The warmup is multicore parallelism, then candidates choose whether to tackle SIMD vectorization or VLIW instruction packing. The original version also included a bug that candidates needed to debug first, exercising their ability to build tooling.</p></div><div class="lang-cn-block"><p>为此，我们将原始带回家测试作为开放挑战发布，因为在不限时间的情况下，最好的人类表现仍然超过 Claude 能达到的水平。如果你能击败 Opus 4.5，我们很乐意收到你的来信——详情见本文末尾。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Early results</h2></div><div class="lang-cn-block"><h2 id="heading-1">带回家测试的起源</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>The initial take-home worked well. One person from the Twitter batch scored substantially higher than everyone else. He started in early February, two weeks after our first hires through the standard pipeline. The test proved predictive: He immediately began optimizing kernels and found a workaround for a launch-blocking compiler bug involving tensor indexing math overflowing 32 bits.
+Over the next year and a half, about 1,000 candidates completed the take-home, and it helped us hire most of our current performance engineering team. It proved especially valuable for candidates with limited experience on paper: several of our highest-performing engineers came directly from undergrad but showed enough skill on the take-home for us to hire confidently.
+Feedback was positive. Many candidates worked past the 4-hour limit because they were enjoying themselves. The strongest unlimited-time submissions included full optimizing mini-compilers and several clever optimizations I hadn&#x27;t anticipated.</p></div><div class="lang-cn-block"><p>2023 年 11 月，我们正在准备训练和发布 Claude Opus 3。我们获得了新的 TPU 和 GPU 集群，大型 Trainium 集群即将上线，我们在加速器上的花费比过去多了很多，但我们没有足够的性能工程师来应对新的规模。我在 Twitter 上发帖让人们给我们发邮件，这带来了比我们通过标准面试流程能评估的更多的优秀候选人——标准流程会消耗工作人员和候选人的大量时间。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Then Claude Opus 4 defeated it</h3></div><div class="lang-cn-block"><p>我们需要一种更高效地评估候选人的方式。因此，我花了两周时间设计了一个带回家测试，能够充分捕捉该岗位的需求并识别最有能力的申请人。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>By May 2025, Claude 3.7 Sonnet had already crept up to the point where over 50% of candidates would have been better off delegating to Claude Code entirely. I then tested a pre-release version of Claude Opus 4 on the take-home. It came up with a more optimized solution than almost all humans did within the 4-hour limit.
+This wasn&#x27;t my first interview defeated by a Claude model. I&#x27;d designed a live interview question in 2023 specifically because our questions at the time were based around common tasks that early Claude models had lots of knowledge of and so could solve easily. I tried to design a question that required more problem solving skill than knowledge, still based on a real (but niche) problem I&#x27;d solved at work. Claude 3 Opus beat part 1 of that question; Claude 3.5 Sonnet beat part 2. We still use it because our other live questions aren&#x27;t AI-resistant either.
+For the take-home, there was a straightforward fix. The problem had far more depth than anyone could explore in 4 hours, so I used Claude Opus 4 to identify where it started struggling. That became the new starting point for version 2. I wrote cleaner starter code, added new machine features for more depth, and removed multicore (which Claude had already solved, and which only slowed down development loops without adding signal).
+I also shortened the time limit from 4 hours to 2 hours. I&#x27;d originally chosen 4 hours based on candidate feedback preferring less risk of getting sunk if they got stuck for a bit on a bug or confusion, but the scheduling overhead was causing multi-week delays in our pipeline. Two hours is much easier to fit into a weekend.
+Version 2 emphasized clever optimization insights over debugging and code volume. It served us well—for several months.</p></div><div class="lang-cn-block"><h3 id="heading-2">设计目标</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Then Claude Opus 4.5 defeated that</h3></div><div class="lang-cn-block"><p>带回家测试名声不佳。通常它们充斥着工程师觉得无聊的通用问题，而且过滤效果很差。我的目标不同：创造真正有趣的东西，让候选人兴奋地参与，并让我们能够高分辨率地捕捉他们的技术技能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When I tested a pre-release Claude Opus 4.5 checkpoint, I watched Claude Code work on the problem for 2 hours, gradually improving its solution. It solved the initial bottlenecks, implemented all the common micro-optimizations, and met our passing threshold in under an hour.
+Then it stopped, convinced it had hit an insurmountable memory bandwidth bottleneck. Most humans reach the same conclusion. But there are clever tricks that exploit the problem structure to work around that bottleneck. When I told Claude the cycle count it was possible to achieve, it thought for a while and found the trick. It then debugged, tuned, and implemented further optimizations. By the 2-hour mark, its score matched the best human performance within that time limit—and that human had made heavy use of Claude 4 with steering.
+We tried it out in our internal test-time compute harness for more rigor and confirmed it could both beat humans in 2 hours and continue climbing with time. Post-launch we even improved our harness in a generic way and got a higher score.
+I had a problem. We were about to release a model where the best strategy on our take-home would be delegating to Claude Code.</p></div><div class="lang-cn-block"><p>这种形式在评估性能工程技能方面也比现场面试有优势：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Considering the options</h2></div><div class="lang-cn-block"><p><strong>更长的时间跨度：</strong> 工程师在编码时很少面临不到一小时的截止日期。4 小时的时间窗口（后来缩短为 2 小时）更好地反映了工作的实际性质。它仍然比大多数实际任务短，但我们需要在这方面与测试负担之间取得平衡。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Some colleagues suggested banning AI assistance. I didn&#x27;t want to do this. Beyond the enforcement challenges, I had a sense that given people continue to play a vital role in our work, I should be able to figure outsomeway for them to distinguish themselves in a settingwith AI—like they&#x27;d have on the job. I didn&#x27;t want to give in yet to theideathat humans only have an advantage on tasks longer than a few hours.
+Others suggested raising the bar to &quot;substantially outperform what Claude Code achieves alone.&quot; The concern here was that Claude works fast. Humans typically spend half the 2 hours reading and understanding the problem before they start optimizing. A human trying to steer Claude would likely be constantly behind, understanding what Claude did only after the fact. The dominant strategy might become sitting back and watching.
+Nowadays performance engineers at Anthropic still have lots of work to do, but it looks more like tough debugging, systems design, performance analysis, figuring out how to verify the correctness of our systems, and figuring out how to make Claude&#x27;s code simpler and more elegant. Unfortunately these things are tough to test in an objective way without a lot of time or common context. It&#x27;s always been hard to design interviews that represent the job, but now it&#x27;s harder than ever.
+But I also worried if I invested in designing a new take-home, either Claude Opus 4.5 would solve that too, or it would become so challenging that it would be impossible for humans to complete in two hours.</p></div><div class="lang-cn-block"><p><strong>真实的环境：</strong> 没有人看着你或期望你做解说。候选人在自己的编辑器中工作，不受干扰。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Attempt 1: A different optimization problem</h3></div><div class="lang-cn-block"><p><strong>理解系统和构建工具的时间：</strong> 性能优化需要理解现有系统，有时还需要构建调试工具。这两者在普通的 50 分钟面试中都很难真实评估。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>I realized Claude could help me implement whatever I designed quickly, which motivated me to try developing a harder take-home. I chose a problem based on one of the trickier kernel optimizations I&#x27;d done at Anthropic: an efficient datatranspositionon 2D TPU registers while avoidingbank conflicts. I distilled it into a simpler problem on a simulated machine and had Claude implement the changes in under a day.
+Claude Opus 4.5 found a great optimization I hadn&#x27;t even thought of. Through careful analysis, it realized it could transpose the entire computation rather than figuring out how to transpose the data, and it rewrote the whole program accordingly.
+In my real case, this wouldn&#x27;t have worked, so I patched the problem to remove that approach. Claude then made progress but couldn&#x27;t find the most efficient solution. It seemed like I had my new problem, now I just had to hope human candidates could get it fast enough. But I had some nagging doubt, so I double-checked using Claude Code&#x27;s &quot;ultrathink&quot; feature with longer thinking budgets ... and it solved it. It even knew the tricks for fixing bank conflicts.
+In hindsight, this wasn&#x27;t the right problem to try. Engineers across many platforms have struggled with data transposition and bank conflicts, so Claude has substantial training data to draw on. While I&#x27;d found my solution from first principles, Claude could draw on a larger toolbox of experience.</p></div><div class="lang-cn-block"><p><strong>兼容 AI 辅助：</strong> Anthropic 的通用候选人指南要求候选人在没有特别说明的情况下不使用 AI 完成带回家测试。对于这个带回家测试，我们明确说明可以使用 AI。更长时间跨度的问题更难被 AI 完全解决，因此候选人可以使用 AI 工具（就像在实际工作中那样），同时仍然需要展示自己的技能。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Attempt 2: Going weirder</h3></div><div class="lang-cn-block"><p>除了这些形式特定的目标之外，我在设计任何面试时都应用了相同的原则来设计带回家测试：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>I needed a problem where human reasoning could win over Claude&#x27;s larger experience base: something sufficiently out of distribution. Unfortunately, this conflicted with my goal of being recognizably like the job.
+I thought about the most unusual optimization problems I&#x27;d enjoyed and landed onZachtronics games. These programming puzzle games use unusual, highly constrained instruction sets that force you to program in unconventional ways. For example, inShenzhen I/O, programs are split across multiple communicating chips that each hold only about 10 instructions with one or two state registers. Clever optimization often involves encoding state into the instruction pointer or branch flags.
+I designed a new take-home consisting of puzzles using a tiny, heavily constrained instruction set, optimizing solutions for minimal instruction count. I implemented one medium-hard puzzle and tested it on Claude Opus 4.5. It failed. I filled out more puzzles and had colleagues verify that people less steeped in the problem than me could still outperform Claude.
+Unlike Zachtronics games, I intentionally provided no visualization or debugging tools. The starter code only checks whether solutions are valid. Building debugging tools is part of what&#x27;s being tested: you can either insert well-crafted print statements or ask a coding model to generate an interactive debugger in a few minutes. Judgment about how to invest in tooling is part of the signal.
+I&#x27;m reasonably happy with the new take-home. It might have lower variance than the original because it comprises more independent sub-problems. Early results are promising: scores correlate well with the caliber of candidates&#x27; past work, and one of my most capable colleagues scored higher than any candidate so far.
+I&#x27;m still sad to have given up the realism and varied depth of the original. But realism may be a luxury we no longer have. The original worked because it resembled real work. The replacement works because it simulates novel work.</p></div><div class="lang-cn-block"><p><strong>代表真实工作：</strong> 问题应该让候选人体验到工作实际涉及的内容。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>An open challenge</h2></div><div class="lang-cn-block"><p><strong>高信号价值：</strong> 带回家测试应该避免依赖单一洞察的问题，确保候选人有很多机会展示他们的全部能力——尽可能减少偶然因素。它还应该有宽泛的分数分布，并确保足够的深度，即使是最强的候选人也不会完成所有内容。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We&#x27;re releasing the original take-home for anyone to try with unlimited time. Human expertsretain an advantageover current models at sufficiently long time horizons. The fastest human solution ever submitted substantially exceeds what Claude has achieved even with extensive test-time compute.
+The released version starts from scratch (like version 1) but uses version 2&#x27;s instruction set and single-core design, so cycle counts are comparable to version 2.
+Performance benchmarks (measured in clock cycles from the simulated machine):</p></div><div class="lang-cn-block"><p><strong>不需要特定领域知识：</strong> 拥有良好基础的人可以在工作中学习细节。要求狭窄的专业知识会不必要地限制候选人范围。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>2164 cycles: Claude Opus 4 after many hours in the test-time compute harness</li><li>1790 cycles: Claude Opus 4.5 in a casual Claude Code session, approximately matching the best human performance in 2 hours</li><li>1579 cycles: Claude Opus 4.5 after 2 hours in our test-time compute harness</li><li>1548 cycles: Claude Sonnet 4.5 after many more than 2 hours of test-time compute</li><li>1487 cycles: Claude Opus 4.5 after 11.5 hours in the harness</li><li>1363 cycles: Claude Opus 4.5 in an improved test time compute harness after many hours</li></ul></div><div class="lang-cn-block"><p><strong>有趣：</strong> 快速的开发循环、有趣且有深度的问题，以及创造力的空间。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Download it on GitHub. If you optimize below 1487 cycles, beating Claude&#x27;s best performance at launch, email us atperformance-recruiting@anthropic.comwith your code and a resume.
+Or you canapply through our typical process, which uses our (now) Claude-resistant take-home. We&#x27;re curious how long it lasts.</p></div><div class="lang-cn-block"><h3 id="heading-3">模拟机器</h3></div></div>
+<div class="lang-cn-block"><p>我构建了一个 Python 模拟器，模拟一个特性类似 TPU 的假加速器。候选人在这台机器上优化代码，使用热重载的 Perfetto 追踪来显示每条指令，类似于我们在 Trainium 上使用的工具。</p></div>
+<div class="lang-cn-block"><p>这台机器包含一些使加速器优化变得有趣的手动管理的暂存存储器（scratchpad memory）（与 CPU 不同，加速器通常需要显式内存管理）、VLIW（每个周期并行运行多个执行单元，需要高效的指令打包）、SIMD（每条指令对多个元素进行向量操作）以及多核（在核心之间分配工作）。</p></div>
+<div class="lang-cn-block"><p>任务是一个并行树遍历，刻意不涉及深度学习风格，因为大多数性能工程师当时还没有从事深度学习工作，可以在工作中学习领域知识。问题的灵感来自无分支 SIMD 决策树推理，这是经典机器学习优化挑战，以此致敬过去，只有少数候选人之前遇到过。</p></div>
+<div class="lang-cn-block"><p>候选人从一个完全串行的实现开始，逐步利用机器的并行性。热身是多核并行性，然后候选人选择是处理 SIMD 向量化还是 VLIW 指令打包。原始版本还包含一个 bug，候选人需要先调试它，锻炼他们构建工具的能力。</p></div>
+<div class="lang-cn-block"><h2 id="heading-4">早期结果</h2></div>
+<div class="lang-cn-block"><p>最初的带回家测试效果很好。来自 Twitter 批次的一个人的分数明显高于其他人。他于 2 月初入职，比我们通过标准流程雇用的首批员工晚两周。测试被证明具有预测性：他立即开始优化内核，并为一个涉及张量索引数学溢出 32 位的启动阻塞编译器 bug 找到了解决方案。</p></div>
+<div class="lang-cn-block"><p>在接下来的一年半里，大约 1,000 名候选人完成了带回家测试，它帮助我们雇用了大部分现任性能工程团队。它对简历上经验有限的候选人尤其有价值：我们几位最高绩效的工程师直接来自本科，但在带回家测试中展示了足够的技能，让我们有信心雇用他们。</p></div>
+<div class="lang-cn-block"><p>反馈是积极的。许多候选人在超过 4 小时的限制后仍在继续工作，因为他们很享受。最强的不限时提交包括完整的优化迷你编译器和几种我没有预料到的巧妙优化。</p></div>
+<div class="lang-cn-block"><h3 id="heading-5">然后 Claude Opus 4 击败了它</h3></div>
+<div class="lang-cn-block"><p>到 2025 年 5 月，Claude 3.7 Sonnet 已经发展到超过 50% 的候选人完全委托给 Claude Code 效果更好的地步。然后我测试了 Claude Opus 4 的预发布版本。它在 4 小时限制内提出了比几乎所有人类都更优化的解决方案。</p></div>
+<div class="lang-cn-block"><p>这不是我第一次被 Claude 模型击败的面试。我在 2023 年设计了一道现场面试题，特别因为我们当时的问题基于常见任务，早期 Claude 模型对此有大量知识，因此可以轻松解决。我试图设计一道需要更多解决问题技能而非知识的问题，仍然基于我在工作中解决过的一个真实（但小众的）问题。Claude 3 Opus 击败了该问题的第 1 部分；Claude 3.5 Sonnet 击败了第 2 部分。我们仍然使用它，因为我们的其他现场面试题也不具备抗 AI 性。</p></div>
+<div class="lang-cn-block"><p>对于带回家测试，有一个直接的修复方案。问题的深度远超任何人 4 小时内能探索的范围，所以我用 Claude Opus 4 来确定它开始遇到困难的地方。那成为了版本 2 的新起点。我编写了更清晰的初始代码，添加了新的机器特性以增加深度，并移除了多核（Claude 已经解决了，它只会减慢开发循环而不增加信号价值）。</p></div>
+<div class="lang-cn-block"><p>我还把时间限制从 4 小时缩短到 2 小时。我最初选择 4 小时是基于候选人的反馈，他们更倾向于在遇到 bug 或困惑时不至于陷入太久的风险，但调度开销导致我们流程中出现数周的延迟。2 小时更容易安排在周末。</p></div>
+<div class="lang-cn-block"><p>版本 2 强调巧妙的优化洞察而非调试和代码量。它在几个月内一直很好用。</p></div>
+<div class="lang-cn-block"><h3 id="heading-6">然后 Claude Opus 4.5 又击败了它</h3></div>
+<div class="lang-cn-block"><p>当我测试预发布的 Claude Opus 4.5 检查点时，我看着 Claude Code 花 2 小时处理这个问题，逐步改进其解决方案。它解决了初始瓶颈，实现了所有常见的微优化，并在不到一小时内达到了我们的通过阈值。</p></div>
+<div class="lang-cn-block"><p>然后它停下来，确信自己遇到了一个不可逾越的内存带宽瓶颈。大多数人类也会得出同样的结论。但有一些巧妙的技巧可以利用问题结构来绕过那个瓶颈。当我告诉 Claude 可以达到的周期数时，它思考了一会儿，找到了这个技巧。然后它进行了调试、调优并实现了进一步的优化。到 2 小时结束时，它的分数与该时间限制内最好的人类表现持平——而那个人大量使用了带引导的 Claude 4。</p></div>
+<div class="lang-cn-block"><p>我们在内部的测试时计算（test-time compute）工具中更严格地测试了它，确认它既能在 2 小时内击败人类，也能随时间继续提升。发布后我们甚至以通用方式改进了工具，获得了更高的分数。</p></div>
+<div class="lang-cn-block"><p>我遇到了一个问题。我们即将发布一个模型，而在我们的带回家测试上，最佳策略将是委托给 Claude Code。</p></div>
+<div class="lang-cn-block"><h2 id="heading-7">考虑各种选择</h2></div>
+<div class="lang-cn-block"><p>一些同事建议禁止 AI 辅助。我不想这么做。除了执行难度之外，我有一种感觉——既然人在我们的工作中继续发挥重要作用，我应该能够想出某种方式让他们在有 AI 的环境中脱颖而出——就像他们在实际工作中那样。我还不想屈服于这样一种观念：人类只在超过几小时的任务上才有优势。</p></div>
+<div class="lang-cn-block"><p>其他人建议将标准提高到&quot;显著超越 Claude Code 单独达到的水平&quot;。这里的问题是 Claude 工作速度很快。人类通常在开始优化之前花一半的 2 小时阅读和理解问题。一个试图引导 Claude 的人可能会不断落后，只能事后理解 Claude 做了什么。主导策略可能变成坐视不管。</p></div>
+<div class="lang-cn-block"><p>如今 Anthropic 的性能工程师仍然有很多工作要做，但它看起来更像是艰难的调试、系统设计、性能分析、弄清楚如何验证我们系统的正确性，以及弄清楚如何让 Claude 的代码更简洁和优雅。不幸的是，这些东西在没有大量时间或共同背景的情况下很难以客观方式测试。设计能够代表工作的面试一直都很困难，但现在比以往任何时候都更难。</p></div>
+<div class="lang-cn-block"><p>但我也担心，如果我投入设计一个新的带回家测试，要么 Claude Opus 4.5 也会解决它，要么它会变得如此具有挑战性以至于人类在两小时内无法完成。</p></div>
+<div class="lang-cn-block"><h3 id="heading-8">尝试 1：不同的优化问题</h3></div>
+<div class="lang-cn-block"><p>我意识到 Claude 可以帮助我快速实现我设计的任何东西，这促使我尝试开发更难的带回家测试。我选择了一个基于我在 Anthropic 做过的更棘手的内核优化之一的问题：在 2D TPU 寄存器上进行高效数据转置（transposition）同时避免存储体冲突（bank conflicts）。我将其提炼成模拟机器上的一个更简单的问题，并让 Claude 在一天内实现了更改。</p></div>
+<div class="lang-cn-block"><p>Claude Opus 4.5 找到了一个我甚至没有想到的好优化。通过仔细分析，它意识到可以转置整个计算而不是弄清楚如何转置数据，并据此重写了整个程序。</p></div>
+<div class="lang-cn-block"><p>在我的真实案例中，这行不通，所以我修补了问题以移除该方法。然后 Claude 取得了进展，但找不到最高效的解决方案。看来我有了新问题，现在我只需要希望人类候选人能足够快地理解它。但我有一些挥之不去的疑虑，所以我用 Claude Code 的&quot;ultrathink&quot;功能和更长的思考预算进行了复查……它解决了它。它甚至知道修复存储体冲突的技巧。</p></div>
+<div class="lang-cn-block"><p>事后看来，这不是一个合适的问题。跨多个平台的工程师都在数据转置和存储体冲突上挣扎过，所以 Claude 有大量训练数据可以借鉴。虽然我是从第一性原理找到了我的解决方案，但 Claude 可以借鉴更大的经验工具箱。</p></div>
+<div class="lang-cn-block"><h3 id="heading-9">尝试 2：更奇特的方向</h3></div>
+<div class="lang-cn-block"><p>我需要一个让人类推理能够胜过 Claude 更大经验库的问题：一些足够超出分布的东西。不幸的是，这与我希望问题看起来像实际工作的目标相冲突。</p></div>
+<div class="lang-cn-block"><p>我思考了我享受过的最不寻常的优化问题，想到了 Zachtronics 游戏。这些编程益智游戏使用不寻常、高度受限的指令集，迫使你以非常规方式编程。例如，在 Shenzhen I/O 中，程序分布在多个通信芯片上，每个芯片只容纳大约 10 条指令和一两个状态寄存器。巧妙的优化通常涉及将状态编码到指令指针或分支标志中。</p></div>
+<div class="lang-cn-block"><p>我设计了一个新的带回家测试，由使用极小、高度受限指令集的益智题组成，以最小指令数优化解决方案。我实现了一个中等难度的益智题，并在 Claude Opus 4.5 上测试。它失败了。我补充了更多益智题，并让同事验证对问题不如我熟悉的人仍然能超越 Claude。</p></div>
+<div class="lang-cn-block"><p>与 Zachtronics 游戏不同，我刻意不提供可视化或调试工具。初始代码只检查解决方案是否有效。构建调试工具是被测试的一部分：你可以插入精心设计的打印语句，或者在几分钟内要求编码模型生成一个交互式调试器。关于如何投资工具的判断力是信号的一部分。</p></div>
+<div class="lang-cn-block"><p>我对新的带回家测试相当满意。它可能比原始版本有更低的方差，因为它包含更多独立的子问题。早期结果令人鼓舞：分数与候选人过去工作的水平高度相关，我的一位最有能力的同事比迄今为止的任何候选人得分都高。</p></div>
+<div class="lang-cn-block"><p>我仍然遗憾放弃了原始版本的真实性和多样深度。但真实性可能是一种我们不再拥有的奢侈。原始版本有效是因为它类似于真实工作。替代版本有效是因为它模拟了新颖的工作。</p></div>
+<div class="lang-cn-block"><h2 id="heading-10">一个开放挑战</h2></div>
+<div class="lang-cn-block"><p>我们将原始带回家测试发布给任何人，不限时间尝试。在足够长的时间跨度内，人类专家仍然保持对当前模型的优势。有史以来提交的最快人类解决方案大幅超过了 Claude 即使在大量测试时计算下所达到的水平。</p></div>
+<div class="lang-cn-block"><p>发布的版本从头开始（像版本 1），但使用版本 2 的指令集和单核设计，因此周期计数与版本 2 可比。</p></div>
+<div class="lang-cn-block"><p>性能基准（以模拟机器的时钟周期计）：</p></div>
+<div class="lang-cn-block"><ul><li>2164 个周期：Claude Opus 4 在测试时计算工具中运行多个小时后</li></ul></div>
+<div class="lang-cn-block"><ul><li>1790 个周期：Claude Opus 4.5 在一个随意的 Claude Code 会话中，大约匹配 2 小时内最好的人类表现</li></ul></div>
+<div class="lang-cn-block"><ul><li>1579 个周期：Claude Opus 4.5 在我们的测试时计算工具中运行 2 小时后</li></ul></div>
+<div class="lang-cn-block"><ul><li>1548 个周期：Claude Sonnet 4.5 在远超 2 小时的测试时计算后</li></ul></div>
+<div class="lang-cn-block"><ul><li>1487 个周期：Claude Opus 4.5 在工具中运行 11.5 小时后</li></ul></div>
+<div class="lang-cn-block"><ul><li>1363 个周期：Claude Opus 4.5 在改进的测试时计算工具中运行多个小时后</li></ul></div>
+<div class="lang-cn-block"><p>在 GitHub 上下载它。如果你能优化到低于 1487 个周期，击败 Claude 发布时的最佳表现，请将你的代码和简历发送至 performance-recruiting@anthropic.com。</p></div>
+<div class="lang-cn-block"><p>或者你可以通过我们的常规流程申请，该流程使用我们现在具备 Claude 抗性的带回家测试。我们很好奇它能坚持多久。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>作者：Tristan Hume，Anthropic 性能优化团队负责人。Tristan 设计——并重新设计了——帮助 Anthropic 招聘了数十名性能工程师的带回家测试。</p>
+<p>随着 AI 能力的提升，评估技术候选人变得越来越困难。一个今天能很好区分人类技能水平的带回家测试，明天可能被模型轻松解决——使其失去评估价值。</p>
+<p>自 2024 年初以来，我们的性能工程团队一直使用一个带回家测试，要求候选人为一个模拟加速器优化代码。超过 1,000 名候选人完成了该测试，数十人现在在这里工作，包括那些搭建了我们的 Trainium 集群并交付了自 Claude 3 Opus 以来所有模型的工程师。</p>
+<p>但每个新的 Claude 模型都迫使我们重新设计测试。在相同的时间限制下，Claude Opus 4 超过了大多数人类候选人。这仍然让我们能够区分最强的候选人——但随后 Claude Opus 4.5 甚至追平了这些候选人。在不受时间限制的情况下，人类仍然可以超越模型，但在带回家测试的约束下，我们已无法区分顶尖候选人和我们最强模型的输出。</p>
+<p>我已经迭代了三个版本的带回家测试，试图确保它仍然具有信号价值。每一次，我都学到了新的东西——什么使评估能够抵御 AI 辅助，什么不能。</p>
+<p>这篇文章描述了原始带回家测试的设计、每个 Claude 模型如何击败它，以及我不得不采取的越来越不寻常的方法来确保我们的测试始终领先于最强模型的能力。虽然我们的工作随着模型的发展而演进，但我们仍然需要更多强大的工程师——只是需要越来越有创意的方法来找到他们。</p>
+<p>为此，我们将原始带回家测试作为开放挑战发布，因为在不限时间的情况下，最好的人类表现仍然超过 Claude 能达到的水平。如果你能击败 Opus 4.5，我们很乐意收到你的来信——详情见本文末尾。</p>
+<h2>带回家测试的起源</h2>
+<p>2023 年 11 月，我们正在准备训练和发布 Claude Opus 3。我们获得了新的 TPU 和 GPU 集群，大型 Trainium 集群即将上线，我们在加速器上的花费比过去多了很多，但我们没有足够的性能工程师来应对新的规模。我在 Twitter 上发帖让人们给我们发邮件，这带来了比我们通过标准面试流程能评估的更多的优秀候选人——标准流程会消耗工作人员和候选人的大量时间。</p>
+<p>我们需要一种更高效地评估候选人的方式。因此，我花了两周时间设计了一个带回家测试，能够充分捕捉该岗位的需求并识别最有能力的申请人。</p>
+<h3>设计目标</h3>
+<p>带回家测试名声不佳。通常它们充斥着工程师觉得无聊的通用问题，而且过滤效果很差。我的目标不同：创造真正有趣的东西，让候选人兴奋地参与，并让我们能够高分辨率地捕捉他们的技术技能。</p>
+<p>这种形式在评估性能工程技能方面也比现场面试有优势：</p>
+<p><strong>更长的时间跨度：</strong> 工程师在编码时很少面临不到一小时的截止日期。4 小时的时间窗口（后来缩短为 2 小时）更好地反映了工作的实际性质。它仍然比大多数实际任务短，但我们需要在这方面与测试负担之间取得平衡。</p>
+<p><strong>真实的环境：</strong> 没有人看着你或期望你做解说。候选人在自己的编辑器中工作，不受干扰。</p>
+<p><strong>理解系统和构建工具的时间：</strong> 性能优化需要理解现有系统，有时还需要构建调试工具。这两者在普通的 50 分钟面试中都很难真实评估。</p>
+<p><strong>兼容 AI 辅助：</strong> Anthropic 的通用候选人指南要求候选人在没有特别说明的情况下不使用 AI 完成带回家测试。对于这个带回家测试，我们明确说明可以使用 AI。更长时间跨度的问题更难被 AI 完全解决，因此候选人可以使用 AI 工具（就像在实际工作中那样），同时仍然需要展示自己的技能。</p>
+<p>除了这些形式特定的目标之外，我在设计任何面试时都应用了相同的原则来设计带回家测试：</p>
+<p><strong>代表真实工作：</strong> 问题应该让候选人体验到工作实际涉及的内容。</p>
+<p><strong>高信号价值：</strong> 带回家测试应该避免依赖单一洞察的问题，确保候选人有很多机会展示他们的全部能力——尽可能减少偶然因素。它还应该有宽泛的分数分布，并确保足够的深度，即使是最强的候选人也不会完成所有内容。</p>
+<p><strong>不需要特定领域知识：</strong> 拥有良好基础的人可以在工作中学习细节。要求狭窄的专业知识会不必要地限制候选人范围。</p>
+<p><strong>有趣：</strong> 快速的开发循环、有趣且有深度的问题，以及创造力的空间。</p>
+<h3>模拟机器</h3>
+<p>我构建了一个 Python 模拟器，模拟一个特性类似 TPU 的假加速器。候选人在这台机器上优化代码，使用热重载的 Perfetto 追踪来显示每条指令，类似于我们在 Trainium 上使用的工具。</p>
+<p>这台机器包含一些使加速器优化变得有趣的手动管理的暂存存储器（scratchpad memory）（与 CPU 不同，加速器通常需要显式内存管理）、VLIW（每个周期并行运行多个执行单元，需要高效的指令打包）、SIMD（每条指令对多个元素进行向量操作）以及多核（在核心之间分配工作）。</p>
+<p>任务是一个并行树遍历，刻意不涉及深度学习风格，因为大多数性能工程师当时还没有从事深度学习工作，可以在工作中学习领域知识。问题的灵感来自无分支 SIMD 决策树推理，这是经典机器学习优化挑战，以此致敬过去，只有少数候选人之前遇到过。</p>
+<p>候选人从一个完全串行的实现开始，逐步利用机器的并行性。热身是多核并行性，然后候选人选择是处理 SIMD 向量化还是 VLIW 指令打包。原始版本还包含一个 bug，候选人需要先调试它，锻炼他们构建工具的能力。</p>
+<h2>早期结果</h2>
+<p>最初的带回家测试效果很好。来自 Twitter 批次的一个人的分数明显高于其他人。他于 2 月初入职，比我们通过标准流程雇用的首批员工晚两周。测试被证明具有预测性：他立即开始优化内核，并为一个涉及张量索引数学溢出 32 位的启动阻塞编译器 bug 找到了解决方案。</p>
+<p>在接下来的一年半里，大约 1,000 名候选人完成了带回家测试，它帮助我们雇用了大部分现任性能工程团队。它对简历上经验有限的候选人尤其有价值：我们几位最高绩效的工程师直接来自本科，但在带回家测试中展示了足够的技能，让我们有信心雇用他们。</p>
+<p>反馈是积极的。许多候选人在超过 4 小时的限制后仍在继续工作，因为他们很享受。最强的不限时提交包括完整的优化迷你编译器和几种我没有预料到的巧妙优化。</p>
+<h3>然后 Claude Opus 4 击败了它</h3>
+<p>到 2025 年 5 月，Claude 3.7 Sonnet 已经发展到超过 50% 的候选人完全委托给 Claude Code 效果更好的地步。然后我测试了 Claude Opus 4 的预发布版本。它在 4 小时限制内提出了比几乎所有人类都更优化的解决方案。</p>
+<p>这不是我第一次被 Claude 模型击败的面试。我在 2023 年设计了一道现场面试题，特别因为我们当时的问题基于常见任务，早期 Claude 模型对此有大量知识，因此可以轻松解决。我试图设计一道需要更多解决问题技能而非知识的问题，仍然基于我在工作中解决过的一个真实（但小众的）问题。Claude 3 Opus 击败了该问题的第 1 部分；Claude 3.5 Sonnet 击败了第 2 部分。我们仍然使用它，因为我们的其他现场面试题也不具备抗 AI 性。</p>
+<p>对于带回家测试，有一个直接的修复方案。问题的深度远超任何人 4 小时内能探索的范围，所以我用 Claude Opus 4 来确定它开始遇到困难的地方。那成为了版本 2 的新起点。我编写了更清晰的初始代码，添加了新的机器特性以增加深度，并移除了多核（Claude 已经解决了，它只会减慢开发循环而不增加信号价值）。</p>
+<p>我还把时间限制从 4 小时缩短到 2 小时。我最初选择 4 小时是基于候选人的反馈，他们更倾向于在遇到 bug 或困惑时不至于陷入太久的风险，但调度开销导致我们流程中出现数周的延迟。2 小时更容易安排在周末。</p>
+<p>版本 2 强调巧妙的优化洞察而非调试和代码量。它在几个月内一直很好用。</p>
+<h3>然后 Claude Opus 4.5 又击败了它</h3>
+<p>当我测试预发布的 Claude Opus 4.5 检查点时，我看着 Claude Code 花 2 小时处理这个问题，逐步改进其解决方案。它解决了初始瓶颈，实现了所有常见的微优化，并在不到一小时内达到了我们的通过阈值。</p>
+<p>然后它停下来，确信自己遇到了一个不可逾越的内存带宽瓶颈。大多数人类也会得出同样的结论。但有一些巧妙的技巧可以利用问题结构来绕过那个瓶颈。当我告诉 Claude 可以达到的周期数时，它思考了一会儿，找到了这个技巧。然后它进行了调试、调优并实现了进一步的优化。到 2 小时结束时，它的分数与该时间限制内最好的人类表现持平——而那个人大量使用了带引导的 Claude 4。</p>
+<p>我们在内部的测试时计算（test-time compute）工具中更严格地测试了它，确认它既能在 2 小时内击败人类，也能随时间继续提升。发布后我们甚至以通用方式改进了工具，获得了更高的分数。</p>
+<p>我遇到了一个问题。我们即将发布一个模型，而在我们的带回家测试上，最佳策略将是委托给 Claude Code。</p>
+<h2>考虑各种选择</h2>
+<p>一些同事建议禁止 AI 辅助。我不想这么做。除了执行难度之外，我有一种感觉——既然人在我们的工作中继续发挥重要作用，我应该能够想出某种方式让他们在有 AI 的环境中脱颖而出——就像他们在实际工作中那样。我还不想屈服于这样一种观念：人类只在超过几小时的任务上才有优势。</p>
+<p>其他人建议将标准提高到&quot;显著超越 Claude Code 单独达到的水平&quot;。这里的问题是 Claude 工作速度很快。人类通常在开始优化之前花一半的 2 小时阅读和理解问题。一个试图引导 Claude 的人可能会不断落后，只能事后理解 Claude 做了什么。主导策略可能变成坐视不管。</p>
+<p>如今 Anthropic 的性能工程师仍然有很多工作要做，但它看起来更像是艰难的调试、系统设计、性能分析、弄清楚如何验证我们系统的正确性，以及弄清楚如何让 Claude 的代码更简洁和优雅。不幸的是，这些东西在没有大量时间或共同背景的情况下很难以客观方式测试。设计能够代表工作的面试一直都很困难，但现在比以往任何时候都更难。</p>
+<p>但我也担心，如果我投入设计一个新的带回家测试，要么 Claude Opus 4.5 也会解决它，要么它会变得如此具有挑战性以至于人类在两小时内无法完成。</p>
+<h3>尝试 1：不同的优化问题</h3>
+<p>我意识到 Claude 可以帮助我快速实现我设计的任何东西，这促使我尝试开发更难的带回家测试。我选择了一个基于我在 Anthropic 做过的更棘手的内核优化之一的问题：在 2D TPU 寄存器上进行高效数据转置（transposition）同时避免存储体冲突（bank conflicts）。我将其提炼成模拟机器上的一个更简单的问题，并让 Claude 在一天内实现了更改。</p>
+<p>Claude Opus 4.5 找到了一个我甚至没有想到的好优化。通过仔细分析，它意识到可以转置整个计算而不是弄清楚如何转置数据，并据此重写了整个程序。</p>
+<p>在我的真实案例中，这行不通，所以我修补了问题以移除该方法。然后 Claude 取得了进展，但找不到最高效的解决方案。看来我有了新问题，现在我只需要希望人类候选人能足够快地理解它。但我有一些挥之不去的疑虑，所以我用 Claude Code 的&quot;ultrathink&quot;功能和更长的思考预算进行了复查……它解决了它。它甚至知道修复存储体冲突的技巧。</p>
+<p>事后看来，这不是一个合适的问题。跨多个平台的工程师都在数据转置和存储体冲突上挣扎过，所以 Claude 有大量训练数据可以借鉴。虽然我是从第一性原理找到了我的解决方案，但 Claude 可以借鉴更大的经验工具箱。</p>
+<h3>尝试 2：更奇特的方向</h3>
+<p>我需要一个让人类推理能够胜过 Claude 更大经验库的问题：一些足够超出分布的东西。不幸的是，这与我希望问题看起来像实际工作的目标相冲突。</p>
+<p>我思考了我享受过的最不寻常的优化问题，想到了 Zachtronics 游戏。这些编程益智游戏使用不寻常、高度受限的指令集，迫使你以非常规方式编程。例如，在 Shenzhen I/O 中，程序分布在多个通信芯片上，每个芯片只容纳大约 10 条指令和一两个状态寄存器。巧妙的优化通常涉及将状态编码到指令指针或分支标志中。</p>
+<p>我设计了一个新的带回家测试，由使用极小、高度受限指令集的益智题组成，以最小指令数优化解决方案。我实现了一个中等难度的益智题，并在 Claude Opus 4.5 上测试。它失败了。我补充了更多益智题，并让同事验证对问题不如我熟悉的人仍然能超越 Claude。</p>
+<p>与 Zachtronics 游戏不同，我刻意不提供可视化或调试工具。初始代码只检查解决方案是否有效。构建调试工具是被测试的一部分：你可以插入精心设计的打印语句，或者在几分钟内要求编码模型生成一个交互式调试器。关于如何投资工具的判断力是信号的一部分。</p>
+<p>我对新的带回家测试相当满意。它可能比原始版本有更低的方差，因为它包含更多独立的子问题。早期结果令人鼓舞：分数与候选人过去工作的水平高度相关，我的一位最有能力的同事比迄今为止的任何候选人得分都高。</p>
+<p>我仍然遗憾放弃了原始版本的真实性和多样深度。但真实性可能是一种我们不再拥有的奢侈。原始版本有效是因为它类似于真实工作。替代版本有效是因为它模拟了新颖的工作。</p>
+<h2>一个开放挑战</h2>
+<p>我们将原始带回家测试发布给任何人，不限时间尝试。在足够长的时间跨度内，人类专家仍然保持对当前模型的优势。有史以来提交的最快人类解决方案大幅超过了 Claude 即使在大量测试时计算下所达到的水平。</p>
+<p>发布的版本从头开始（像版本 1），但使用版本 2 的指令集和单核设计，因此周期计数与版本 2 可比。</p>
+<p>性能基准（以模拟机器的时钟周期计）：</p>
+<ul>
+<li>2164 个周期：Claude Opus 4 在测试时计算工具中运行多个小时后</li>
+<li>1790 个周期：Claude Opus 4.5 在一个随意的 Claude Code 会话中，大约匹配 2 小时内最好的人类表现</li>
+<li>1579 个周期：Claude Opus 4.5 在我们的测试时计算工具中运行 2 小时后</li>
+<li>1548 个周期：Claude Sonnet 4.5 在远超 2 小时的测试时计算后</li>
+<li>1487 个周期：Claude Opus 4.5 在工具中运行 11.5 小时后</li>
+<li>1363 个周期：Claude Opus 4.5 在改进的测试时计算工具中运行多个小时后</li>
+</ul>
+<p>在 GitHub 上下载它。如果你能优化到低于 1487 个周期，击败 Claude 发布时的最佳表现，请将你的代码和简历发送至 performance-recruiting@anthropic.com。</p>
+<p>或者你可以通过我们的常规流程申请，该流程使用我们现在具备 Claude 抗性的带回家测试。我们很好奇它能坚持多久。</p></div>
+                <div class="lang-en"><p>Written by Tristan Hume, a lead on Anthropic&#x27;s performance optimization team. Tristan designed—and redesigned—the take-home test that&#x27;s helped Anthropic hire dozens of performance engineers.
+Evaluating technical candidates becomes harder as AI capabilities improve. A take-home that distinguishes well between human skill levels today may be trivially solved by models tomorrow—rendering it useless for evaluation.
+Since early 2024, our performance engineering team has used a take-home test where candidates optimize code for a simulated accelerator. Over 1,000 candidates have completed it, and dozens now work here, including engineers who brought up our Trainium cluster and shipped every model since Claude 3 Opus.
+But each new Claude model has forced us to redesign the test. When given the same time limit, Claude Opus 4 outperformed most human applicants. That still allowed us to distinguish the strongest candidates—but then Claude Opus 4.5 matched even those. Humans can still outperform models when given unlimited time, but under the constraints of the take-home test, we no longer had a way to distinguish between the output of our top candidates and our most capable model.
+I&#x27;ve now iterated through three versions of our take-home in an attempt to ensure it still carries signal. Each time, I’ve learned something new about what makes evaluations robust to AI assistance and what doesn&#x27;t.
+This post describes the original take-home design, how each Claude model defeated it, and the increasingly unusual approaches I&#x27;ve had to take to ensure our test stays ahead of our top model’s capabilities. While the work we do has evolved alongside our models, we still need more strong engineers—just increasingly creative ways to find them.
+To that end, we&#x27;re releasing the original take-home as an open challenge, since with unlimited time the best human performance still exceeds what Claude can achieve. If you can best Opus 4.5, we’d love to hear from you—details are at the bottom of this post.</p>
+<h2>The origin of the take-home</h2>
+<p>In November 2023, we were preparing to train and launch Claude Opus 3. We’d secured new TPU and GPU clusters, our large Trainium cluster was coming, and we were spending considerably more than we had in the past on accelerators, but we didn&#x27;t have enough performance engineers for our new scale. Iposted on Twitterasking people to email us, which brought in more promising candidates than we could evaluate through our standard interview pipeline, a process that consumes significant time for staff and candidates
+We needed a way to evaluate candidates more efficiently. So, I took two weeks to design a take-home test that could adequately capture the demands of the role and identify the most capable applicants.</p>
+<h3>Design goals</h3>
+<p>Take-homes have a bad reputation. Usually they’re filled with generic problems which engineers find boring, and which make for poor filters. My goal was different: create something genuinely engaging that would make candidates excited to participate and allow us to capture their technical skills at a high-level of resolution.
+The format also offers advantages over live interviews for evaluating performance engineering skills:
+Longer time horizon:Engineers rarely face deadlines of less than an hour when coding. A 4-hour window (later reduced to 2 hours) better reflects the actual nature of the job. It&#x27;s still shorter than most real tasks, but we need to balance that with how onerous it is.
+Realistic environment:No one watching or expecting narration. Candidates work in their own editor without distraction.
+Time for comprehension and tooling:Performance optimization requires understanding existing systems and sometimes building debugging tools. Both are hard to realistically evaluate in a normal 50 minute interview.
+Compatibility with AI assistance:Anthropic&#x27;sgeneral candidate guidanceasks candidates to complete take-homes without AI unless indicated otherwise. For this take-home, we explicitly indicate otherwise.
+Longer-horizon problems are harder for AI to solve completely, so candidates can use AI tools (as they would on the job) while still needing to demonstrate their own skills.
+Beyond these format-specific goals, I applied the same principles I use when designing any interview to make the take-home:
+Representative of real work:The problem should give candidates a taste of what the job actually involves.
+High signal:The take-home should avoid problems that hinge on a single insight and ensure candidates have many chances to show their full abilities — leaving as little as possible to chance. It should also have a wide scoring distribution,and ensure enough depth that even strong candidates don&#x27;t finish everything.
+No specific domain knowledge:People with good fundamentals can learn specifics on the job. Requiring narrow expertise unnecessarily limits the candidate pool.
+Fun:Fast development loops, interesting problems with depth, and room for creativity.</p>
+<h3>The simulated machine</h3>
+<p>I built a Python simulator for a fake accelerator with characteristics that resemble TPUs. Candidates optimize code running on this machine, using a hot-reloadingPerfettotrace that shows every instruction, similar tothe tooling we have on Trainium.
+The machine includes features that make accelerator optimization interesting: manually managed scratchpad memory (unlike CPUs, accelerators often require explicit memory management), VLIW (multiple execution units running in parallel each cycle, requiring efficient instruction packing), SIMD (vector operations on many elements per instruction), and multicore (distributing work across cores).
+The task is a parallel tree traversal, deliberately not deep learning flavored, since most performance engineers hadn&#x27;t worked on deep learning yet and could learn domain specifics on the job. The problem was inspired by branchless SIMD decision tree inference, a classical ML optimization challenge as a nod to the past, which only a few candidates had encountered before.
+Candidates start with a fully serial implementation and progressively exploit the machine&#x27;s parallelism. The warmup is multicore parallelism, then candidates choose whether to tackle SIMD vectorization or VLIW instruction packing. The original version also included a bug that candidates needed to debug first, exercising their ability to build tooling.</p>
+<h2>Early results</h2>
+<p>The initial take-home worked well. One person from the Twitter batch scored substantially higher than everyone else. He started in early February, two weeks after our first hires through the standard pipeline. The test proved predictive: He immediately began optimizing kernels and found a workaround for a launch-blocking compiler bug involving tensor indexing math overflowing 32 bits.
+Over the next year and a half, about 1,000 candidates completed the take-home, and it helped us hire most of our current performance engineering team. It proved especially valuable for candidates with limited experience on paper: several of our highest-performing engineers came directly from undergrad but showed enough skill on the take-home for us to hire confidently.
+Feedback was positive. Many candidates worked past the 4-hour limit because they were enjoying themselves. The strongest unlimited-time submissions included full optimizing mini-compilers and several clever optimizations I hadn&#x27;t anticipated.</p>
+<h3>Then Claude Opus 4 defeated it</h3>
+<p>By May 2025, Claude 3.7 Sonnet had already crept up to the point where over 50% of candidates would have been better off delegating to Claude Code entirely. I then tested a pre-release version of Claude Opus 4 on the take-home. It came up with a more optimized solution than almost all humans did within the 4-hour limit.
+This wasn&#x27;t my first interview defeated by a Claude model. I&#x27;d designed a live interview question in 2023 specifically because our questions at the time were based around common tasks that early Claude models had lots of knowledge of and so could solve easily. I tried to design a question that required more problem solving skill than knowledge, still based on a real (but niche) problem I&#x27;d solved at work. Claude 3 Opus beat part 1 of that question; Claude 3.5 Sonnet beat part 2. We still use it because our other live questions aren&#x27;t AI-resistant either.
+For the take-home, there was a straightforward fix. The problem had far more depth than anyone could explore in 4 hours, so I used Claude Opus 4 to identify where it started struggling. That became the new starting point for version 2. I wrote cleaner starter code, added new machine features for more depth, and removed multicore (which Claude had already solved, and which only slowed down development loops without adding signal).
+I also shortened the time limit from 4 hours to 2 hours. I&#x27;d originally chosen 4 hours based on candidate feedback preferring less risk of getting sunk if they got stuck for a bit on a bug or confusion, but the scheduling overhead was causing multi-week delays in our pipeline. Two hours is much easier to fit into a weekend.
+Version 2 emphasized clever optimization insights over debugging and code volume. It served us well—for several months.</p>
+<h3>Then Claude Opus 4.5 defeated that</h3>
+<p>When I tested a pre-release Claude Opus 4.5 checkpoint, I watched Claude Code work on the problem for 2 hours, gradually improving its solution. It solved the initial bottlenecks, implemented all the common micro-optimizations, and met our passing threshold in under an hour.
+Then it stopped, convinced it had hit an insurmountable memory bandwidth bottleneck. Most humans reach the same conclusion. But there are clever tricks that exploit the problem structure to work around that bottleneck. When I told Claude the cycle count it was possible to achieve, it thought for a while and found the trick. It then debugged, tuned, and implemented further optimizations. By the 2-hour mark, its score matched the best human performance within that time limit—and that human had made heavy use of Claude 4 with steering.
+We tried it out in our internal test-time compute harness for more rigor and confirmed it could both beat humans in 2 hours and continue climbing with time. Post-launch we even improved our harness in a generic way and got a higher score.
+I had a problem. We were about to release a model where the best strategy on our take-home would be delegating to Claude Code.</p>
+<h2>Considering the options</h2>
+<p>Some colleagues suggested banning AI assistance. I didn&#x27;t want to do this. Beyond the enforcement challenges, I had a sense that given people continue to play a vital role in our work, I should be able to figure outsomeway for them to distinguish themselves in a settingwith AI—like they&#x27;d have on the job. I didn&#x27;t want to give in yet to theideathat humans only have an advantage on tasks longer than a few hours.
+Others suggested raising the bar to &quot;substantially outperform what Claude Code achieves alone.&quot; The concern here was that Claude works fast. Humans typically spend half the 2 hours reading and understanding the problem before they start optimizing. A human trying to steer Claude would likely be constantly behind, understanding what Claude did only after the fact. The dominant strategy might become sitting back and watching.
+Nowadays performance engineers at Anthropic still have lots of work to do, but it looks more like tough debugging, systems design, performance analysis, figuring out how to verify the correctness of our systems, and figuring out how to make Claude&#x27;s code simpler and more elegant. Unfortunately these things are tough to test in an objective way without a lot of time or common context. It&#x27;s always been hard to design interviews that represent the job, but now it&#x27;s harder than ever.
+But I also worried if I invested in designing a new take-home, either Claude Opus 4.5 would solve that too, or it would become so challenging that it would be impossible for humans to complete in two hours.</p>
+<h3>Attempt 1: A different optimization problem</h3>
+<p>I realized Claude could help me implement whatever I designed quickly, which motivated me to try developing a harder take-home. I chose a problem based on one of the trickier kernel optimizations I&#x27;d done at Anthropic: an efficient datatranspositionon 2D TPU registers while avoidingbank conflicts. I distilled it into a simpler problem on a simulated machine and had Claude implement the changes in under a day.
+Claude Opus 4.5 found a great optimization I hadn&#x27;t even thought of. Through careful analysis, it realized it could transpose the entire computation rather than figuring out how to transpose the data, and it rewrote the whole program accordingly.
+In my real case, this wouldn&#x27;t have worked, so I patched the problem to remove that approach. Claude then made progress but couldn&#x27;t find the most efficient solution. It seemed like I had my new problem, now I just had to hope human candidates could get it fast enough. But I had some nagging doubt, so I double-checked using Claude Code&#x27;s &quot;ultrathink&quot; feature with longer thinking budgets ... and it solved it. It even knew the tricks for fixing bank conflicts.
+In hindsight, this wasn&#x27;t the right problem to try. Engineers across many platforms have struggled with data transposition and bank conflicts, so Claude has substantial training data to draw on. While I&#x27;d found my solution from first principles, Claude could draw on a larger toolbox of experience.</p>
+<h3>Attempt 2: Going weirder</h3>
+<p>I needed a problem where human reasoning could win over Claude&#x27;s larger experience base: something sufficiently out of distribution. Unfortunately, this conflicted with my goal of being recognizably like the job.
+I thought about the most unusual optimization problems I&#x27;d enjoyed and landed onZachtronics games. These programming puzzle games use unusual, highly constrained instruction sets that force you to program in unconventional ways. For example, inShenzhen I/O, programs are split across multiple communicating chips that each hold only about 10 instructions with one or two state registers. Clever optimization often involves encoding state into the instruction pointer or branch flags.
+I designed a new take-home consisting of puzzles using a tiny, heavily constrained instruction set, optimizing solutions for minimal instruction count. I implemented one medium-hard puzzle and tested it on Claude Opus 4.5. It failed. I filled out more puzzles and had colleagues verify that people less steeped in the problem than me could still outperform Claude.
+Unlike Zachtronics games, I intentionally provided no visualization or debugging tools. The starter code only checks whether solutions are valid. Building debugging tools is part of what&#x27;s being tested: you can either insert well-crafted print statements or ask a coding model to generate an interactive debugger in a few minutes. Judgment about how to invest in tooling is part of the signal.
+I&#x27;m reasonably happy with the new take-home. It might have lower variance than the original because it comprises more independent sub-problems. Early results are promising: scores correlate well with the caliber of candidates&#x27; past work, and one of my most capable colleagues scored higher than any candidate so far.
+I&#x27;m still sad to have given up the realism and varied depth of the original. But realism may be a luxury we no longer have. The original worked because it resembled real work. The replacement works because it simulates novel work.</p>
+<h2>An open challenge</h2>
+<p>We&#x27;re releasing the original take-home for anyone to try with unlimited time. Human expertsretain an advantageover current models at sufficiently long time horizons. The fastest human solution ever submitted substantially exceeds what Claude has achieved even with extensive test-time compute.
+The released version starts from scratch (like version 1) but uses version 2&#x27;s instruction set and single-core design, so cycle counts are comparable to version 2.
+Performance benchmarks (measured in clock cycles from the simulated machine):</p>
+<ul>
+<li>2164 cycles: Claude Opus 4 after many hours in the test-time compute harness</li>
+<li>1790 cycles: Claude Opus 4.5 in a casual Claude Code session, approximately matching the best human performance in 2 hours</li>
+<li>1579 cycles: Claude Opus 4.5 after 2 hours in our test-time compute harness</li>
+<li>1548 cycles: Claude Sonnet 4.5 after many more than 2 hours of test-time compute</li>
+<li>1487 cycles: Claude Opus 4.5 after 11.5 hours in the harness</li>
+<li>1363 cycles: Claude Opus 4.5 in an improved test time compute harness after many hours</li>
+</ul>
+<p>Download it on GitHub. If you optimize below 1487 cycles, beating Claude&#x27;s best performance at launch, email us atperformance-recruiting@anthropic.comwith your code and a resume.
+Or you canapply through our typical process, which uses our (now) Claude-resistant take-home. We&#x27;re curious how long it lasts.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/AI-resistant-technical-evaluations" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

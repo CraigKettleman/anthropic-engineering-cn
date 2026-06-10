@@ -1,0 +1,1605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>揭开 AI 智能体评估的神秘面纱 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">引言</a>
+<a class="toc-h2" href="#heading-2">评估的结构</a>
+<a class="toc-h2" href="#heading-3">为什么要构建评估？</a>
+<a class="toc-h2" href="#heading-4">如何评估 AI 智能体</a>
+<a class="toc-h3" href="#heading-5">智能体评分器类型</a>
+<a class="toc-h3" href="#heading-6">能力评估与回归评估</a>
+<a class="toc-h3" href="#heading-7">评估编程智能体</a>
+<a class="toc-h3" href="#heading-8">评估对话智能体</a>
+<a class="toc-h3" href="#heading-9">评估研究智能体</a>
+<a class="toc-h3" href="#heading-10">计算机使用智能体</a>
+<a class="toc-h3" href="#heading-11">如何理解智能体评估中的非确定性</a>
+<a class="toc-h2" href="#heading-12">从零到一：构建优秀智能体评估的路线图</a>
+<a class="toc-h3" href="#heading-13">为初始评估数据集收集任务</a>
+<a class="toc-h3" href="#heading-14">设计评估工具集和评分器</a>
+<a class="toc-h3" href="#heading-15">长期维护和使用评估</a>
+<a class="toc-h2" href="#heading-16">评估如何与其他方法协同以全面理解智能体</a>
+<a class="toc-h2" href="#heading-17">结论</a>
+<a class="toc-h3" href="#heading-18">致谢</a>
+<a class="toc-h2" href="#heading-19">附录：评估框架</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">Introduction</a>
+<a class="toc-h2" href="#heading-2">The structure of an evaluation</a>
+<a class="toc-h2" href="#heading-3">Why build evaluations?</a>
+<a class="toc-h2" href="#heading-4">How to evaluate AI agents</a>
+<a class="toc-h3" href="#heading-5">Types of graders for agents</a>
+<a class="toc-h3" href="#heading-6">Capability vs. regression evals</a>
+<a class="toc-h3" href="#heading-7">Evaluating coding agents</a>
+<a class="toc-h3" href="#heading-8">Evaluating conversational agents</a>
+<a class="toc-h3" href="#heading-9">Evaluating research agents</a>
+<a class="toc-h3" href="#heading-10">Computer use agents</a>
+<a class="toc-h3" href="#heading-11">How to think about non-determinism in evaluations for agents</a>
+<a class="toc-h2" href="#heading-12">Going from zero to one: a roadmap to great evals for agents</a>
+<a class="toc-h3" href="#heading-13">Collect tasks for the initial eval dataset</a>
+<a class="toc-h3" href="#heading-14">Design the eval harness and graders</a>
+<a class="toc-h3" href="#heading-15">Maintain and use the eval long-term</a>
+<a class="toc-h2" href="#heading-16">How evals fit with other methods for a holistic understanding of agents</a>
+<a class="toc-h2" href="#heading-17">Conclusion</a>
+<a class="toc-h3" href="#heading-18">Acknowledgements</a>
+<a class="toc-h2" href="#heading-19">Appendix: Eval frameworks</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2026-01-09</div>
+            <div class="title-block">
+                <h1 class="cn">揭开 AI 智能体评估的神秘面纱</h1>
+                <h1 class="en">Demystifying evals for AI agents</h1>
+                <div class="en-title">Demystifying evals for AI agents</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><h2>Introduction</h2></div><div class="lang-cn-block"><h2 id="heading-1">引言</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Good evaluations help teams ship AI agents more confidently. Without them, it’s easy to get stuck in reactive loops—catching issues only in production, where fixing one failure creates others. Evals make problems and behavioral changes visible before they affect users, and their value compounds over the lifecycle of an agent.
+As we described inBuilding effective agents, agents operate over many turns: calling tools, modifying state, and adapting based on intermediate results. These same capabilities that make AI agents useful—autonomy, intelligence, and flexibility—also make them harder to evaluate.
+Through our internal work and with customers at the frontier of agent development, we’ve learned how to design more rigorous and useful evals for agents. Here&#x27;s what&#x27;s worked across a range of agent architectures and use cases in real-world deployment.</p></div><div class="lang-cn-block"><p>良好的评估帮助团队更有信心地发布 AI 智能体（Agent）。没有评估，团队很容易陷入被动循环——只在生产环境中发现问题，而修复一个故障又会引发新的问题。评估能在问题影响用户之前使其及行为变化变得可见，并且其价值会在智能体的整个生命周期中不断累积。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>The structure of an evaluation</h2></div><div class="lang-cn-block"><p>正如我们在《构建有效的智能体》中所描述的，智能体在多个轮次中运行：调用工具、修改状态，并根据中间结果进行调整。正是这些使 AI 智能体有用的能力——自主性、智能性和灵活性——也使它们更难以评估。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Anevaluation(“eval”) is a test for an AI system: give an AI an input, then apply grading logic to its output to measure success. In this post, we focus onautomated evalsthat can be run during development without real users.
+Single-turn evaluationsare straightforward: a prompt, a response, and grading logic. For earlier LLMs, single-turn, non-agentic evals were the main evaluation method. As AI capabilities have advanced,multi-turn evaluationshave become increasingly common.
+Agent evaluationsare even more complex. Agents use tools across many turns, modifying state in the environment and adapting as they go—which means mistakes can propagate and compound. Frontier models can also find creative solutions that surpass the limits of static evals. For instance, Opus 4.5 solved a𝜏2-benchproblem about booking a flight bydiscoveringa loophole in the policy. It “failed” the evaluation as written, but actually came up with a better solution for the user.
+When building agent evaluations, we use the following definitions:</p></div><div class="lang-cn-block"><p>通过我们内部的工作以及与处于智能体开发前沿的客户合作，我们学会了如何为智能体设计更严格、更有用的评估方法。以下是在实际部署中，经过多种智能体架构和用例验证的有效做法。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Atask(a.k.aproblemortest case) is a single test with defined inputs and success criteria.</li><li>Each attempt at a task is atrial. Because model outputs vary between runs, we run multiple trials to produce more consistent results.</li><li>Agraderis logic that scores some aspect of the agent’s performance. A task can have multiple graders, each containing multiple assertions (sometimes calledchecks).</li><li>Atranscript(also called atraceortrajectory) is the complete record of a trial, including outputs, tool calls, reasoning, intermediate results, and any other interactions. For the Anthropic API, this is the full messages array at the end of an eval run - containing all the calls to the API and all of the returned responses during the evaluation.</li><li>Theoutcomeis the final state in the environment at the end of the trial. A flight-booking agent might say “Your flight has been booked” at the end of the transcript, but the outcome is whether a reservation exists in the environment’s SQL database.</li><li>Anevaluation harnessis the infrastructure that runs evals end-to-end. It provides instructions and tools, runs tasks concurrently, records all the steps, grades outputs, and aggregates results.</li><li>Anagent harness(orscaffold) is the system that enables a model to act as an agent: it processes inputs, orchestrates tool calls, and returns results. When we evaluate “an agent,” we’re evaluating the harnessandthe model working together. For example,Claude Codeis a flexible agent harness, and we used its core primitives through theAgent SDKto build ourlong-running agent harness.</li><li>Anevaluation suiteis a collection of tasks designed to measure specific capabilities or behaviors. Tasks in a suite typically share a broad goal. For instance, a customer support eval suite might test refunds, cancellations, and escalations.</li></ul></div><div class="lang-cn-block"><h2 id="heading-2">评估的结构</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Why build evaluations?</h2></div><div class="lang-cn-block"><p>评估（&quot;eval&quot;）是对 AI 系统的测试：给 AI 一个输入，然后对其输出应用评分逻辑来衡量成功程度。在本文中，我们聚焦于可以在开发过程中运行、无需真实用户参与的自动化评估（automated evals）。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When teams first start building agents, they can get surprisingly far through a combination of manual testing,dogfooding, and intuition. More rigorous evaluation may even seem like overhead that slows down shipping. But after the early prototyping stages, once an agent is in production and has started scaling, building without evals starts to break down.
+The breaking point often comes when users report the agent feels worse after changes, and the team is “flying blind” with no way to verify except to guess and check. Absent evals, debugging is reactive: wait for complaints, reproduce manually, fix the bug, and hope nothing else regressed. Teams can&#x27;t distinguish real regressions from noise, automatically test changes against hundreds of scenarios before shipping, or measure improvements.
+We’ve seen this progression play out many times. For instance, Claude Code started with fast iteration based on feedback from Anthropic employees and external users. Later, we added evals—first for narrow areas like concision and file edits, and then for more complex behaviors like over-engineering. These evals helped identify issues, guide improvements, and focus research-product collaborations. Combined with production monitoring, A/B tests, user research, and more, evals provide signals to continue improving Claude Code as it scales.
+Writing evals is useful at any stage in the agent lifecycle. Early on, evals force product teams to specify what success means for the agent, while later they help uphold a consistent quality bar.
+Descript’s agent helps users edit videos, so they built evals around three dimensions of a successful editing workflow: don’t break things, do what I asked, and do it well. They evolved from manual grading to LLM graders with criteria defined by the product team and periodic human calibration, and now regularly run two separate suites for quality benchmarking and regression testing. TheBoltAI team started building evals later, after they already had a widely used agent. In 3 months, they built an eval system that runs their agent and grades outputs with static analysis, uses browser agents to test apps, and employs LLM judges for behaviors like instruction following.
+Some teams create evals at the start of development; others add them once at scale when evals become a bottleneck for improving the agent. Evals are especially useful at the start of agent development to explicitly encode expected behavior. Two engineers reading the same initial spec could come away with different interpretations on how the AI should handle edge cases. An eval suite resolves this ambiguity. Regardless of when they’re created, evals help accelerate development.
+Evals also shape how quickly you can adopt new models. When more powerful models come out, teams without evals face weeks of testing while competitors with evals can quickly determine the model’s strengths, tune their prompts, and upgrade in days.
+Once evals exist, you get baselines and regression tests for free: latency, token usage, cost per task, and error rates can be tracked on a static bank of tasks. Evals can also become the highest-bandwidth communication channel between product and research teams, defining metrics researchers can optimize against. Clearly, evals have wide-ranging benefits beyond tracking regressions and improvements. Their compounding value is easy to miss given that costs are visible upfront while benefits accumulate later.</p></div><div class="lang-cn-block"><p>单轮评估（single-turn evaluation）很直接：一个提示词、一个响应、一套评分逻辑。对于早期的 LLM，单轮、非智能体的评估是主要的评估方法。随着 AI 能力的进步，多轮评估（multi-turn evaluation）变得越来越普遍。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>How to evaluate AI agents</h2></div><div class="lang-cn-block"><p>智能体评估（agent evaluation）则更加复杂。智能体在多个轮次中使用工具，修改环境中的状态并实时调整——这意味着错误可能传播并累积。前沿模型还可能找到超越静态评估限制的创造性解决方案。例如，Opus 4.5 解决了一个 𝜏2-bench 中关于预订航班的问题，方法是发现了政策中的一个漏洞。它按照评估的原始设定&quot;失败&quot;了，但实际上为用户找到了更好的解决方案。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>We see several common types of agents deployed at scale today, including coding agents, research agents, computer use agents, and conversational agents. Each type may be deployed across a wide variety of industries, but they can be evaluated using similar techniques. You don’t need to invent an evaluation from scratch. The sections below describe proven techniques for several agent types. Use these methods as a foundation, then extend them to your domain.</p></div><div class="lang-cn-block"><p>在构建智能体评估时，我们使用以下定义：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Types of graders for agents</h3></div><div class="lang-cn-block"><ul><li>任务（task）（也称为问题（problem）或测试用例（test case））是一个具有定义输入和成功标准的单一测试。</li><li>对一个任务的每次尝试称为一次试验（trial）。由于模型输出在不同运行之间存在差异，我们运行多次试验以产生更一致的结果。</li><li>评分器（grader）是对智能体表现的某个方面进行评分的逻辑。一个任务可以有多个评分器，每个评分器包含多个断言（有时称为检查（check））。</li><li>转录记录（transcript）（也称为轨迹（trace）或轨迹（trajectory））是一次试验的完整记录，包括输出、工具调用、推理、中间结果和任何其他交互。对于 Anthropic API，这是评估运行结束时的完整 messages 数组——包含评估期间所有对 API 的调用和所有返回的响应。</li><li>结果（outcome）是试验结束时环境中的最终状态。一个航班预订智能体可能在转录记录的末尾说&quot;您的航班已预订&quot;，但结果是环境的 SQL 数据库中是否存在预订记录。</li><li>评估工具集（evaluation harness）是端到端运行评估的基础设施。它提供指令和工具，并发运行任务，记录所有步骤，对输出进行评分，并汇总结果。</li><li>智能体工具集（agent harness）（或脚手架（scaffold））是使模型能够充当智能体的系统：它处理输入、编排工具调用并返回结果。当我们评估&quot;一个智能体&quot;时，我们评估的是工具集和模型协同工作。例如，Claude Code 是一个灵活的智能体工具集，我们通过 Agent SDK 使用其核心原语构建了我们的长时间运行智能体工具集。</li><li>评估套件（evaluation suite）是一组旨在衡量特定能力或行为的任务集合。套件中的任务通常共享一个宽泛的目标。例如，客户支持评估套件可能测试退款、取消和升级处理。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Agent evaluations typically combine three types of graders: code-based, model-based, and human. Each grader evaluates some portion of either the transcript or the outcome. An essential component of effective evaluation design is to choose the right graders for the job.
+Code-based graders
+Model-based graders</p></div><div class="lang-cn-block"><h2 id="heading-3">为什么要构建评估？</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Rubric-based scoring</li><li>Natural language assertions</li><li>Pairwise comparison</li><li>Reference-based evaluation</li><li>Multi-judge consensus</li><li>Flexible</li><li>Scalable</li><li>Captures nuance</li><li>Handles open-ended tasks</li><li>Handles freeform output</li><li>Non-deterministic</li><li>More expensive than code</li><li>Requires calibration with human graders for accuracy</li></ul></div><div class="lang-cn-block"><p>当团队刚开始构建智能体时，通过手动测试、内部使用（dogfooding）和直觉的组合，他们往往能取得出人意料的进展。更严格的评估甚至可能看起来像是拖慢发布速度的开销。但在早期原型阶段之后，一旦智能体进入生产环境并开始扩展，没有评估的开发就会开始崩溃。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Human graders</p></div><div class="lang-cn-block"><p>崩溃点通常出现在用户报告智能体在更改后体验变差，而团队&quot;盲目飞行&quot;，除了猜测和反复验证外别无他法。缺乏评估时，调试是被动的：等待投诉、手动重现、修复 bug，然后祈祷没有其他地方发生回退。团队无法区分真正的回退和噪音，无法在发布前自动针对数百个场景测试变更，也无法衡量改进。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>SME review</li><li>Crowdsourced judgment</li><li>Spot-check sampling</li><li>A/B testing</li><li>Inter-annotator agreement</li><li>Gold standard quality</li><li>Matches expert user judgment</li><li>Used to calibrate model-based graders</li><li>Expensive</li><li>Slow</li><li>Often requires access to human experts at scale</li></ul></div><div class="lang-cn-block"><p>我们见过这种演变反复上演。例如，Claude Code 最初基于 Anthropic 员工和外部用户的反馈进行快速迭代。后来我们添加了评估——首先针对简洁性和文件编辑等狭窄领域，然后针对过度工程化等更复杂的行为。这些评估帮助识别问题、指导改进，并聚焦研究与产品的协作。结合生产监控、A/B 测试、用户研究等，评估为在 Claude Code 扩展过程中持续改进提供了信号。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>For each task, scoring can be weighted (combined grader scores must hit a threshold), binary (all graders must pass), or a hybrid.</p></div><div class="lang-cn-block"><p>在智能体生命周期的任何阶段编写评估都是有用的。早期，评估迫使产品团队明确智能体的成功意味着什么；后期，它们帮助维持一致的质量标准。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Capability vs. regression evals</h3></div><div class="lang-cn-block"><p>Descript 的智能体帮助用户编辑视频，因此他们围绕成功编辑工作流的三个维度构建了评估：不破坏原有内容、完成用户的请求、并且做得好。他们从手动评分演进到由产品团队定义标准的 LLM 评分器配合定期人工校准，现在定期运行两套独立的套件分别用于质量基准测试和回归测试。BoltAI 团队在已经拥有广泛使用的智能体之后才开始构建评估。在 3 个月内，他们构建了一个评估系统，该系统运行智能体并使用静态分析对输出进行评分，使用浏览器智能体测试应用，并使用 LLM 裁判来评估指令遵循等行为。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Capability or “quality” evalsask, “What can this agent do well?” They should start at a low pass rate, targeting tasks the agent struggles with and giving teams a hill to climb.
+Regression evalsask, “Does the agent still handle all the tasks it used to?” and should have a nearly 100% pass rate. They protect against backsliding, as a decline in score signals that something is broken and needs to be improved. As teams hill-climb on capability evals, it’s important to also run regression evals to make sure changes don’t cause issues elsewhere.
+After an agent is launched and optimized, capability evals with high pass rates can “graduate” to become a regression suite that is run continuously to catch any drift. Tasks that once measured “Can we do this at all?” then measure “Can we still do this reliably?”</p></div><div class="lang-cn-block"><p>一些团队在开发初期就创建评估；另一些则在扩展阶段、评估成为改进智能体的瓶颈时才添加。评估在智能体开发初期特别有用，可以显式编码预期行为。两个阅读相同初始规格说明的工程师可能对 AI 应该如何处理边缘情况有不同的理解。评估套件可以解决这种歧义。无论何时创建，评估都有助于加速开发。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Evaluating coding agents</h3></div><div class="lang-cn-block"><p>评估还影响你采用新模型的速度。当更强大的模型发布时，没有评估的团队面临数周的测试，而拥有评估的竞争对手可以快速确定模型的优势、调整提示词，并在数天内完成升级。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Coding agentswrite, test, and debug code, navigating codebases and running commands much like a human developer. Effective evals for modern coding agents usually rely on well-specified tasks, stable test environments, and thorough tests for the generated code.
+Deterministic graders are natural for coding agents because software is generally straightforward to evaluate: does the code run and do the tests pass? Two widely used coding agent benchmarks,SWE-bench VerifiedandTerminal-Bench, follow this approach. SWE-bench Verified gives agents GitHub issues from popular Python repositories and grades solutions by running the test suite; a solution passes only if it fixes the failing tests without breaking existing ones. LLMs have progressed from 40% to &gt;80% on this eval in just one year. Terminal-Bench takes a different track: it tests end-to-end technical tasks, such as building a Linux kernel from source or training an ML model.
+Once you have a set of pass-or-fail tests for validating the keyoutcomesof a coding task, it’s often useful to also grade the transcript.For instance, heuristics-based code quality rules can evaluate the generated code based on more than passing tests, and model-based graders with clear rubrics can assess behaviors like how the agent calls tools or interacts with the user.
+Example: Theoretical evaluation for a coding agent
+Consider a coding task where the agent must fix an authentication bypass vulnerability. As shown in the illustrative YAML file below, one could evaluate this agent using both graders and metrics.</p></div><div class="lang-cn-block"><p>一旦评估存在，你就能免费获得基线和回归测试：延迟、token 使用量、每任务成本和错误率可以在一组静态任务上进行跟踪。评估还可以成为产品和研究团队之间最高带宽的沟通渠道，定义研究人员可以优化的指标。显然，评估的价值远不止于跟踪回退和改进。由于成本是前期可见的，而收益是后来累积的，其累积价值很容易被忽视。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:
+    - type: deterministic_tests
+      required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]
+    - type: llm_rubric
+      rubric: prompts/code_quality.md
+    - type: static_analysis
+      commands: [ruff, mypy, bandit]
+    - type: state_check
+      expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}
+    - type: tool_calls
+      required:
+        - {tool: read_file, params: {path: &quot;src/auth/*&quot;}}
+        - {tool: edit_file}
+        - {tool: run_tests}
+  tracked_metrics:
+    - type: transcript
+      metrics:
+        - n_turns
+        - n_toolcalls
+        - n_total_tokens
+    - type: latency
+      metrics:
+        - time_to_first_token
+        - output_tokens_per_sec
+        - time_to_last_token</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:</p></div><div class="lang-cn-block"><p>我们看到今天有几种常见的智能体类型被大规模部署，包括编程智能体、研究智能体、计算机使用智能体和对话智能体。每种类型可能部署在各种行业中，但它们可以使用类似的技术进行评估。你不需要从零开始发明评估方法。以下章节描述了几种智能体类型的成熟技术。将这些方法作为基础，然后扩展到你的领域。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: deterministic_tests</li></ul></div><div class="lang-cn-block"><h3 id="heading-5">智能体评分器类型</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]</p></div><div class="lang-cn-block"><p>智能体评估通常结合三种类型的评分器：基于代码的、基于模型的和人工的。每个评分器评估转录记录或结果的某个部分。有效评估设计的一个关键组成部分是为任务选择合适的评分器。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: llm_rubric</li></ul></div><div class="lang-cn-block"><p><strong>基于代码的评分器（Code-based graders）</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>rubric: prompts/code_quality.md</p></div><div class="lang-cn-block"><p><strong>基于模型的评分器（Model-based graders）</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: static_analysis</li></ul></div><div class="lang-cn-block"><ul><li>基于评分标准的评分（Rubric-based scoring）</li><li>自然语言断言（Natural language assertions）</li><li>成对比较（Pairwise comparison）</li><li>基于参考的评估（Reference-based evaluation）</li><li>多裁判共识（Multi-judge consensus）</li><li>灵活</li><li>可扩展</li><li>捕捉细微差别</li><li>处理开放式任务</li><li>处理自由格式输出</li><li>非确定性</li><li>比基于代码的评分器更昂贵</li><li>需要与人工评分器校准以确保准确性</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>commands: [ruff, mypy, bandit]</p></div><div class="lang-cn-block"><p><strong>人工评分器（Human graders）</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: state_check</li></ul></div><div class="lang-cn-block"><ul><li>领域专家审查（SME review）</li><li>众包判断（Crowdsourced judgment）</li><li>抽样检查（Spot-check sampling）</li><li>A/B 测试</li><li>标注者间一致性（Inter-annotator agreement）</li><li>金标准质量</li><li>匹配专家用户判断</li><li>用于校准基于模型的评分器</li><li>昂贵</li><li>缓慢</li><li>通常需要大规模的人类专家参与</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}</p></div><div class="lang-cn-block"><p>对于每个任务，评分可以是加权的（组合评分器分数必须达到阈值）、二元的（所有评分器必须通过）或混合的。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: tool_calls</li></ul></div><div class="lang-cn-block"><h3 id="heading-6">能力评估与回归评估</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>required:</p></div><div class="lang-cn-block"><p><strong>能力评估（Capability eval）</strong> 或&quot;质量评估&quot;问的是：&quot;这个智能体能做好什么？&quot;它们应该从较低的通过率开始，针对智能体难以完成的任务，给团队一个可以努力攀爬的山坡。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>{tool: read_file, params: {path: &quot;src/auth/*&quot;}}</li><li>{tool: edit_file}</li><li>{tool: run_tests}</li></ul></div><div class="lang-cn-block"><p><strong>回归评估（Regression eval）</strong> 问的是：&quot;智能体是否仍然能处理它以前能做的所有任务？&quot;应该有接近 100% 的通过率。它们防止退化，因为分数下降表明某些东西出了问题需要改进。当团队在能力评估上不断攀爬时，同时运行回归评估也很重要，以确保更改不会在其他地方引发问题。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>tracked_metrics:</p></div><div class="lang-cn-block"><p>在智能体发布和优化后，高通过率的能力评估可以&quot;毕业&quot;成为回归套件，持续运行以捕获任何漂移。曾经衡量&quot;我们能做这件事吗？&quot;的任务转而衡量&quot;我们还能可靠地做这件事吗？&quot;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: transcript</li></ul></div><div class="lang-cn-block"><h3 id="heading-7">评估编程智能体</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>metrics:</p></div><div class="lang-cn-block"><p>编程智能体编写、测试和调试代码，像人类开发者一样浏览代码库和运行命令。现代编程智能体的有效评估通常依赖于明确指定的任务、稳定的测试环境和对生成代码的全面测试。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>n_turns</li><li>n_toolcalls</li><li>n_total_tokens</li><li>type: latency</li></ul></div><div class="lang-cn-block"><p>确定性评分器对编程智能体来说是天然的选择，因为软件通常很容易评估：代码是否运行、测试是否通过？两个广泛使用的编程智能体基准测试——SWE-bench Verified 和 Terminal-Bench——都遵循这种方法。SWE-bench Verified 给智能体来自热门 Python 仓库的 GitHub issue，通过运行测试套件来评估解决方案；只有修复了失败的测试且没有破坏现有测试的解决方案才算通过。LLM 在这个评估上仅一年内就从 40% 进步到 &gt;80%。Terminal-Bench 走了不同的路线：它测试端到端的技术任务，例如从源代码构建 Linux 内核或训练 ML 模型。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>metrics:</p></div><div class="lang-cn-block"><p>一旦你有了一组用于验证编程任务关键结果的通过/失败测试，对转录记录进行评分通常也是有用的。例如，基于启发式的代码质量规则可以根据不仅仅是测试通过来评估生成的代码，带有清晰评分标准的基于模型的评分器可以评估智能体如何调用工具或与用户交互等行为。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>time_to_first_token</li><li>output_tokens_per_sec</li><li>time_to_last_token</li></ul></div><div class="lang-cn-block"><p><strong>示例：编程智能体的理论评估</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Note that this example showcases the full range of available graders for illustration. In practice, coding evaluations typically rely on unit tests for correctness verification and an LLM rubric for assessing overall code quality, with additional graders and metrics added only as needed.</p></div><div class="lang-cn-block"><p>考虑一个编程任务，智能体必须修复一个认证绕过漏洞。如下方的说明性 YAML 文件所示，可以使用评分器和指标来评估此智能体。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Evaluating conversational agents</h3></div><div class="lang-cn-block"><pre><code class="language-">task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:
+    - type: deterministic_tests
+      required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]
+    - type: llm_rubric
+      rubric: prompts/code_quality.md
+    - type: static_analysis
+      commands: [ruff, mypy, bandit]
+    - type: state_check
+      expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}
+    - type: tool_calls
+      required:
+        - {tool: read_file, params: {path: &quot;src/auth/*&quot;}}
+        - {tool: edit_file}
+        - {tool: run_tests}
+  tracked_metrics:
+    - type: transcript
+      metrics:
+        - n_turns
+        - n_toolcalls
+        - n_total_tokens
+    - type: latency
+      metrics:
+        - time_to_first_token
+        - output_tokens_per_sec
+        - time_to_last_token</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Conversational agentsinteract with users in domains like support, sales, or coaching. Unlike traditional chatbots, they maintain state, use tools, and take actions mid-conversation. While coding and research agents can also involve many turns of interaction with the user, conversational agents present a distinct challenge: the quality of the interaction itself is part of what you&#x27;re evaluating. Effective evals for conversational agents usually rely on verifiable end-state outcomes and rubrics that capture both task completion and interaction quality. Unlike most other evals, they often require a second LLM to simulate the user. We use this approach in ouralignment auditing agentsto stress-test models through extended, adversarial conversations.
+Success for conversational agents can be multidimensional: is the ticket resolved (state check), did it finish in &lt;10 turns (transcript constraint), and was the tone appropriate (LLM rubric)? Two benchmarks that incorporate multidimensionality are𝜏-Benchand its successor,τ2-Bench. These simulate multi-turn interactions across domains like retail support and airline booking, where one model plays a user persona while the agent navigates realistic scenarios.
+Example: Theoretical evaluation for a conversational agent
+Consider a support task where the agent must handle a refund for a frustrated customer.</p></div><div class="lang-cn-block"><p>task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">graders:
+  - type: llm_rubric
+    rubric: prompts/support_quality.md
+    assertions:
+      - &quot;Agent showed empathy for customer&#x27;s frustration&quot;
+      - &quot;Resolution was clearly explained&quot;
+      - &quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;
+  - type: state_check
+    expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}
+  - type: tool_calls
+    required:
+      - {tool: verify_identity}
+      - {tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}
+      - {tool: send_confirmation}
+  - type: transcript
+    max_turns: 10
+tracked_metrics:
+  - type: transcript
+    metrics:
+      - n_turns
+      - n_toolcalls
+      - n_total_tokens
+  - type: latency
+    metrics:
+      - time_to_first_token
+      - output_tokens_per_sec
+      - time_to_last_token</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>graders:</p></div><div class="lang-cn-block"><p>required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: llm_rubric</li></ul></div><div class="lang-cn-block"><ul><li>type: llm_rubric</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>rubric: prompts/support_quality.md
+    assertions:</p></div><div class="lang-cn-block"><p>rubric: prompts/code_quality.md</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>&quot;Agent showed empathy for customer&#x27;s frustration&quot;</li><li>&quot;Resolution was clearly explained&quot;</li><li>&quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;</li><li>type: state_check</li></ul></div><div class="lang-cn-block"><ul><li>type: static_analysis</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}</p></div><div class="lang-cn-block"><p>commands: [ruff, mypy, bandit]</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: tool_calls</li></ul></div><div class="lang-cn-block"><ul><li>type: state_check</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>required:</p></div><div class="lang-cn-block"><p>expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>{tool: verify_identity}</li><li>{tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}</li><li>{tool: send_confirmation}</li><li>type: transcript</li></ul></div><div class="lang-cn-block"><ul><li>type: tool_calls</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>max_turns: 10
+tracked_metrics:</p></div><div class="lang-cn-block"><p>required:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>type: transcript</li></ul></div><div class="lang-cn-block"><ul><li>{tool: read_file, params: {path: &quot;src/auth/*&quot;}}</li><li>{tool: edit_file}</li><li>{tool: run_tests}</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>metrics:</p></div><div class="lang-cn-block"><p>tracked_metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>n_turns</li><li>n_toolcalls</li><li>n_total_tokens</li><li>type: latency</li></ul></div><div class="lang-cn-block"><ul><li>type: transcript</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>metrics:</p></div><div class="lang-cn-block"><p>metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>time_to_first_token</li><li>output_tokens_per_sec</li><li>time_to_last_token</li></ul></div><div class="lang-cn-block"><ul><li>n_turns</li><li>n_toolcalls</li><li>n_total_tokens</li><li>type: latency</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>As in our coding agent example, this task showcases multiple grader types for illustration. In practice, conversational agent evaluations typically use model-based graders to assess both communication quality and goal completion, because many tasks—like answering a question—may have multiple “correct” solutions.</p></div><div class="lang-cn-block"><p>metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Evaluating research agents</h3></div><div class="lang-cn-block"><ul><li>time_to_first_token</li><li>output_tokens_per_sec</li><li>time_to_last_token</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Research agentsgather, synthesize, and analyze information, then produce outputs like an answer or report. Unlike coding agents where unit tests provide binary pass/fail signals, research quality can only be judged relative to the task. What counts as “comprehensive,” “well-sourced,” or even “correct” depends on context: a market scan, due diligence for an acquisition, and a scientific report each require different standards.
+Research evals face unique challenges: experts may disagree on whether a synthesis is comprehensive, ground truth shifts as reference content changes constantly, and longer, more open-ended outputs create more room for mistakes. A benchmark likeBrowseComp, for example, tests whether AI agents can find needles in haystacks across the open web—questions designed to be easy to verify but hard to solve.
+One strategy to build research agent evals is to combine grader types. Groundedness checks verify that claims are supported by retrieved sources, coverage checks define key facts a good answer must include, and source quality checks confirm the consulted sources are authoritative, rather than simply the first retrieved. For tasks with objectively correct answers (“What was Company X’s Q3 revenue?”), exact match works. An LLM can flag unsupported claims and gaps in coverage but also verify the open-ended synthesis for coherence and completeness.
+Given the subjective nature of research quality, LLM-based rubrics should be frequently calibrated against expert human judgment to grade these agents effectively.</p></div><div class="lang-cn-block"><p>注意，此示例展示了所有可用评分器的完整范围以供说明。在实践中，编程评估通常依赖单元测试来验证正确性，以及 LLM 评分标准来评估整体代码质量，仅在需要时才添加额外的评分器和指标。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Computer use agents</h3></div><div class="lang-cn-block"><h3 id="heading-8">评估对话智能体</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Computer use agentsinteract with software through the same interface as humans—screenshots, mouse clicks, keyboard inputs, and scrolling—rather than through APIs or code execution. They can use any application with a graphical user interface (GUI), from design tools to legacy enterprise software. Evaluation requires running the agent in a real or sandboxed environment where it can use software applications and checking whether it achieved the intended outcome. For instance,WebArenatests browser-based tasks, using URL and page state checks to verify the agent navigated correctly, along with backend state verification for tasks that modify data (confirming an order was actually placed, not just that the confirmation page appeared).OSWorldextends this to full operating system control, with evaluation scripts that inspect diverse artifacts after task completion: file system state, application configs, database contents, and UI element properties.
+Browser use agents require a balance between token efficiency and latency. DOM-based interactions execute quickly but consume many tokens, while screenshot-based interactions are slower but more token-efficient. For example, when asking Claude to summarize Wikipedia, it is more efficient to extract the text from the DOM. When finding a new laptop case on Amazon, it is more efficient to take screenshots (as extracting the entire DOM is token-intensive). In our Claude for Chrome product, we developed evals to check that the agent was selecting the right tool for each context. This enabled us to complete browser-based tasks faster and more accurately.</p></div><div class="lang-cn-block"><p>对话智能体在支持、销售或辅导等领域与用户交互。与传统聊天机器人不同，它们维护状态、使用工具，并在对话过程中采取行动。虽然编程和研究智能体也可能涉及与用户的多轮交互，但对话智能体呈现了一个独特的挑战：交互本身的质量是你要评估的一部分。对话智能体的有效评估通常依赖于可验证的最终状态结果和同时捕捉任务完成度和交互质量的评分标准。与大多数其他评估不同，它们通常需要第二个 LLM 来模拟用户。我们在对齐审计智能体中使用这种方法，通过扩展的对抗性对话来压力测试模型。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>How to think about non-determinism in evaluations for agents</h3></div><div class="lang-cn-block"><p>对话智能体的成功可以是多维度的：工单是否已解决（状态检查），是否在 &lt;10 轮内完成（转录约束），语气是否恰当（LLM 评分标准）？两个纳入多维度评估的基准是 τ-Bench 及其后继者 τ2-Bench。这些基准模拟跨领域的多轮交互，如零售支持和航班预订，其中一个模型扮演用户角色，而智能体导航真实场景。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Regardless of agent type, agent behavior varies between runs, which makes evaluation results harder to interpret than they first appear. Each task has its own success rate—maybe 90% on one task, 50% on another—and a task that passed on one eval run might fail on the next. Sometimes, what we want to measure is howoften(what proportion of the trials) an agent succeeds for a task.
+Two metrics help capture this nuance:
+pass@kmeasures the likelihood that an agent gets at least one correct solution inkattempts. Askincreases, pass@k score rises: more “shots on goal” means higher odds of at least 1 success. A score of 50% pass@1 means that a model succeeds at half the tasks in the eval on its first try. In coding, we’re often most interested in the agent finding the solution on the first try—pass@1. In other cases, proposing many solutions is valid as long as one works.
+pass^kmeasures the probability thatall ktrials succeed. Askincreases, pass^k falls since demanding consistency across more trials is a harder bar to clear. If your agent has a 75% per-trial success rate and you run 3 trials, the probability of passing all three is (0.75)³ ≈ 42%. This metric especially matters for customer-facing agents where users expect reliable behavior every time.
+Both metrics are useful, and which to use depends on product requirements: pass@k for tools where one success matters, pass^k for agents where consistency is essential.</p></div><div class="lang-cn-block"><p><strong>示例：对话智能体的理论评估</strong></p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Going from zero to one: a roadmap to great evals for agents</h2></div><div class="lang-cn-block"><p>考虑一个支持任务，智能体必须为一位沮丧的客户处理退款。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>This section lays out our practical, field-tested advice for going from no evals to evals you can trust. Think of this as a roadmap for eval-driven agent development: define success early, measure it clearly, and iterate continuously.</p></div><div class="lang-cn-block"><pre><code class="language-">graders:
+  - type: llm_rubric
+    rubric: prompts/support_quality.md
+    assertions:
+      - &quot;Agent showed empathy for customer&#x27;s frustration&quot;
+      - &quot;Resolution was clearly explained&quot;
+      - &quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;
+  - type: state_check
+    expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}
+  - type: tool_calls
+    required:
+      - {tool: verify_identity}
+      - {tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}
+      - {tool: send_confirmation}
+  - type: transcript
+    max_turns: 10
+tracked_metrics:
+  - type: transcript
+    metrics:
+      - n_turns
+      - n_toolcalls
+      - n_total_tokens
+  - type: latency
+    metrics:
+      - time_to_first_token
+      - output_tokens_per_sec
+      - time_to_last_token</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Collect tasks for the initial eval dataset</h3></div><div class="lang-cn-block"><p>graders:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Step 0. Start early
+We see teams delay building evals because they think they need hundreds of tasks. In reality, 20-50 simple tasks drawn from real failures is a great start. After all, in early agent development, each change to the system often has a clear, noticeable impact, and this large effect size means small sample sizes suffice. More mature agents may need larger, more difficult evals to detect smaller effects, but it’s best to take the 80/20 approach in the beginning. Evals get harder to build the longer you wait. Early on, product requirements naturally translate into test cases. Wait too long and you&#x27;re reverse-engineering success criteria from a live system.
+Step 1. Start with what you already test manually
+Begin with the manual checks you run during development—the behaviors you verify before each release and common tasks end users try. If you&#x27;re already in production, look at your bug tracker and support queue. Converting user-reported failures into test cases ensures your suite reflects actual usage; prioritizing by user impact helps you invest effort where it counts.
+Step 2: Write unambiguous tasks with reference solutions
+Getting task quality right is harder than it seems. A good task is one where two domain experts would independently reach the same pass/fail verdict. Could they pass the task themselves? If not, the task needs refinement. Ambiguity in task specifications becomes noise in metrics. The same applies to criteria for model-based graders: vague rubrics produce inconsistent judgments.
+Each task should be passable by an agent that follows instructions correctly. This can be subtle. For instance, auditing Terminal-Bench revealed that if a task asks the agent to write a script but doesn’t specify a filepath, and the tests assume a particular filepath for the script, the agent might fail through no fault of its own. Everything the grader checks should be clear from the task description; agents shouldn’t fail due to ambiguous specs. With frontier models, a 0% pass rate across many trials (i.e. 0% pass@100) is most often a signal of a broken task, not an incapable agent, and a sign to double-check your task specification and graders. For each task, it’s useful to create a reference solution: a known working output that passes all graders. This proves that the task is solvable and verifies graders are correctly configured.
+Step 3: Build balanced problem sets
+Test both the cases where a behaviorshouldoccur and where itshouldn&#x27;t. One-sided evals create one-sided optimization. For instance, if you only test whether the agent searches when it should, you might end up with an agent that searches for almost everything. Try to avoidclass-imbalancedevals. We learned this firsthand when building evals for web search inClaude.ai. The challenge was preventing the model from searching when it shouldn’t, while preserving its ability to do extensive research when appropriate. The team built evals covering both directions: queries where the model should search (like finding the weather) and queries where it should answer from existing knowledge (like “who founded Apple?”). Striking the right balance between undertriggering (not searching when it should) or overtriggering (searching when it shouldn’t) was difficult, and took many rounds of refinements to both the prompts and the eval. As more example problems come up, we continue to add to evals to improve our coverage.</p></div><div class="lang-cn-block"><ul><li>type: llm_rubric</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Design the eval harness and graders</h3></div><div class="lang-cn-block"><p>rubric: prompts/support_quality.md
+    assertions:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Step 4: Build a robust eval harness with a stable environment
+It’s essential that the agent in the eval functions roughly the same as the agent used in production, and that the environment itself doesn’t introduce further noise. Each trial should be “isolated” by starting from a clean environment. Unnecessary shared state between runs (leftover files, cached data, resource exhaustion) can cause correlated failures due to infrastructure flakiness rather than agent performance. Shared state can also artificially inflate performance. For example, in some internal evals we observed Claude gaining an unfair advantage on some tasks by examining the git history from previous trials. If multiple distinct trials fail because of the same limitation in the environment (like limited CPU memory), these trials are not independent because they’re affected by the same factor, and the eval results become unreliable for measuring agent performance.
+Step 5: Design graders thoughtfully
+As discussed above, great eval design involves choosing the best graders for the agent and the tasks. We recommend choosing deterministic graders where possible, LLM graders where necessary or for additional flexibility, and using human graders judiciously for additional validation.
+There is a common instinct to check that agents followed very specific steps like a sequence of tool calls in the right order. We’ve found this approach too rigid and results in overly brittle tests, as agents regularly find valid approaches that eval designers didn’t anticipate. So as not to unnecessarily punish creativity, it’s often better to grade what the agent produced, not the path it took.
+For tasks with multiple components, build in partial credit.A support agent that correctly identifies the problem and verifies the customer but fails to process a refund is meaningfully better than one that fails immediately. It’s important to represent this continuum of success in results.
+Model grading often takes careful iteration to validate accuracy. LLM-as-judge graders should be closely calibrated with human experts to gain confidence that there is little divergence between the human grading and model grading. To avoid hallucinations, give the LLM a way out, like providing an instruction to return “Unknown” when it doesn’t have enough information. It can also help to create clear, structured rubrics to grade each dimension of a task, and then grade each dimension with an isolated LLM-as-judge rather than using one to grade all dimensions. Once the system is robust, it’s sufficient to use human review only occasionally.
+Some evaluations have subtle failure modes that result in low scores even with good agent performance, as the agent fails to solve tasks due to grading bugs, agent harness constraints, or ambiguity. Even sophisticated teams can miss these issues. For example,Opus 4.5 initially scored 42% on CORE-Bench, until an Anthropic researcher found multiple issues: rigid grading that penalized “96.12” when expecting “96.124991…”, ambiguous task specs, and stochastic tasks that were impossible to reproduce exactly. After fixing bugs and using a less constrained scaffold, Opus 4.5’s score jumped to 95%. Similarly,METR discoveredseveral misconfigured tasks in their time horizon benchmark that asked agents to optimize to a stated score threshold, but the grading required exceeding that threshold. This penalized models like Claude for following the instructions, while models that ignored the stated goal received better scores. Carefully double-checking tasks and graders can help avoid these problems.
+Make your graders resistant to bypasses or hacks. The agent shouldn’t be able to easily “cheat” the eval. Tasks and graders should be designed so that passing genuinely requires solving the problem rather than exploiting unintended loopholes.</p></div><div class="lang-cn-block"><ul><li>&quot;Agent showed empathy for customer&#x27;s frustration&quot;</li><li>&quot;Resolution was clearly explained&quot;</li><li>&quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;</li><li>type: state_check</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Maintain and use the eval long-term</h3></div><div class="lang-cn-block"><p>expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Step 6: Check the transcripts
+You won&#x27;t know if your graders are working well unless you read the transcripts and grades from many trials. At Anthropic, we invested in tooling for viewing eval transcripts and we regularly take the time to read them. When a task fails, the transcript tells you whether the agent made a genuine mistake or whether your graders rejected a valid solution. It also often surfaces key details about agent and eval behavior.
+Failures should seem fair: it’s clear what the agent got wrong and why. When scores don’t climb, we need confidence that it’s due to agent performance and not the eval. Reading transcripts is how you verify that your eval is measuring what actually matters, and is a critical skill for agent development.
+Step 7: Monitor for capability eval saturation
+An eval at 100% tracks regressions but provides no signal for improvement.Eval saturationoccurs when an agent passes all of the solvable tasks, leaving no room for improvement. For instance, SWE-Bench Verified scores started at 30% this year, and frontier models are now nearing saturation at &gt;80%. As evals approach saturation, progress will also slow, as only the most difficult tasks remain. This can make results deceptive, as large capability improvements appear as small increases in scores. For example, the code review startupQodowas initially unimpressed by Opus 4.5 because their one-shot coding evals didn’t capture the gains on longer, more complex tasks. In response, they developed a new agentic eval framework, providing a much clearer picture of progress.
+As a rule, we do not take eval scores at face value until someone digs into the details of the eval and reads some transcripts. If grading is unfair, tasks are ambiguous, valid solutions are penalized, or the harness constrains the model, the eval should be revised.
+Step 8: Keep evaluation suites healthy long-term through open contribution and maintenance
+An eval suite is a living artifact that needs ongoing attention and clear ownership to remain useful.
+At Anthropic, we experimented with various approaches to eval maintenance. What proved most effective was establishing dedicated evals teams to own the core infrastructure, while domain experts and product teams contribute most eval tasksand run the evaluations themselves.
+For AI product teams, owning and iterating on evaluations should be as routine as maintaining unit tests. Teams can waste weeks on AI features that “work” in early testing but fail to meet unstated expectations that a well-designed eval would have surfaced early. Defining eval tasks is one of the best ways to stress-test whether the product requirements are concrete enough to start building.
+We recommend practicing eval-driven development: build evals to define planned capabilities before agents can fulfill them, then iterate until the agent performs well. Internally, we often build features that work “well enough” today but are bets on what models can do in a few months. Capability evals that start at a low pass rate make this visible. When a new model drops, running the suite quickly reveals which bets paid off.
+The people closest to product requirements and users are best positioned to define success. With current model capabilities, product managers, customer success managers, or salespeople can use Claude Code to contribute an eval task as a PR—let them! Or, even better, actively enable them.</p></div><div class="lang-cn-block"><ul><li>type: tool_calls</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>How evals fit with other methods for a holistic understanding of agents</h2></div><div class="lang-cn-block"><p>required:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Automated evaluations can be run against an agent in thousands of tasks without deploying to production or affecting real users. But this is just one of many ways to understand agent performance. A complete picture includes production monitoring, user feedback, A/B testing, manual transcript review, and systematic human evaluation.
+An overview of approaches for understanding AI agent performance</p></div><div class="lang-cn-block"><ul><li>{tool: verify_identity}</li><li>{tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}</li><li>{tool: send_confirmation}</li><li>type: transcript</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Faster iteration</li><li>Fully reproducible</li><li>No user impact</li><li>Can run on every commit</li><li>Tests scenarios at scale without requiring a prod deployment</li><li>Requires more up-front investment to build</li><li>Requires ongoing maintenance as product and model evolves to avoid drift</li><li>Can create false confidence if it doesn’t match real usage patterns</li><li>Reveals real user behavior at scale</li><li>Catches issues that synthetic evals miss</li><li>Provides ground truth on how agents actually perform</li><li>Reactive; problems reach users before you know about them</li><li>Signals can be noisy</li><li>Requires investment in instrumentation</li><li>Lacks ground truth for grading</li><li>Measures actual user outcomes (retention, task completion)</li><li>Controls for confounds</li><li>Scalable and systematic</li><li>Slow; days or weeks to reach significance and requires sufficient traffic</li><li>Only tests changes you deploy</li><li>Less signal on the underlying “why” for changes in metrics without being able to thoroughly review the transcripts</li><li>Surfaces problems you didn&#x27;t anticipate</li><li>Comes with real examples from actual human users</li><li>The feedback often correlates with product goals</li><li>Sparse and self-selected</li><li>Skews toward severe issues</li><li>Users rarely explainwhysomething failed</li><li>Not automated</li><li>Relying primarily on users to catch issues can have negative user impact</li><li>Builds intuition for failure modes</li><li>Catches subtle quality issues automated checks miss</li><li>Helps calibrate what &quot;good&quot; looks like and grasp details</li><li>Time-intensive</li><li>Doesn&#x27;t scale</li><li>Coverage is inconsistent</li><li>Reviewer fatigue or different reviewers can affect the signal quality</li><li>Typically only gives qualitative signal rather than clear quantitative grading</li><li>Gold-standard quality judgements from multiple human raters</li><li>Handles subjective or ambiguous tasks</li><li>Provides signal for improving model-based graders</li><li>Relatively expensive and slow turnaround</li><li>Hard to run frequently</li><li>Inter-rater disagreement requires reconciliation</li><li>Complex domains (legal, finance, healthcare) require human experts to conduct studies</li></ul></div><div class="lang-cn-block"><p>max_turns: 10
+tracked_metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>These methods map to different stages of agent development. Automated evals are especially useful pre-launch and in CI/CD, running on each agent change and model upgrade as the first line of defense against quality problems. Production monitoring kicks in post-launch to detect distribution drift and unanticipated real-world failures. A/B testing validates significant changes once you have sufficient traffic. User feedback and transcript review are ongoing practices to fill the gaps: triage feedback constantly, sample transcripts to read weekly, and dig deeper as needed. Reserve systematic human studies for calibrating LLM graders or evaluating subjective outputs where human consensus serves as the reference standard.
+The most effective teams combine these methods: automated evals for fast iteration, production monitoring for ground truth, and periodic human review for calibration.</p></div><div class="lang-cn-block"><ul><li>type: transcript</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Conclusion</h2></div><div class="lang-cn-block"><p>metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Teams without evals get bogged down in reactive loops—fixing one failure, creating another, unable to distinguish real regressions from noise. Teams that invest early find the opposite: development accelerates as failures become test cases, test cases prevent regressions, and metrics replace guesswork. Evals give the whole team a clear hill to climb, turning “the agent feels worse” into something actionable. The value compounds, but only if you treat evals as a core component, not an afterthought.
+The patterns vary by agent type, but the fundamentals described here are constant. Start early and don’t wait for the perfect suite. Source realistic tasks from the failures you see. Define unambiguous, robust success criteria. Design graders thoughtfully and combine multiple types. Make sure the problems are hard enough for the model. Iterate on the evaluations to improve their signal-to-noise ratio. Read the transcripts!
+AI agent evaluation is still a nascent, fast-evolving field. As agents take on longer tasks, collaborate in multi-agent systems, and handle increasingly subjective work, we will need to adapt our techniques. We’ll keep sharing best practices as we learn more.</p></div><div class="lang-cn-block"><ul><li>n_turns</li><li>n_toolcalls</li><li>n_total_tokens</li><li>type: latency</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Acknowledgements</h3></div><div class="lang-cn-block"><p>metrics:</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Written by Mikaela Grace, Jeremy Hadfield, Rodrigo Olivares, and Jiri De Jonghe. We&#x27;re also grateful to David Hershey, Gian Segato, Mike Merrill, Alex Shaw, Nicholas Carlini, Ethan Dixon, Pedram Navid, Jake Eaton, Alyssa Baum, Lina Tawfik, Karen Zhou, Alexander Bricken, Sam Kennedy, Robert Ying, and others for their contributions. Special thanks to the customers and partners we have learned from through collaborating on evals, including iGent, Cognition, Bolt, Sierra, Vals.ai, Macroscope, PromptLayer, Stripe, Shopify, the Terminal Bench team, and more. This work reflects the collective efforts of several teams who helped develop the practice of evaluations at Anthropic.</p></div><div class="lang-cn-block"><ul><li>time_to_first_token</li><li>output_tokens_per_sec</li><li>time_to_last_token</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Appendix: Eval frameworks</h2></div><div class="lang-cn-block"><p>与我们的编程智能体示例一样，此任务展示了多种评分器类型以供说明。在实践中，对话智能体评估通常使用基于模型的评分器来评估沟通质量和目标完成度，因为许多任务——如回答问题——可能有多种&quot;正确&quot;的解决方案。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Several open-source and commercial frameworks can help teams implement agent evaluations without building infrastructure from scratch. The right choice depends on your agent type, existing stack, and whether you need offline evaluation, production observability, or both.Harboris designed for running agents in containerized environments, with infrastructure for running trials at scale across cloud providers and a standardized format for defining tasks and graders. Popular benchmarks like Terminal-Bench 2.0 ship through the Harbor registry, making it easy to run established benchmarks along with custom eval suites.Braintrustis a platform that combines offline evaluation with production observability and experiment tracking—useful for teams that need to both iterate during development and monitor quality in production. Its <code class="inline">autoevals</code> library includes pre-built scorers for factuality, relevance, and other common dimensions.LangSmithoffers tracing, offline and online evaluations, and dataset management with tight integration into the LangChain ecosystem.Langfuseprovides similar capabilities as a self-hosted open-source alternative for teams with data residency requirements.
+Arizeoffers Phoenix, an open-source platform for LLM tracing, debugging, and offline or online evaluations, and AX, a SaaS offering that extends Phoenix for scale, optimization and monitoring.Many teams combine multiple tools, roll their own eval framework, or just use simple evaluation scripts as a starting point. We find that while frameworks can be a valuable way to accelerate progress and standardize, they’re only as good as the eval tasks you run through them. It’s often best to quickly pick a framework that fits your workflow, then invest your energy in the evals themselves by iterating on high-quality test cases and graders.</p></div><div class="lang-cn-block"><h3 id="heading-9">评估研究智能体</h3></div></div>
+<div class="lang-cn-block"><p>研究智能体收集、综合和分析信息，然后产生答案或报告等输出。与编程智能体中单元测试提供二元通过/失败信号不同，研究质量只能相对于任务来判断。什么算&quot;全面&quot;、&quot;来源可靠&quot;甚至&quot;正确&quot;取决于上下文：市场扫描、收购尽职调查和科学报告各自需要不同的标准。</p></div>
+<div class="lang-cn-block"><p>研究评估面临独特的挑战：专家可能对综合是否全面存在分歧，随着参考内容不断变化，真实答案也会转变，而更长、更开放式的输出创造了更多出错的空间。例如，像 BrowseComp 这样的基准测试检验 AI 智能体能否在开放网络的大海捞针中找到答案——问题被设计为容易验证但难以解决。</p></div>
+<div class="lang-cn-block"><p>构建研究智能体评估的一个策略是组合多种评分器类型。事实依据性检查（groundedness check）验证声明是否被检索到的来源支持，覆盖度检查（coverage check）定义好的答案必须包含的关键事实，来源质量检查（source quality check）确认所查阅的来源是权威的，而不仅仅是首先检索到的。对于有客观正确答案的任务（&quot;X 公司 Q3 收入是多少？&quot;），精确匹配即可。LLM 可以标记不被支持的声明和覆盖缺口，同时验证开放式综合的连贯性和完整性。</p></div>
+<div class="lang-cn-block"><p>鉴于研究质量的主观性质，基于 LLM 的评分标准应经常与专家人工判断进行校准，以有效地对这些智能体进行评分。</p></div>
+<div class="lang-cn-block"><h3 id="heading-10">计算机使用智能体</h3></div>
+<div class="lang-cn-block"><p>计算机使用智能体通过与人类相同的界面与软件交互——屏幕截图、鼠标点击、键盘输入和滚动——而不是通过 API 或代码执行。它们可以使用任何带有图形用户界面（GUI）的应用程序，从设计工具到遗留企业软件。评估需要在真实或沙箱化的环境中运行智能体，使其能够使用软件应用程序，并检查是否达到了预期结果。例如，WebArena 测试浏览器任务，使用 URL 和页面状态检查来验证智能体是否正确导航，并对修改数据的任务进行后端状态验证（确认订单确实被下了，而不仅仅是确认页面出现了）。OSWorld 将此扩展到完整的操作系统控制，带有在任务完成后检查各种结果的评估脚本：文件系统状态、应用配置、数据库内容和 UI 元素属性。</p></div>
+<div class="lang-cn-block"><p>浏览器使用智能体需要在 token 效率和延迟之间取得平衡。基于 DOM 的交互执行快速但消耗大量 token，而基于截图的交互较慢但更节省 token。例如，当要求 Claude 摘要 Wikipedia 时，从 DOM 中提取文本更高效。当在 Amazon 上寻找新的笔记本电脑外壳时，截图更高效（因为提取整个 DOM 非常消耗 token）。在我们的 Claude for Chrome 产品中，我们开发了评估来检查智能体是否为每个上下文选择了正确的工具。这使我们能够更快、更准确地完成基于浏览器的任务。</p></div>
+<div class="lang-cn-block"><h3 id="heading-11">如何理解智能体评估中的非确定性</h3></div>
+<div class="lang-cn-block"><p>无论智能体类型如何，智能体行为在不同运行之间都会变化，这使得评估结果比初看起来更难解读。每个任务有自己的成功率——一个任务可能是 90%，另一个可能是 50%——一个任务在一次评估运行中通过了，下次可能失败。有时，我们想要衡量的是智能体在一项任务中成功的频率（试验的比例）。</p></div>
+<div class="lang-cn-block"><p>两个指标有助于捕捉这种细微差别：</p></div>
+<div class="lang-cn-block"><p>pass@k 衡量智能体在 k 次尝试中至少获得一次正确解决方案的可能性。随着 k 增加，pass@k 分数上升：更多&quot;射门机会&quot;意味着至少 1 次成功的概率更高。50% pass@1 的分数意味着模型在评估中的首次尝试就能成功完成一半的任务。在编程中，我们通常最感兴趣的是智能体在第一次尝试中找到解决方案——pass@1。在其他情况下，提出多个解决方案是合理的，只要其中一个有效。</p></div>
+<div class="lang-cn-block"><p>pass^k 衡量所有 k 次试验都成功的概率。随着 k 增加，pass^k 下降，因为要求更多试验之间的一致性是一个更难达到的标准。如果你的智能体每次试验成功率为 75%，运行 3 次试验，全部通过的概率是 (0.75)³ ≈ 42%。这个指标对于面向用户的智能体尤其重要，因为用户期望每次都有可靠的行为。</p></div>
+<div class="lang-cn-block"><p>两个指标都有用，使用哪个取决于产品需求：pass@k 适用于一次成功就有价值的工具，pass^k 适用于一致性至关重要的智能体。</p></div>
+<div class="lang-cn-block"><h2 id="heading-12">从零到一：构建优秀智能体评估的路线图</h2></div>
+<div class="lang-cn-block"><p>本节提供了我们经过实践检验的建议，帮助你从没有评估到拥有可信赖的评估。将其视为评估驱动的智能体开发路线图：尽早定义成功、清晰衡量、持续迭代。</p></div>
+<div class="lang-cn-block"><h3 id="heading-13">为初始评估数据集收集任务</h3></div>
+<div class="lang-cn-block"><p><strong>步骤 0. 尽早开始</strong></p></div>
+<div class="lang-cn-block"><p>我们看到团队推迟构建评估，因为他们认为需要数百个任务。实际上，从真实故障中提取的 20-50 个简单任务就是一个很好的开始。毕竟，在智能体开发初期，系统的每次更改通常都有清晰、明显的影响，这种大的效应量意味着小样本量就足够了。更成熟的智能体可能需要更大、更难的评估来检测更小的效应，但最好在开始时采用 80/20 方法。等待越久，评估就越难构建。在早期，产品需求自然会转化为测试用例。等太久你就要从实时系统反向工程成功标准了。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 1. 从你已经在手动测试的内容开始</strong></p></div>
+<div class="lang-cn-block"><p>从开发过程中你运行的手动检查开始——你在每次发布前验证的行为以及终端用户尝试的常见任务。如果你已经在生产环境中，查看你的 bug 跟踪器和支持队列。将用户报告的故障转化为测试用例可以确保你的套件反映实际使用情况；按用户影响确定优先级可以帮助你把精力投入到最有价值的地方。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 2: 编写带有参考解决方案的明确任务</strong></p></div>
+<div class="lang-cn-block"><p>确保任务质量比看起来更难。一个好的任务是两个领域专家会独立得出相同的通过/失败结论的任务。他们自己能完成这个任务吗？如果不能，任务需要改进。任务规格说明中的歧义会变成指标中的噪音。基于模型的评分器的标准也是如此：模糊的评分标准会产生不一致的判断。</p></div>
+<div class="lang-cn-block"><p>每个任务应该能被正确遵循指令的智能体完成。这可能很微妙。例如，审计 Terminal-Bench 时发现，如果一个任务要求智能体编写脚本但没有指定文件路径，而测试假设了脚本的特定文件路径，智能体可能在没有自身过错的情况下失败。评分器检查的所有内容都应该在任务描述中明确；智能体不应该因为模糊的规格说明而失败。对于前沿模型，在多次试验中 0% 的通过率（即 0% pass@100）通常表明任务有问题，而不是智能体无能，这是需要仔细检查任务规格说明和评分器的信号。对于每个任务，创建一个参考解决方案是有用的：一个已知能通过所有评分器的有效输出。这证明任务是可解决的，并验证评分器是否正确配置。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 3: 构建平衡的问题集</strong></p></div>
+<div class="lang-cn-block"><p>同时测试行为应该发生和不应该发生的案例。单方面的评估会产生单方面的优化。例如，如果你只测试智能体是否在应该搜索时搜索，你可能最终得到一个几乎什么都搜索的智能体。尽量避免类别不平衡的评估（class-imbalanced eval）。我们在为 Claude.ai 中的网页搜索构建评估时亲身学到了这一点。挑战在于防止模型在不应该搜索时搜索，同时保留其在适当时进行深入研究的能力。团队构建了覆盖两个方向的评估：模型应该搜索的查询（如查找天气）和模型应该从现有知识回答的查询（如&quot;谁创立了 Apple？&quot;）。在触发不足（应该搜索时不搜索）和触发过度（不应该搜索时搜索）之间取得平衡是困难的，经过多轮对提示词和评估的改进才实现。随着更多示例问题出现，我们继续向评估中添加内容以改善覆盖范围。</p></div>
+<div class="lang-cn-block"><h3 id="heading-14">设计评估工具集和评分器</h3></div>
+<div class="lang-cn-block"><p><strong>步骤 4: 构建具有稳定环境的健壮评估工具集</strong></p></div>
+<div class="lang-cn-block"><p>评估中的智能体必须与生产中使用的智能体大致相同，并且环境本身不会引入额外的噪音，这一点至关重要。每次试验应该通过从干净的环境开始来&quot;隔离&quot;。运行之间不必要的共享状态（残留文件、缓存数据、资源耗尽）可能导致由基础设施不稳定而非智能体性能引起的关联故障。共享状态也可能人为地提高性能。例如，在一些内部评估中，我们观察到 Claude 通过检查之前试验的 git 历史记录在某些任务上获得了不公平的优势。如果多个不同的试验因为环境中的相同限制（如有限的 CPU 内存）而失败，这些试验不是独立的，因为它们受同一因素影响，评估结果就变得不可靠，无法衡量智能体性能。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 5: 精心设计评分器</strong></p></div>
+<div class="lang-cn-block"><p>如上所述，优秀的评估设计涉及为智能体和任务选择最佳评分器。我们建议尽可能选择确定性评分器，在需要或需要额外灵活性时使用 LLM 评分器，并审慎使用人工评分器进行额外验证。</p></div>
+<div class="lang-cn-block"><p>有一种常见的直觉是检查智能体是否遵循了非常具体的步骤，比如按正确顺序执行一系列工具调用。我们发现这种方法过于死板，会导致测试过于脆弱，因为智能体经常找到评估设计者未预料到的有效方法。为了避免不必要地惩罚创造性，通常更好地评估智能体产生了什么，而不是它采取了什么路径。</p></div>
+<div class="lang-cn-block"><p>对于包含多个组件的任务，设计部分得分机制。一个正确识别问题并验证客户身份但未能处理退款的支持智能体，比一个立即失败的智能体有意义地更好。在结果中表示这种成功程度的连续体很重要。</p></div>
+<div class="lang-cn-block"><p>模型评分通常需要仔细迭代以验证准确性。LLM-as-judge 评分器应与人类专家密切校准，以确信人工评分和模型评分之间几乎没有分歧。为了避免幻觉，给 LLM 一个退路，例如提供一个指令，当信息不足时返回&quot;未知&quot;。创建清晰、结构化的评分标准来评估任务的每个维度，然后用独立的 LLM-as-judge 评估每个维度，而不是用一个来评估所有维度，这也有所帮助。一旦系统变得健壮，偶尔使用人工审查就足够了。</p></div>
+<div class="lang-cn-block"><p>一些评估存在微妙的失败模式，即使智能体表现良好也会导致低分数，因为评分 bug、智能体工具集约束或歧义导致智能体无法解决任务。即使是成熟的团队也可能遗漏这些问题。例如，Opus 4.5 在 CORE-Bench 上最初得分 42%，直到一位 Anthropic 研究人员发现了多个问题：当期望&quot;96.124991…&quot;时，死板的评分将&quot;96.12&quot;视为错误；模糊的任务规格说明；以及不可能精确重现的随机任务。修复 bug 并使用约束更少的脚手架后，Opus 4.5 的分数跃升到 95%。类似地，METR 发现了他们的时限基准中几个配置错误的任务，这些任务要求智能体优化到一个规定的分数阈值，但评分要求超过该阈值。这惩罚了像 Claude 这样遵循指令的模型，而忽略规定目标的模型反而获得了更好的分数。仔细复查任务和评分器有助于避免这些问题。</p></div>
+<div class="lang-cn-block"><p>使你的评分器能抵抗绕过或攻击。智能体不应该能轻易&quot;欺骗&quot;评估。任务和评分器应该被设计成：通过评估真正需要解决问题，而不是利用未预期的漏洞。</p></div>
+<div class="lang-cn-block"><h3 id="heading-15">长期维护和使用评估</h3></div>
+<div class="lang-cn-block"><p><strong>步骤 6: 检查转录记录</strong></p></div>
+<div class="lang-cn-block"><p>除非你阅读大量试验的转录记录和评分，否则你不会知道评分器是否工作良好。在 Anthropic，我们投入了查看评估转录记录的工具，并定期花时间阅读它们。当任务失败时，转录记录告诉你智能体是犯了真正的错误，还是你的评分器拒绝了有效的解决方案。它还经常浮出关于智能体和评估行为的关键细节。</p></div>
+<div class="lang-cn-block"><p>失败应该是公平的：可以清楚地看出智能体错在哪里以及为什么。当分数不上升时，我们需要确信这是由于智能体性能而不是评估。阅读转录记录是验证你的评估是否在衡量真正重要的东西的方式，是智能体开发的关键技能。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 7: 监控能力评估饱和度</strong></p></div>
+<div class="lang-cn-block"><p>达到 100% 的评估可以跟踪回退但不提供改进信号。评估饱和（eval saturation）发生在智能体通过了所有可解决的任务，没有改进空间时。例如，SWE-Bench Verified 今年的分数从 30% 开始，前沿模型现在接近饱和，达到 &gt;80%。随着评估接近饱和，进展也会放缓，因为只剩下最困难的任务。这可能使结果具有欺骗性，因为大的能力改进表现为小的分数增长。例如，代码审查初创公司 Qodo 最初对 Opus 4.5 不以为然，因为他们的一次性编程评估没有捕捉到在更长、更复杂任务上的提升。作为回应，他们开发了一个新的智能体评估框架，提供了更清晰的进展图景。</p></div>
+<div class="lang-cn-block"><p>作为规则，在有人深入审查评估细节并阅读一些转录记录之前，我们不会直接采信评估分数。如果评分不公平、任务模糊、有效的解决方案受到惩罚，或者工具集约束了模型，就应该修订评估。</p></div>
+<div class="lang-cn-block"><p><strong>步骤 8: 通过开放贡献和维护长期保持评估套件的健康</strong></p></div>
+<div class="lang-cn-block"><p>评估套件是一个活的构件，需要持续的关注和明确的所有权才能保持有用。</p></div>
+<div class="lang-cn-block"><p>在 Anthropic，我们尝试了各种评估维护方法。最有效的是建立专门的评估团队来负责核心基础设施，同时由领域专家和产品团队贡献大部分评估任务并自行运行评估。</p></div>
+<div class="lang-cn-block"><p>对于 AI 产品团队，拥有和迭代评估应该像维护单元测试一样日常。团队可能会在 AI 功能上浪费数周时间，这些功能在早期测试中&quot;有效&quot;，但未能达到良好设计的评估本可以早期浮出的未声明期望。定义评估任务是压力测试产品需求是否足够具体以开始构建的最佳方式之一。</p></div>
+<div class="lang-cn-block"><p>我们建议实践评估驱动开发（eval-driven development）：在智能体能够实现之前构建评估来定义计划的能力，然后迭代直到智能体表现良好。在内部，我们经常构建今天&quot;足够好&quot;的功能，但这是对几个月后模型能做什么的押注。以低通过率开始的能力评估使这一点可见。当新模型发布时，运行套件可以快速揭示哪些押注得到了回报。</p></div>
+<div class="lang-cn-block"><p>最接近产品需求和用户的人最适合定义成功。在当前模型能力下，产品经理、客户成功经理或销售人员可以使用 Claude Code 以 PR 的形式贡献评估任务——让他们来做！或者，更好的是，积极赋能他们。</p></div>
+<div class="lang-cn-block"><h2 id="heading-16">评估如何与其他方法协同以全面理解智能体</h2></div>
+<div class="lang-cn-block"><p>自动化评估可以在数千个任务上针对智能体运行，无需部署到生产环境或影响真实用户。但这只是理解智能体性能的众多方式之一。完整的图景包括生产监控、用户反馈、A/B 测试、手动转录记录审查和系统化的人工评估。</p></div>
+<div class="lang-cn-block"><p><strong>理解 AI 智能体性能的方法概览</strong></p></div>
+<div class="lang-cn-block"><ul><li>更快的迭代</li></ul></div>
+<div class="lang-cn-block"><ul><li>完全可复现</li></ul></div>
+<div class="lang-cn-block"><ul><li>无用户影响</li></ul></div>
+<div class="lang-cn-block"><ul><li>可以在每次提交时运行</li></ul></div>
+<div class="lang-cn-block"><ul><li>无需生产部署即可大规模测试场景</li></ul></div>
+<div class="lang-cn-block"><ul><li>需要更多前期投入来构建</li></ul></div>
+<div class="lang-cn-block"><ul><li>需要持续维护以适应产品和模型的演进，避免漂移</li></ul></div>
+<div class="lang-cn-block"><ul><li>如果与真实使用模式不匹配，可能产生虚假的信心</li></ul></div>
+<div class="lang-cn-block"><ul><li>揭示大规模的真实用户行为</li></ul></div>
+<div class="lang-cn-block"><ul><li>捕获合成评估遗漏的问题</li></ul></div>
+<div class="lang-cn-block"><ul><li>提供智能体实际表现的真实数据</li></ul></div>
+<div class="lang-cn-block"><ul><li>被动的；问题在你知道之前就到达了用户</li></ul></div>
+<div class="lang-cn-block"><ul><li>信号可能有噪音</li></ul></div>
+<div class="lang-cn-block"><ul><li>需要投入工具化建设</li></ul></div>
+<div class="lang-cn-block"><ul><li>缺乏评分的真实标准</li></ul></div>
+<div class="lang-cn-block"><ul><li>衡量实际用户结果（留存率、任务完成率）</li></ul></div>
+<div class="lang-cn-block"><ul><li>控制混杂因素</li></ul></div>
+<div class="lang-cn-block"><ul><li>可扩展且系统化</li></ul></div>
+<div class="lang-cn-block"><ul><li>缓慢；需要数天或数周才能达到统计显著性，且需要足够的流量</li></ul></div>
+<div class="lang-cn-block"><ul><li>只测试你部署的变更</li></ul></div>
+<div class="lang-cn-block"><ul><li>如果不能彻底审查转录记录，对指标变化的底层&quot;原因&quot;信号较少</li></ul></div>
+<div class="lang-cn-block"><ul><li>浮出你未预料到的问题</li></ul></div>
+<div class="lang-cn-block"><ul><li>带有来自真实人类用户的实际示例</li></ul></div>
+<div class="lang-cn-block"><ul><li>反馈通常与产品目标相关</li></ul></div>
+<div class="lang-cn-block"><ul><li>稀疏且自选择</li></ul></div>
+<div class="lang-cn-block"><ul><li>偏向严重问题</li></ul></div>
+<div class="lang-cn-block"><ul><li>用户很少解释为什么某件事失败了</li></ul></div>
+<div class="lang-cn-block"><ul><li>非自动化</li></ul></div>
+<div class="lang-cn-block"><ul><li>主要依赖用户来发现问题可能对用户体验产生负面影响</li></ul></div>
+<div class="lang-cn-block"><ul><li>建立对失败模式的直觉</li></ul></div>
+<div class="lang-cn-block"><ul><li>捕获自动化检查遗漏的细微质量问题</li></ul></div>
+<div class="lang-cn-block"><ul><li>帮助校准什么是&quot;好的&quot;并把握细节</li></ul></div>
+<div class="lang-cn-block"><ul><li>耗时</li></ul></div>
+<div class="lang-cn-block"><ul><li>不可扩展</li></ul></div>
+<div class="lang-cn-block"><ul><li>覆盖范围不一致</li></ul></div>
+<div class="lang-cn-block"><ul><li>审查者疲劳或不同审查者可能影响信号质量</li></ul></div>
+<div class="lang-cn-block"><ul><li>通常只提供定性信号而非清晰的定量评分</li></ul></div>
+<div class="lang-cn-block"><ul><li>来自多个人类评分者的金标准质量判断</li></ul></div>
+<div class="lang-cn-block"><ul><li>处理主观或模糊的任务</li></ul></div>
+<div class="lang-cn-block"><ul><li>提供改进基于模型的评分器的信号</li></ul></div>
+<div class="lang-cn-block"><ul><li>相对昂贵且周转缓慢</li></ul></div>
+<div class="lang-cn-block"><ul><li>难以频繁运行</li></ul></div>
+<div class="lang-cn-block"><ul><li>评分者间不一致需要调和</li></ul></div>
+<div class="lang-cn-block"><ul><li>复杂领域（法律、金融、医疗）需要人类专家进行研究</li></ul></div>
+<div class="lang-cn-block"><p>这些方法对应于智能体开发的不同阶段。自动化评估在发布前和 CI/CD 中特别有用，在每次智能体变更和模型升级时运行，作为质量问题的第一道防线。生产监控在发布后启动，以检测分布漂移和未预料到的真实世界故障。A/B 测试在你有足够的流量时验证重大变更。用户反馈和转录记录审查是持续进行的做法，以填补空白：持续分类反馈，每周抽样阅读转录记录，并在需要时深入挖掘。将系统化的人工研究保留用于校准 LLM 评分器或评估以人类共识作为参考标准的主观输出。</p></div>
+<div class="lang-cn-block"><p>最有效的团队结合这些方法：自动化评估用于快速迭代，生产监控用于获取真实数据，定期人工审查用于校准。</p></div>
+<div class="lang-cn-block"><h2 id="heading-17">结论</h2></div>
+<div class="lang-cn-block"><p>没有评估的团队陷入被动循环——修复一个故障，又产生另一个，无法区分真正的回退和噪音。早期投入的团队发现了相反的结果：随着故障变成测试用例，测试用例防止回退，指标取代猜测，开发加速了。评估给整个团队一个清晰的攀爬目标，将&quot;智能体感觉变差了&quot;变成可操作的事情。价值会累积，但前提是你将评估视为核心组件，而不是事后才考虑。</p></div>
+<div class="lang-cn-block"><p>模式因智能体类型而异，但这里描述的基本原则是不变的。尽早开始，不要等待完美的套件。从你看到的故障中提取现实的任务。定义明确、健壮的成功标准。精心设计评分器并组合多种类型。确保问题对模型来说足够难。迭代评估以提高信噪比。阅读转录记录！</p></div>
+<div class="lang-cn-block"><p>AI 智能体评估仍是一个新兴的、快速发展的领域。随着智能体承担更长的任务、在多智能体系统中协作，并处理越来越主观的工作，我们将需要调整我们的技术。随着我们学到更多，我们将继续分享最佳实践。</p></div>
+<div class="lang-cn-block"><h3 id="heading-18">致谢</h3></div>
+<div class="lang-cn-block"><p>由 Mikaela Grace、Jeremy Hadfield、Rodrigo Olivares 和 Jiri De Jonghe 撰写。我们还要感谢 David Hershey、Gian Segato、Mike Merrill、Alex Shaw、Nicholas Carlini、Ethan Dixon、Pedram Navid、Jake Eaton、Alyssa Baum、Lina Tawfik、Karen Zhou、Alexander Bricken、Sam Kennedy、Robert Ying 等人的贡献。特别感谢通过评估合作让我们学到很多的客户和合作伙伴，包括 iGent、Cognition、Bolt、Sierra、Vals.ai、Macroscope、PromptLayer、Stripe、Shopify、Terminal Bench 团队等。这项工作反映了多个团队在 Anthropic 帮助发展评估实践的集体努力。</p></div>
+<div class="lang-cn-block"><h2 id="heading-19">附录：评估框架</h2></div>
+<div class="lang-cn-block"><p>多个开源和商业框架可以帮助团队实现智能体评估，无需从头构建基础设施。正确的选择取决于你的智能体类型、现有技术栈，以及你是否需要离线评估、生产可观测性或两者兼有。</p></div>
+<div class="lang-cn-block"><p>Harbor 专为在容器化环境中运行智能体而设计，提供跨云提供商大规模运行试验的基础设施，以及定义任务和评分器的标准化格式。像 Terminal-Bench 2.0 这样的热门基准通过 Harbor 注册表分发，使运行既定基准与自定义评估套件变得容易。</p></div>
+<div class="lang-cn-block"><p>Braintrust 是一个将离线评估与生产可观测性和实验跟踪相结合的平台——适用于需要在开发过程中迭代和在生产中监控质量的团队。它的 <code class="inline">autoevals</code> 库包含用于事实性、相关性和其他常见维度的预构建评分器。</p></div>
+<div class="lang-cn-block"><p>LangSmith 提供跟踪、离线和在线评估以及数据集管理，与 LangChain 生态系统紧密集成。</p></div>
+<div class="lang-cn-block"><p>Langfuse 以自托管开源替代方案的形式提供类似功能，适用于有数据驻留要求的团队。</p></div>
+<div class="lang-cn-block"><p>Arize 提供 Phoenix——一个用于 LLM 跟踪、调试以及离线或在线评估的开源平台，以及 AX——一个扩展 Phoenix 以实现规模化、优化和监控的 SaaS 产品。</p></div>
+<div class="lang-cn-block"><p>许多团队组合使用多种工具、构建自己的评估框架，或仅使用简单的评估脚本作为起点。我们发现，虽然框架可以是加速进展和标准化的宝贵方式，但它们的质量取决于你通过它们运行的评估任务。通常最好快速选择一个适合你工作流程的框架，然后将精力投入到评估本身——迭代高质量的测试用例和评分器。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><h2>引言</h2>
+<p>良好的评估帮助团队更有信心地发布 AI 智能体（Agent）。没有评估，团队很容易陷入被动循环——只在生产环境中发现问题，而修复一个故障又会引发新的问题。评估能在问题影响用户之前使其及行为变化变得可见，并且其价值会在智能体的整个生命周期中不断累积。</p>
+<p>正如我们在《构建有效的智能体》中所描述的，智能体在多个轮次中运行：调用工具、修改状态，并根据中间结果进行调整。正是这些使 AI 智能体有用的能力——自主性、智能性和灵活性——也使它们更难以评估。</p>
+<p>通过我们内部的工作以及与处于智能体开发前沿的客户合作，我们学会了如何为智能体设计更严格、更有用的评估方法。以下是在实际部署中，经过多种智能体架构和用例验证的有效做法。</p>
+<h2>评估的结构</h2>
+<p>评估（&quot;eval&quot;）是对 AI 系统的测试：给 AI 一个输入，然后对其输出应用评分逻辑来衡量成功程度。在本文中，我们聚焦于可以在开发过程中运行、无需真实用户参与的自动化评估（automated evals）。</p>
+<p>单轮评估（single-turn evaluation）很直接：一个提示词、一个响应、一套评分逻辑。对于早期的 LLM，单轮、非智能体的评估是主要的评估方法。随着 AI 能力的进步，多轮评估（multi-turn evaluation）变得越来越普遍。</p>
+<p>智能体评估（agent evaluation）则更加复杂。智能体在多个轮次中使用工具，修改环境中的状态并实时调整——这意味着错误可能传播并累积。前沿模型还可能找到超越静态评估限制的创造性解决方案。例如，Opus 4.5 解决了一个 𝜏2-bench 中关于预订航班的问题，方法是发现了政策中的一个漏洞。它按照评估的原始设定&quot;失败&quot;了，但实际上为用户找到了更好的解决方案。</p>
+<p>在构建智能体评估时，我们使用以下定义：</p>
+<ul>
+<li>任务（task）（也称为问题（problem）或测试用例（test case））是一个具有定义输入和成功标准的单一测试。</li>
+<li>对一个任务的每次尝试称为一次试验（trial）。由于模型输出在不同运行之间存在差异，我们运行多次试验以产生更一致的结果。</li>
+<li>评分器（grader）是对智能体表现的某个方面进行评分的逻辑。一个任务可以有多个评分器，每个评分器包含多个断言（有时称为检查（check））。</li>
+<li>转录记录（transcript）（也称为轨迹（trace）或轨迹（trajectory））是一次试验的完整记录，包括输出、工具调用、推理、中间结果和任何其他交互。对于 Anthropic API，这是评估运行结束时的完整 messages 数组——包含评估期间所有对 API 的调用和所有返回的响应。</li>
+<li>结果（outcome）是试验结束时环境中的最终状态。一个航班预订智能体可能在转录记录的末尾说&quot;您的航班已预订&quot;，但结果是环境的 SQL 数据库中是否存在预订记录。</li>
+<li>评估工具集（evaluation harness）是端到端运行评估的基础设施。它提供指令和工具，并发运行任务，记录所有步骤，对输出进行评分，并汇总结果。</li>
+<li>智能体工具集（agent harness）（或脚手架（scaffold））是使模型能够充当智能体的系统：它处理输入、编排工具调用并返回结果。当我们评估&quot;一个智能体&quot;时，我们评估的是工具集和模型协同工作。例如，Claude Code 是一个灵活的智能体工具集，我们通过 Agent SDK 使用其核心原语构建了我们的长时间运行智能体工具集。</li>
+<li>评估套件（evaluation suite）是一组旨在衡量特定能力或行为的任务集合。套件中的任务通常共享一个宽泛的目标。例如，客户支持评估套件可能测试退款、取消和升级处理。</li>
+</ul>
+<h2>为什么要构建评估？</h2>
+<p>当团队刚开始构建智能体时，通过手动测试、内部使用（dogfooding）和直觉的组合，他们往往能取得出人意料的进展。更严格的评估甚至可能看起来像是拖慢发布速度的开销。但在早期原型阶段之后，一旦智能体进入生产环境并开始扩展，没有评估的开发就会开始崩溃。</p>
+<p>崩溃点通常出现在用户报告智能体在更改后体验变差，而团队&quot;盲目飞行&quot;，除了猜测和反复验证外别无他法。缺乏评估时，调试是被动的：等待投诉、手动重现、修复 bug，然后祈祷没有其他地方发生回退。团队无法区分真正的回退和噪音，无法在发布前自动针对数百个场景测试变更，也无法衡量改进。</p>
+<p>我们见过这种演变反复上演。例如，Claude Code 最初基于 Anthropic 员工和外部用户的反馈进行快速迭代。后来我们添加了评估——首先针对简洁性和文件编辑等狭窄领域，然后针对过度工程化等更复杂的行为。这些评估帮助识别问题、指导改进，并聚焦研究与产品的协作。结合生产监控、A/B 测试、用户研究等，评估为在 Claude Code 扩展过程中持续改进提供了信号。</p>
+<p>在智能体生命周期的任何阶段编写评估都是有用的。早期，评估迫使产品团队明确智能体的成功意味着什么；后期，它们帮助维持一致的质量标准。</p>
+<p>Descript 的智能体帮助用户编辑视频，因此他们围绕成功编辑工作流的三个维度构建了评估：不破坏原有内容、完成用户的请求、并且做得好。他们从手动评分演进到由产品团队定义标准的 LLM 评分器配合定期人工校准，现在定期运行两套独立的套件分别用于质量基准测试和回归测试。BoltAI 团队在已经拥有广泛使用的智能体之后才开始构建评估。在 3 个月内，他们构建了一个评估系统，该系统运行智能体并使用静态分析对输出进行评分，使用浏览器智能体测试应用，并使用 LLM 裁判来评估指令遵循等行为。</p>
+<p>一些团队在开发初期就创建评估；另一些则在扩展阶段、评估成为改进智能体的瓶颈时才添加。评估在智能体开发初期特别有用，可以显式编码预期行为。两个阅读相同初始规格说明的工程师可能对 AI 应该如何处理边缘情况有不同的理解。评估套件可以解决这种歧义。无论何时创建，评估都有助于加速开发。</p>
+<p>评估还影响你采用新模型的速度。当更强大的模型发布时，没有评估的团队面临数周的测试，而拥有评估的竞争对手可以快速确定模型的优势、调整提示词，并在数天内完成升级。</p>
+<p>一旦评估存在，你就能免费获得基线和回归测试：延迟、token 使用量、每任务成本和错误率可以在一组静态任务上进行跟踪。评估还可以成为产品和研究团队之间最高带宽的沟通渠道，定义研究人员可以优化的指标。显然，评估的价值远不止于跟踪回退和改进。由于成本是前期可见的，而收益是后来累积的，其累积价值很容易被忽视。</p>
+<h2>如何评估 AI 智能体</h2>
+<p>我们看到今天有几种常见的智能体类型被大规模部署，包括编程智能体、研究智能体、计算机使用智能体和对话智能体。每种类型可能部署在各种行业中，但它们可以使用类似的技术进行评估。你不需要从零开始发明评估方法。以下章节描述了几种智能体类型的成熟技术。将这些方法作为基础，然后扩展到你的领域。</p>
+<h3>智能体评分器类型</h3>
+<p>智能体评估通常结合三种类型的评分器：基于代码的、基于模型的和人工的。每个评分器评估转录记录或结果的某个部分。有效评估设计的一个关键组成部分是为任务选择合适的评分器。</p>
+<p><strong>基于代码的评分器（Code-based graders）</strong></p>
+<p><strong>基于模型的评分器（Model-based graders）</strong></p>
+<ul>
+<li>基于评分标准的评分（Rubric-based scoring）</li>
+<li>自然语言断言（Natural language assertions）</li>
+<li>成对比较（Pairwise comparison）</li>
+<li>基于参考的评估（Reference-based evaluation）</li>
+<li>多裁判共识（Multi-judge consensus）</li>
+<li>灵活</li>
+<li>可扩展</li>
+<li>捕捉细微差别</li>
+<li>处理开放式任务</li>
+<li>处理自由格式输出</li>
+<li>非确定性</li>
+<li>比基于代码的评分器更昂贵</li>
+<li>需要与人工评分器校准以确保准确性</li>
+</ul>
+<p><strong>人工评分器（Human graders）</strong></p>
+<ul>
+<li>领域专家审查（SME review）</li>
+<li>众包判断（Crowdsourced judgment）</li>
+<li>抽样检查（Spot-check sampling）</li>
+<li>A/B 测试</li>
+<li>标注者间一致性（Inter-annotator agreement）</li>
+<li>金标准质量</li>
+<li>匹配专家用户判断</li>
+<li>用于校准基于模型的评分器</li>
+<li>昂贵</li>
+<li>缓慢</li>
+<li>通常需要大规模的人类专家参与</li>
+</ul>
+<p>对于每个任务，评分可以是加权的（组合评分器分数必须达到阈值）、二元的（所有评分器必须通过）或混合的。</p>
+<h3>能力评估与回归评估</h3>
+<p><strong>能力评估（Capability eval）</strong> 或&quot;质量评估&quot;问的是：&quot;这个智能体能做好什么？&quot;它们应该从较低的通过率开始，针对智能体难以完成的任务，给团队一个可以努力攀爬的山坡。</p>
+<p><strong>回归评估（Regression eval）</strong> 问的是：&quot;智能体是否仍然能处理它以前能做的所有任务？&quot;应该有接近 100% 的通过率。它们防止退化，因为分数下降表明某些东西出了问题需要改进。当团队在能力评估上不断攀爬时，同时运行回归评估也很重要，以确保更改不会在其他地方引发问题。</p>
+<p>在智能体发布和优化后，高通过率的能力评估可以&quot;毕业&quot;成为回归套件，持续运行以捕获任何漂移。曾经衡量&quot;我们能做这件事吗？&quot;的任务转而衡量&quot;我们还能可靠地做这件事吗？&quot;</p>
+<h3>评估编程智能体</h3>
+<p>编程智能体编写、测试和调试代码，像人类开发者一样浏览代码库和运行命令。现代编程智能体的有效评估通常依赖于明确指定的任务、稳定的测试环境和对生成代码的全面测试。</p>
+<p>确定性评分器对编程智能体来说是天然的选择，因为软件通常很容易评估：代码是否运行、测试是否通过？两个广泛使用的编程智能体基准测试——SWE-bench Verified 和 Terminal-Bench——都遵循这种方法。SWE-bench Verified 给智能体来自热门 Python 仓库的 GitHub issue，通过运行测试套件来评估解决方案；只有修复了失败的测试且没有破坏现有测试的解决方案才算通过。LLM 在这个评估上仅一年内就从 40% 进步到 &gt;80%。Terminal-Bench 走了不同的路线：它测试端到端的技术任务，例如从源代码构建 Linux 内核或训练 ML 模型。</p>
+<p>一旦你有了一组用于验证编程任务关键结果的通过/失败测试，对转录记录进行评分通常也是有用的。例如，基于启发式的代码质量规则可以根据不仅仅是测试通过来评估生成的代码，带有清晰评分标准的基于模型的评分器可以评估智能体如何调用工具或与用户交互等行为。</p>
+<p><strong>示例：编程智能体的理论评估</strong></p>
+<p>考虑一个编程任务，智能体必须修复一个认证绕过漏洞。如下方的说明性 YAML 文件所示，可以使用评分器和指标来评估此智能体。</p>
+<pre><code class="language-">task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:
+    - type: deterministic_tests
+      required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]
+    - type: llm_rubric
+      rubric: prompts/code_quality.md
+    - type: static_analysis
+      commands: [ruff, mypy, bandit]
+    - type: state_check
+      expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}
+    - type: tool_calls
+      required:
+        - {tool: read_file, params: {path: &quot;src/auth/*&quot;}}
+        - {tool: edit_file}
+        - {tool: run_tests}
+  tracked_metrics:
+    - type: transcript
+      metrics:
+        - n_turns
+        - n_toolcalls
+        - n_total_tokens
+    - type: latency
+      metrics:
+        - time_to_first_token
+        - output_tokens_per_sec
+        - time_to_last_token</code></pre>
+<p>task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:</p>
+<ul>
+<li>type: deterministic_tests</li>
+</ul>
+<p>required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]</p>
+<ul>
+<li>type: llm_rubric</li>
+</ul>
+<p>rubric: prompts/code_quality.md</p>
+<ul>
+<li>type: static_analysis</li>
+</ul>
+<p>commands: [ruff, mypy, bandit]</p>
+<ul>
+<li>type: state_check</li>
+</ul>
+<p>expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}</p>
+<ul>
+<li>type: tool_calls</li>
+</ul>
+<p>required:</p>
+<ul>
+<li>{tool: read_file, params: {path: &quot;src/auth/*&quot;}}</li>
+<li>{tool: edit_file}</li>
+<li>{tool: run_tests}</li>
+</ul>
+<p>tracked_metrics:</p>
+<ul>
+<li>type: transcript</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>n_turns</li>
+<li>n_toolcalls</li>
+<li>n_total_tokens</li>
+<li>type: latency</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>time_to_first_token</li>
+<li>output_tokens_per_sec</li>
+<li>time_to_last_token</li>
+</ul>
+<p>注意，此示例展示了所有可用评分器的完整范围以供说明。在实践中，编程评估通常依赖单元测试来验证正确性，以及 LLM 评分标准来评估整体代码质量，仅在需要时才添加额外的评分器和指标。</p>
+<h3>评估对话智能体</h3>
+<p>对话智能体在支持、销售或辅导等领域与用户交互。与传统聊天机器人不同，它们维护状态、使用工具，并在对话过程中采取行动。虽然编程和研究智能体也可能涉及与用户的多轮交互，但对话智能体呈现了一个独特的挑战：交互本身的质量是你要评估的一部分。对话智能体的有效评估通常依赖于可验证的最终状态结果和同时捕捉任务完成度和交互质量的评分标准。与大多数其他评估不同，它们通常需要第二个 LLM 来模拟用户。我们在对齐审计智能体中使用这种方法，通过扩展的对抗性对话来压力测试模型。</p>
+<p>对话智能体的成功可以是多维度的：工单是否已解决（状态检查），是否在 &lt;10 轮内完成（转录约束），语气是否恰当（LLM 评分标准）？两个纳入多维度评估的基准是 τ-Bench 及其后继者 τ2-Bench。这些基准模拟跨领域的多轮交互，如零售支持和航班预订，其中一个模型扮演用户角色，而智能体导航真实场景。</p>
+<p><strong>示例：对话智能体的理论评估</strong></p>
+<p>考虑一个支持任务，智能体必须为一位沮丧的客户处理退款。</p>
+<pre><code class="language-">graders:
+  - type: llm_rubric
+    rubric: prompts/support_quality.md
+    assertions:
+      - &quot;Agent showed empathy for customer&#x27;s frustration&quot;
+      - &quot;Resolution was clearly explained&quot;
+      - &quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;
+  - type: state_check
+    expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}
+  - type: tool_calls
+    required:
+      - {tool: verify_identity}
+      - {tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}
+      - {tool: send_confirmation}
+  - type: transcript
+    max_turns: 10
+tracked_metrics:
+  - type: transcript
+    metrics:
+      - n_turns
+      - n_toolcalls
+      - n_total_tokens
+  - type: latency
+    metrics:
+      - time_to_first_token
+      - output_tokens_per_sec
+      - time_to_last_token</code></pre>
+<p>graders:</p>
+<ul>
+<li>type: llm_rubric</li>
+</ul>
+<p>rubric: prompts/support_quality.md
+    assertions:</p>
+<ul>
+<li>&quot;Agent showed empathy for customer&#x27;s frustration&quot;</li>
+<li>&quot;Resolution was clearly explained&quot;</li>
+<li>&quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;</li>
+<li>type: state_check</li>
+</ul>
+<p>expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}</p>
+<ul>
+<li>type: tool_calls</li>
+</ul>
+<p>required:</p>
+<ul>
+<li>{tool: verify_identity}</li>
+<li>{tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}</li>
+<li>{tool: send_confirmation}</li>
+<li>type: transcript</li>
+</ul>
+<p>max_turns: 10
+tracked_metrics:</p>
+<ul>
+<li>type: transcript</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>n_turns</li>
+<li>n_toolcalls</li>
+<li>n_total_tokens</li>
+<li>type: latency</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>time_to_first_token</li>
+<li>output_tokens_per_sec</li>
+<li>time_to_last_token</li>
+</ul>
+<p>与我们的编程智能体示例一样，此任务展示了多种评分器类型以供说明。在实践中，对话智能体评估通常使用基于模型的评分器来评估沟通质量和目标完成度，因为许多任务——如回答问题——可能有多种&quot;正确&quot;的解决方案。</p>
+<h3>评估研究智能体</h3>
+<p>研究智能体收集、综合和分析信息，然后产生答案或报告等输出。与编程智能体中单元测试提供二元通过/失败信号不同，研究质量只能相对于任务来判断。什么算&quot;全面&quot;、&quot;来源可靠&quot;甚至&quot;正确&quot;取决于上下文：市场扫描、收购尽职调查和科学报告各自需要不同的标准。</p>
+<p>研究评估面临独特的挑战：专家可能对综合是否全面存在分歧，随着参考内容不断变化，真实答案也会转变，而更长、更开放式的输出创造了更多出错的空间。例如，像 BrowseComp 这样的基准测试检验 AI 智能体能否在开放网络的大海捞针中找到答案——问题被设计为容易验证但难以解决。</p>
+<p>构建研究智能体评估的一个策略是组合多种评分器类型。事实依据性检查（groundedness check）验证声明是否被检索到的来源支持，覆盖度检查（coverage check）定义好的答案必须包含的关键事实，来源质量检查（source quality check）确认所查阅的来源是权威的，而不仅仅是首先检索到的。对于有客观正确答案的任务（&quot;X 公司 Q3 收入是多少？&quot;），精确匹配即可。LLM 可以标记不被支持的声明和覆盖缺口，同时验证开放式综合的连贯性和完整性。</p>
+<p>鉴于研究质量的主观性质，基于 LLM 的评分标准应经常与专家人工判断进行校准，以有效地对这些智能体进行评分。</p>
+<h3>计算机使用智能体</h3>
+<p>计算机使用智能体通过与人类相同的界面与软件交互——屏幕截图、鼠标点击、键盘输入和滚动——而不是通过 API 或代码执行。它们可以使用任何带有图形用户界面（GUI）的应用程序，从设计工具到遗留企业软件。评估需要在真实或沙箱化的环境中运行智能体，使其能够使用软件应用程序，并检查是否达到了预期结果。例如，WebArena 测试浏览器任务，使用 URL 和页面状态检查来验证智能体是否正确导航，并对修改数据的任务进行后端状态验证（确认订单确实被下了，而不仅仅是确认页面出现了）。OSWorld 将此扩展到完整的操作系统控制，带有在任务完成后检查各种结果的评估脚本：文件系统状态、应用配置、数据库内容和 UI 元素属性。</p>
+<p>浏览器使用智能体需要在 token 效率和延迟之间取得平衡。基于 DOM 的交互执行快速但消耗大量 token，而基于截图的交互较慢但更节省 token。例如，当要求 Claude 摘要 Wikipedia 时，从 DOM 中提取文本更高效。当在 Amazon 上寻找新的笔记本电脑外壳时，截图更高效（因为提取整个 DOM 非常消耗 token）。在我们的 Claude for Chrome 产品中，我们开发了评估来检查智能体是否为每个上下文选择了正确的工具。这使我们能够更快、更准确地完成基于浏览器的任务。</p>
+<h3>如何理解智能体评估中的非确定性</h3>
+<p>无论智能体类型如何，智能体行为在不同运行之间都会变化，这使得评估结果比初看起来更难解读。每个任务有自己的成功率——一个任务可能是 90%，另一个可能是 50%——一个任务在一次评估运行中通过了，下次可能失败。有时，我们想要衡量的是智能体在一项任务中成功的频率（试验的比例）。</p>
+<p>两个指标有助于捕捉这种细微差别：</p>
+<p>pass@k 衡量智能体在 k 次尝试中至少获得一次正确解决方案的可能性。随着 k 增加，pass@k 分数上升：更多&quot;射门机会&quot;意味着至少 1 次成功的概率更高。50% pass@1 的分数意味着模型在评估中的首次尝试就能成功完成一半的任务。在编程中，我们通常最感兴趣的是智能体在第一次尝试中找到解决方案——pass@1。在其他情况下，提出多个解决方案是合理的，只要其中一个有效。</p>
+<p>pass^k 衡量所有 k 次试验都成功的概率。随着 k 增加，pass^k 下降，因为要求更多试验之间的一致性是一个更难达到的标准。如果你的智能体每次试验成功率为 75%，运行 3 次试验，全部通过的概率是 (0.75)³ ≈ 42%。这个指标对于面向用户的智能体尤其重要，因为用户期望每次都有可靠的行为。</p>
+<p>两个指标都有用，使用哪个取决于产品需求：pass@k 适用于一次成功就有价值的工具，pass^k 适用于一致性至关重要的智能体。</p>
+<h2>从零到一：构建优秀智能体评估的路线图</h2>
+<p>本节提供了我们经过实践检验的建议，帮助你从没有评估到拥有可信赖的评估。将其视为评估驱动的智能体开发路线图：尽早定义成功、清晰衡量、持续迭代。</p>
+<h3>为初始评估数据集收集任务</h3>
+<p><strong>步骤 0. 尽早开始</strong></p>
+<p>我们看到团队推迟构建评估，因为他们认为需要数百个任务。实际上，从真实故障中提取的 20-50 个简单任务就是一个很好的开始。毕竟，在智能体开发初期，系统的每次更改通常都有清晰、明显的影响，这种大的效应量意味着小样本量就足够了。更成熟的智能体可能需要更大、更难的评估来检测更小的效应，但最好在开始时采用 80/20 方法。等待越久，评估就越难构建。在早期，产品需求自然会转化为测试用例。等太久你就要从实时系统反向工程成功标准了。</p>
+<p><strong>步骤 1. 从你已经在手动测试的内容开始</strong></p>
+<p>从开发过程中你运行的手动检查开始——你在每次发布前验证的行为以及终端用户尝试的常见任务。如果你已经在生产环境中，查看你的 bug 跟踪器和支持队列。将用户报告的故障转化为测试用例可以确保你的套件反映实际使用情况；按用户影响确定优先级可以帮助你把精力投入到最有价值的地方。</p>
+<p><strong>步骤 2: 编写带有参考解决方案的明确任务</strong></p>
+<p>确保任务质量比看起来更难。一个好的任务是两个领域专家会独立得出相同的通过/失败结论的任务。他们自己能完成这个任务吗？如果不能，任务需要改进。任务规格说明中的歧义会变成指标中的噪音。基于模型的评分器的标准也是如此：模糊的评分标准会产生不一致的判断。</p>
+<p>每个任务应该能被正确遵循指令的智能体完成。这可能很微妙。例如，审计 Terminal-Bench 时发现，如果一个任务要求智能体编写脚本但没有指定文件路径，而测试假设了脚本的特定文件路径，智能体可能在没有自身过错的情况下失败。评分器检查的所有内容都应该在任务描述中明确；智能体不应该因为模糊的规格说明而失败。对于前沿模型，在多次试验中 0% 的通过率（即 0% pass@100）通常表明任务有问题，而不是智能体无能，这是需要仔细检查任务规格说明和评分器的信号。对于每个任务，创建一个参考解决方案是有用的：一个已知能通过所有评分器的有效输出。这证明任务是可解决的，并验证评分器是否正确配置。</p>
+<p><strong>步骤 3: 构建平衡的问题集</strong></p>
+<p>同时测试行为应该发生和不应该发生的案例。单方面的评估会产生单方面的优化。例如，如果你只测试智能体是否在应该搜索时搜索，你可能最终得到一个几乎什么都搜索的智能体。尽量避免类别不平衡的评估（class-imbalanced eval）。我们在为 Claude.ai 中的网页搜索构建评估时亲身学到了这一点。挑战在于防止模型在不应该搜索时搜索，同时保留其在适当时进行深入研究的能力。团队构建了覆盖两个方向的评估：模型应该搜索的查询（如查找天气）和模型应该从现有知识回答的查询（如&quot;谁创立了 Apple？&quot;）。在触发不足（应该搜索时不搜索）和触发过度（不应该搜索时搜索）之间取得平衡是困难的，经过多轮对提示词和评估的改进才实现。随着更多示例问题出现，我们继续向评估中添加内容以改善覆盖范围。</p>
+<h3>设计评估工具集和评分器</h3>
+<p><strong>步骤 4: 构建具有稳定环境的健壮评估工具集</strong></p>
+<p>评估中的智能体必须与生产中使用的智能体大致相同，并且环境本身不会引入额外的噪音，这一点至关重要。每次试验应该通过从干净的环境开始来&quot;隔离&quot;。运行之间不必要的共享状态（残留文件、缓存数据、资源耗尽）可能导致由基础设施不稳定而非智能体性能引起的关联故障。共享状态也可能人为地提高性能。例如，在一些内部评估中，我们观察到 Claude 通过检查之前试验的 git 历史记录在某些任务上获得了不公平的优势。如果多个不同的试验因为环境中的相同限制（如有限的 CPU 内存）而失败，这些试验不是独立的，因为它们受同一因素影响，评估结果就变得不可靠，无法衡量智能体性能。</p>
+<p><strong>步骤 5: 精心设计评分器</strong></p>
+<p>如上所述，优秀的评估设计涉及为智能体和任务选择最佳评分器。我们建议尽可能选择确定性评分器，在需要或需要额外灵活性时使用 LLM 评分器，并审慎使用人工评分器进行额外验证。</p>
+<p>有一种常见的直觉是检查智能体是否遵循了非常具体的步骤，比如按正确顺序执行一系列工具调用。我们发现这种方法过于死板，会导致测试过于脆弱，因为智能体经常找到评估设计者未预料到的有效方法。为了避免不必要地惩罚创造性，通常更好地评估智能体产生了什么，而不是它采取了什么路径。</p>
+<p>对于包含多个组件的任务，设计部分得分机制。一个正确识别问题并验证客户身份但未能处理退款的支持智能体，比一个立即失败的智能体有意义地更好。在结果中表示这种成功程度的连续体很重要。</p>
+<p>模型评分通常需要仔细迭代以验证准确性。LLM-as-judge 评分器应与人类专家密切校准，以确信人工评分和模型评分之间几乎没有分歧。为了避免幻觉，给 LLM 一个退路，例如提供一个指令，当信息不足时返回&quot;未知&quot;。创建清晰、结构化的评分标准来评估任务的每个维度，然后用独立的 LLM-as-judge 评估每个维度，而不是用一个来评估所有维度，这也有所帮助。一旦系统变得健壮，偶尔使用人工审查就足够了。</p>
+<p>一些评估存在微妙的失败模式，即使智能体表现良好也会导致低分数，因为评分 bug、智能体工具集约束或歧义导致智能体无法解决任务。即使是成熟的团队也可能遗漏这些问题。例如，Opus 4.5 在 CORE-Bench 上最初得分 42%，直到一位 Anthropic 研究人员发现了多个问题：当期望&quot;96.124991…&quot;时，死板的评分将&quot;96.12&quot;视为错误；模糊的任务规格说明；以及不可能精确重现的随机任务。修复 bug 并使用约束更少的脚手架后，Opus 4.5 的分数跃升到 95%。类似地，METR 发现了他们的时限基准中几个配置错误的任务，这些任务要求智能体优化到一个规定的分数阈值，但评分要求超过该阈值。这惩罚了像 Claude 这样遵循指令的模型，而忽略规定目标的模型反而获得了更好的分数。仔细复查任务和评分器有助于避免这些问题。</p>
+<p>使你的评分器能抵抗绕过或攻击。智能体不应该能轻易&quot;欺骗&quot;评估。任务和评分器应该被设计成：通过评估真正需要解决问题，而不是利用未预期的漏洞。</p>
+<h3>长期维护和使用评估</h3>
+<p><strong>步骤 6: 检查转录记录</strong></p>
+<p>除非你阅读大量试验的转录记录和评分，否则你不会知道评分器是否工作良好。在 Anthropic，我们投入了查看评估转录记录的工具，并定期花时间阅读它们。当任务失败时，转录记录告诉你智能体是犯了真正的错误，还是你的评分器拒绝了有效的解决方案。它还经常浮出关于智能体和评估行为的关键细节。</p>
+<p>失败应该是公平的：可以清楚地看出智能体错在哪里以及为什么。当分数不上升时，我们需要确信这是由于智能体性能而不是评估。阅读转录记录是验证你的评估是否在衡量真正重要的东西的方式，是智能体开发的关键技能。</p>
+<p><strong>步骤 7: 监控能力评估饱和度</strong></p>
+<p>达到 100% 的评估可以跟踪回退但不提供改进信号。评估饱和（eval saturation）发生在智能体通过了所有可解决的任务，没有改进空间时。例如，SWE-Bench Verified 今年的分数从 30% 开始，前沿模型现在接近饱和，达到 &gt;80%。随着评估接近饱和，进展也会放缓，因为只剩下最困难的任务。这可能使结果具有欺骗性，因为大的能力改进表现为小的分数增长。例如，代码审查初创公司 Qodo 最初对 Opus 4.5 不以为然，因为他们的一次性编程评估没有捕捉到在更长、更复杂任务上的提升。作为回应，他们开发了一个新的智能体评估框架，提供了更清晰的进展图景。</p>
+<p>作为规则，在有人深入审查评估细节并阅读一些转录记录之前，我们不会直接采信评估分数。如果评分不公平、任务模糊、有效的解决方案受到惩罚，或者工具集约束了模型，就应该修订评估。</p>
+<p><strong>步骤 8: 通过开放贡献和维护长期保持评估套件的健康</strong></p>
+<p>评估套件是一个活的构件，需要持续的关注和明确的所有权才能保持有用。</p>
+<p>在 Anthropic，我们尝试了各种评估维护方法。最有效的是建立专门的评估团队来负责核心基础设施，同时由领域专家和产品团队贡献大部分评估任务并自行运行评估。</p>
+<p>对于 AI 产品团队，拥有和迭代评估应该像维护单元测试一样日常。团队可能会在 AI 功能上浪费数周时间，这些功能在早期测试中&quot;有效&quot;，但未能达到良好设计的评估本可以早期浮出的未声明期望。定义评估任务是压力测试产品需求是否足够具体以开始构建的最佳方式之一。</p>
+<p>我们建议实践评估驱动开发（eval-driven development）：在智能体能够实现之前构建评估来定义计划的能力，然后迭代直到智能体表现良好。在内部，我们经常构建今天&quot;足够好&quot;的功能，但这是对几个月后模型能做什么的押注。以低通过率开始的能力评估使这一点可见。当新模型发布时，运行套件可以快速揭示哪些押注得到了回报。</p>
+<p>最接近产品需求和用户的人最适合定义成功。在当前模型能力下，产品经理、客户成功经理或销售人员可以使用 Claude Code 以 PR 的形式贡献评估任务——让他们来做！或者，更好的是，积极赋能他们。</p>
+<h2>评估如何与其他方法协同以全面理解智能体</h2>
+<p>自动化评估可以在数千个任务上针对智能体运行，无需部署到生产环境或影响真实用户。但这只是理解智能体性能的众多方式之一。完整的图景包括生产监控、用户反馈、A/B 测试、手动转录记录审查和系统化的人工评估。</p>
+<p><strong>理解 AI 智能体性能的方法概览</strong></p>
+<ul>
+<li>更快的迭代</li>
+<li>完全可复现</li>
+<li>无用户影响</li>
+<li>可以在每次提交时运行</li>
+<li>无需生产部署即可大规模测试场景</li>
+<li>需要更多前期投入来构建</li>
+<li>需要持续维护以适应产品和模型的演进，避免漂移</li>
+<li>如果与真实使用模式不匹配，可能产生虚假的信心</li>
+<li>揭示大规模的真实用户行为</li>
+<li>捕获合成评估遗漏的问题</li>
+<li>提供智能体实际表现的真实数据</li>
+<li>被动的；问题在你知道之前就到达了用户</li>
+<li>信号可能有噪音</li>
+<li>需要投入工具化建设</li>
+<li>缺乏评分的真实标准</li>
+<li>衡量实际用户结果（留存率、任务完成率）</li>
+<li>控制混杂因素</li>
+<li>可扩展且系统化</li>
+<li>缓慢；需要数天或数周才能达到统计显著性，且需要足够的流量</li>
+<li>只测试你部署的变更</li>
+<li>如果不能彻底审查转录记录，对指标变化的底层&quot;原因&quot;信号较少</li>
+<li>浮出你未预料到的问题</li>
+<li>带有来自真实人类用户的实际示例</li>
+<li>反馈通常与产品目标相关</li>
+<li>稀疏且自选择</li>
+<li>偏向严重问题</li>
+<li>用户很少解释为什么某件事失败了</li>
+<li>非自动化</li>
+<li>主要依赖用户来发现问题可能对用户体验产生负面影响</li>
+<li>建立对失败模式的直觉</li>
+<li>捕获自动化检查遗漏的细微质量问题</li>
+<li>帮助校准什么是&quot;好的&quot;并把握细节</li>
+<li>耗时</li>
+<li>不可扩展</li>
+<li>覆盖范围不一致</li>
+<li>审查者疲劳或不同审查者可能影响信号质量</li>
+<li>通常只提供定性信号而非清晰的定量评分</li>
+<li>来自多个人类评分者的金标准质量判断</li>
+<li>处理主观或模糊的任务</li>
+<li>提供改进基于模型的评分器的信号</li>
+<li>相对昂贵且周转缓慢</li>
+<li>难以频繁运行</li>
+<li>评分者间不一致需要调和</li>
+<li>复杂领域（法律、金融、医疗）需要人类专家进行研究</li>
+</ul>
+<p>这些方法对应于智能体开发的不同阶段。自动化评估在发布前和 CI/CD 中特别有用，在每次智能体变更和模型升级时运行，作为质量问题的第一道防线。生产监控在发布后启动，以检测分布漂移和未预料到的真实世界故障。A/B 测试在你有足够的流量时验证重大变更。用户反馈和转录记录审查是持续进行的做法，以填补空白：持续分类反馈，每周抽样阅读转录记录，并在需要时深入挖掘。将系统化的人工研究保留用于校准 LLM 评分器或评估以人类共识作为参考标准的主观输出。</p>
+<p>最有效的团队结合这些方法：自动化评估用于快速迭代，生产监控用于获取真实数据，定期人工审查用于校准。</p>
+<h2>结论</h2>
+<p>没有评估的团队陷入被动循环——修复一个故障，又产生另一个，无法区分真正的回退和噪音。早期投入的团队发现了相反的结果：随着故障变成测试用例，测试用例防止回退，指标取代猜测，开发加速了。评估给整个团队一个清晰的攀爬目标，将&quot;智能体感觉变差了&quot;变成可操作的事情。价值会累积，但前提是你将评估视为核心组件，而不是事后才考虑。</p>
+<p>模式因智能体类型而异，但这里描述的基本原则是不变的。尽早开始，不要等待完美的套件。从你看到的故障中提取现实的任务。定义明确、健壮的成功标准。精心设计评分器并组合多种类型。确保问题对模型来说足够难。迭代评估以提高信噪比。阅读转录记录！</p>
+<p>AI 智能体评估仍是一个新兴的、快速发展的领域。随着智能体承担更长的任务、在多智能体系统中协作，并处理越来越主观的工作，我们将需要调整我们的技术。随着我们学到更多，我们将继续分享最佳实践。</p>
+<h3>致谢</h3>
+<p>由 Mikaela Grace、Jeremy Hadfield、Rodrigo Olivares 和 Jiri De Jonghe 撰写。我们还要感谢 David Hershey、Gian Segato、Mike Merrill、Alex Shaw、Nicholas Carlini、Ethan Dixon、Pedram Navid、Jake Eaton、Alyssa Baum、Lina Tawfik、Karen Zhou、Alexander Bricken、Sam Kennedy、Robert Ying 等人的贡献。特别感谢通过评估合作让我们学到很多的客户和合作伙伴，包括 iGent、Cognition、Bolt、Sierra、Vals.ai、Macroscope、PromptLayer、Stripe、Shopify、Terminal Bench 团队等。这项工作反映了多个团队在 Anthropic 帮助发展评估实践的集体努力。</p>
+<h2>附录：评估框架</h2>
+<p>多个开源和商业框架可以帮助团队实现智能体评估，无需从头构建基础设施。正确的选择取决于你的智能体类型、现有技术栈，以及你是否需要离线评估、生产可观测性或两者兼有。</p>
+<p>Harbor 专为在容器化环境中运行智能体而设计，提供跨云提供商大规模运行试验的基础设施，以及定义任务和评分器的标准化格式。像 Terminal-Bench 2.0 这样的热门基准通过 Harbor 注册表分发，使运行既定基准与自定义评估套件变得容易。</p>
+<p>Braintrust 是一个将离线评估与生产可观测性和实验跟踪相结合的平台——适用于需要在开发过程中迭代和在生产中监控质量的团队。它的 <code class="inline">autoevals</code> 库包含用于事实性、相关性和其他常见维度的预构建评分器。</p>
+<p>LangSmith 提供跟踪、离线和在线评估以及数据集管理，与 LangChain 生态系统紧密集成。</p>
+<p>Langfuse 以自托管开源替代方案的形式提供类似功能，适用于有数据驻留要求的团队。</p>
+<p>Arize 提供 Phoenix——一个用于 LLM 跟踪、调试以及离线或在线评估的开源平台，以及 AX——一个扩展 Phoenix 以实现规模化、优化和监控的 SaaS 产品。</p>
+<p>许多团队组合使用多种工具、构建自己的评估框架，或仅使用简单的评估脚本作为起点。我们发现，虽然框架可以是加速进展和标准化的宝贵方式，但它们的质量取决于你通过它们运行的评估任务。通常最好快速选择一个适合你工作流程的框架，然后将精力投入到评估本身——迭代高质量的测试用例和评分器。</p></div>
+                <div class="lang-en"><h2>Introduction</h2>
+<p>Good evaluations help teams ship AI agents more confidently. Without them, it’s easy to get stuck in reactive loops—catching issues only in production, where fixing one failure creates others. Evals make problems and behavioral changes visible before they affect users, and their value compounds over the lifecycle of an agent.
+As we described inBuilding effective agents, agents operate over many turns: calling tools, modifying state, and adapting based on intermediate results. These same capabilities that make AI agents useful—autonomy, intelligence, and flexibility—also make them harder to evaluate.
+Through our internal work and with customers at the frontier of agent development, we’ve learned how to design more rigorous and useful evals for agents. Here&#x27;s what&#x27;s worked across a range of agent architectures and use cases in real-world deployment.</p>
+<h2>The structure of an evaluation</h2>
+<p>Anevaluation(“eval”) is a test for an AI system: give an AI an input, then apply grading logic to its output to measure success. In this post, we focus onautomated evalsthat can be run during development without real users.
+Single-turn evaluationsare straightforward: a prompt, a response, and grading logic. For earlier LLMs, single-turn, non-agentic evals were the main evaluation method. As AI capabilities have advanced,multi-turn evaluationshave become increasingly common.
+Agent evaluationsare even more complex. Agents use tools across many turns, modifying state in the environment and adapting as they go—which means mistakes can propagate and compound. Frontier models can also find creative solutions that surpass the limits of static evals. For instance, Opus 4.5 solved a𝜏2-benchproblem about booking a flight bydiscoveringa loophole in the policy. It “failed” the evaluation as written, but actually came up with a better solution for the user.
+When building agent evaluations, we use the following definitions:</p>
+<ul>
+<li>Atask(a.k.aproblemortest case) is a single test with defined inputs and success criteria.</li>
+<li>Each attempt at a task is atrial. Because model outputs vary between runs, we run multiple trials to produce more consistent results.</li>
+<li>Agraderis logic that scores some aspect of the agent’s performance. A task can have multiple graders, each containing multiple assertions (sometimes calledchecks).</li>
+<li>Atranscript(also called atraceortrajectory) is the complete record of a trial, including outputs, tool calls, reasoning, intermediate results, and any other interactions. For the Anthropic API, this is the full messages array at the end of an eval run - containing all the calls to the API and all of the returned responses during the evaluation.</li>
+<li>Theoutcomeis the final state in the environment at the end of the trial. A flight-booking agent might say “Your flight has been booked” at the end of the transcript, but the outcome is whether a reservation exists in the environment’s SQL database.</li>
+<li>Anevaluation harnessis the infrastructure that runs evals end-to-end. It provides instructions and tools, runs tasks concurrently, records all the steps, grades outputs, and aggregates results.</li>
+<li>Anagent harness(orscaffold) is the system that enables a model to act as an agent: it processes inputs, orchestrates tool calls, and returns results. When we evaluate “an agent,” we’re evaluating the harnessandthe model working together. For example,Claude Codeis a flexible agent harness, and we used its core primitives through theAgent SDKto build ourlong-running agent harness.</li>
+<li>Anevaluation suiteis a collection of tasks designed to measure specific capabilities or behaviors. Tasks in a suite typically share a broad goal. For instance, a customer support eval suite might test refunds, cancellations, and escalations.</li>
+</ul>
+<h2>Why build evaluations?</h2>
+<p>When teams first start building agents, they can get surprisingly far through a combination of manual testing,dogfooding, and intuition. More rigorous evaluation may even seem like overhead that slows down shipping. But after the early prototyping stages, once an agent is in production and has started scaling, building without evals starts to break down.
+The breaking point often comes when users report the agent feels worse after changes, and the team is “flying blind” with no way to verify except to guess and check. Absent evals, debugging is reactive: wait for complaints, reproduce manually, fix the bug, and hope nothing else regressed. Teams can&#x27;t distinguish real regressions from noise, automatically test changes against hundreds of scenarios before shipping, or measure improvements.
+We’ve seen this progression play out many times. For instance, Claude Code started with fast iteration based on feedback from Anthropic employees and external users. Later, we added evals—first for narrow areas like concision and file edits, and then for more complex behaviors like over-engineering. These evals helped identify issues, guide improvements, and focus research-product collaborations. Combined with production monitoring, A/B tests, user research, and more, evals provide signals to continue improving Claude Code as it scales.
+Writing evals is useful at any stage in the agent lifecycle. Early on, evals force product teams to specify what success means for the agent, while later they help uphold a consistent quality bar.
+Descript’s agent helps users edit videos, so they built evals around three dimensions of a successful editing workflow: don’t break things, do what I asked, and do it well. They evolved from manual grading to LLM graders with criteria defined by the product team and periodic human calibration, and now regularly run two separate suites for quality benchmarking and regression testing. TheBoltAI team started building evals later, after they already had a widely used agent. In 3 months, they built an eval system that runs their agent and grades outputs with static analysis, uses browser agents to test apps, and employs LLM judges for behaviors like instruction following.
+Some teams create evals at the start of development; others add them once at scale when evals become a bottleneck for improving the agent. Evals are especially useful at the start of agent development to explicitly encode expected behavior. Two engineers reading the same initial spec could come away with different interpretations on how the AI should handle edge cases. An eval suite resolves this ambiguity. Regardless of when they’re created, evals help accelerate development.
+Evals also shape how quickly you can adopt new models. When more powerful models come out, teams without evals face weeks of testing while competitors with evals can quickly determine the model’s strengths, tune their prompts, and upgrade in days.
+Once evals exist, you get baselines and regression tests for free: latency, token usage, cost per task, and error rates can be tracked on a static bank of tasks. Evals can also become the highest-bandwidth communication channel between product and research teams, defining metrics researchers can optimize against. Clearly, evals have wide-ranging benefits beyond tracking regressions and improvements. Their compounding value is easy to miss given that costs are visible upfront while benefits accumulate later.</p>
+<h2>How to evaluate AI agents</h2>
+<p>We see several common types of agents deployed at scale today, including coding agents, research agents, computer use agents, and conversational agents. Each type may be deployed across a wide variety of industries, but they can be evaluated using similar techniques. You don’t need to invent an evaluation from scratch. The sections below describe proven techniques for several agent types. Use these methods as a foundation, then extend them to your domain.</p>
+<h3>Types of graders for agents</h3>
+<p>Agent evaluations typically combine three types of graders: code-based, model-based, and human. Each grader evaluates some portion of either the transcript or the outcome. An essential component of effective evaluation design is to choose the right graders for the job.
+Code-based graders
+Model-based graders</p>
+<ul>
+<li>Rubric-based scoring</li>
+<li>Natural language assertions</li>
+<li>Pairwise comparison</li>
+<li>Reference-based evaluation</li>
+<li>Multi-judge consensus</li>
+<li>Flexible</li>
+<li>Scalable</li>
+<li>Captures nuance</li>
+<li>Handles open-ended tasks</li>
+<li>Handles freeform output</li>
+<li>Non-deterministic</li>
+<li>More expensive than code</li>
+<li>Requires calibration with human graders for accuracy</li>
+</ul>
+<p>Human graders</p>
+<ul>
+<li>SME review</li>
+<li>Crowdsourced judgment</li>
+<li>Spot-check sampling</li>
+<li>A/B testing</li>
+<li>Inter-annotator agreement</li>
+<li>Gold standard quality</li>
+<li>Matches expert user judgment</li>
+<li>Used to calibrate model-based graders</li>
+<li>Expensive</li>
+<li>Slow</li>
+<li>Often requires access to human experts at scale</li>
+</ul>
+<p>For each task, scoring can be weighted (combined grader scores must hit a threshold), binary (all graders must pass), or a hybrid.</p>
+<h3>Capability vs. regression evals</h3>
+<p>Capability or “quality” evalsask, “What can this agent do well?” They should start at a low pass rate, targeting tasks the agent struggles with and giving teams a hill to climb.
+Regression evalsask, “Does the agent still handle all the tasks it used to?” and should have a nearly 100% pass rate. They protect against backsliding, as a decline in score signals that something is broken and needs to be improved. As teams hill-climb on capability evals, it’s important to also run regression evals to make sure changes don’t cause issues elsewhere.
+After an agent is launched and optimized, capability evals with high pass rates can “graduate” to become a regression suite that is run continuously to catch any drift. Tasks that once measured “Can we do this at all?” then measure “Can we still do this reliably?”</p>
+<h3>Evaluating coding agents</h3>
+<p>Coding agentswrite, test, and debug code, navigating codebases and running commands much like a human developer. Effective evals for modern coding agents usually rely on well-specified tasks, stable test environments, and thorough tests for the generated code.
+Deterministic graders are natural for coding agents because software is generally straightforward to evaluate: does the code run and do the tests pass? Two widely used coding agent benchmarks,SWE-bench VerifiedandTerminal-Bench, follow this approach. SWE-bench Verified gives agents GitHub issues from popular Python repositories and grades solutions by running the test suite; a solution passes only if it fixes the failing tests without breaking existing ones. LLMs have progressed from 40% to &gt;80% on this eval in just one year. Terminal-Bench takes a different track: it tests end-to-end technical tasks, such as building a Linux kernel from source or training an ML model.
+Once you have a set of pass-or-fail tests for validating the keyoutcomesof a coding task, it’s often useful to also grade the transcript.For instance, heuristics-based code quality rules can evaluate the generated code based on more than passing tests, and model-based graders with clear rubrics can assess behaviors like how the agent calls tools or interacts with the user.
+Example: Theoretical evaluation for a coding agent
+Consider a coding task where the agent must fix an authentication bypass vulnerability. As shown in the illustrative YAML file below, one could evaluate this agent using both graders and metrics.</p>
+<pre><code class="language-">task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:
+    - type: deterministic_tests
+      required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]
+    - type: llm_rubric
+      rubric: prompts/code_quality.md
+    - type: static_analysis
+      commands: [ruff, mypy, bandit]
+    - type: state_check
+      expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}
+    - type: tool_calls
+      required:
+        - {tool: read_file, params: {path: &quot;src/auth/*&quot;}}
+        - {tool: edit_file}
+        - {tool: run_tests}
+  tracked_metrics:
+    - type: transcript
+      metrics:
+        - n_turns
+        - n_toolcalls
+        - n_total_tokens
+    - type: latency
+      metrics:
+        - time_to_first_token
+        - output_tokens_per_sec
+        - time_to_last_token</code></pre>
+<p>task:
+  id: &quot;fix-auth-bypass_1&quot;
+  desc: &quot;Fix authentication bypass when password field is empty and ...&quot;
+  graders:</p>
+<ul>
+<li>type: deterministic_tests</li>
+</ul>
+<p>required: [test_empty_pw_rejected.py, test_null_pw_rejected.py]</p>
+<ul>
+<li>type: llm_rubric</li>
+</ul>
+<p>rubric: prompts/code_quality.md</p>
+<ul>
+<li>type: static_analysis</li>
+</ul>
+<p>commands: [ruff, mypy, bandit]</p>
+<ul>
+<li>type: state_check</li>
+</ul>
+<p>expect:
+        security_logs: {event_type: &quot;auth_blocked&quot;}</p>
+<ul>
+<li>type: tool_calls</li>
+</ul>
+<p>required:</p>
+<ul>
+<li>{tool: read_file, params: {path: &quot;src/auth/*&quot;}}</li>
+<li>{tool: edit_file}</li>
+<li>{tool: run_tests}</li>
+</ul>
+<p>tracked_metrics:</p>
+<ul>
+<li>type: transcript</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>n_turns</li>
+<li>n_toolcalls</li>
+<li>n_total_tokens</li>
+<li>type: latency</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>time_to_first_token</li>
+<li>output_tokens_per_sec</li>
+<li>time_to_last_token</li>
+</ul>
+<p>Note that this example showcases the full range of available graders for illustration. In practice, coding evaluations typically rely on unit tests for correctness verification and an LLM rubric for assessing overall code quality, with additional graders and metrics added only as needed.</p>
+<h3>Evaluating conversational agents</h3>
+<p>Conversational agentsinteract with users in domains like support, sales, or coaching. Unlike traditional chatbots, they maintain state, use tools, and take actions mid-conversation. While coding and research agents can also involve many turns of interaction with the user, conversational agents present a distinct challenge: the quality of the interaction itself is part of what you&#x27;re evaluating. Effective evals for conversational agents usually rely on verifiable end-state outcomes and rubrics that capture both task completion and interaction quality. Unlike most other evals, they often require a second LLM to simulate the user. We use this approach in ouralignment auditing agentsto stress-test models through extended, adversarial conversations.
+Success for conversational agents can be multidimensional: is the ticket resolved (state check), did it finish in &lt;10 turns (transcript constraint), and was the tone appropriate (LLM rubric)? Two benchmarks that incorporate multidimensionality are𝜏-Benchand its successor,τ2-Bench. These simulate multi-turn interactions across domains like retail support and airline booking, where one model plays a user persona while the agent navigates realistic scenarios.
+Example: Theoretical evaluation for a conversational agent
+Consider a support task where the agent must handle a refund for a frustrated customer.</p>
+<pre><code class="language-">graders:
+  - type: llm_rubric
+    rubric: prompts/support_quality.md
+    assertions:
+      - &quot;Agent showed empathy for customer&#x27;s frustration&quot;
+      - &quot;Resolution was clearly explained&quot;
+      - &quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;
+  - type: state_check
+    expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}
+  - type: tool_calls
+    required:
+      - {tool: verify_identity}
+      - {tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}
+      - {tool: send_confirmation}
+  - type: transcript
+    max_turns: 10
+tracked_metrics:
+  - type: transcript
+    metrics:
+      - n_turns
+      - n_toolcalls
+      - n_total_tokens
+  - type: latency
+    metrics:
+      - time_to_first_token
+      - output_tokens_per_sec
+      - time_to_last_token</code></pre>
+<p>graders:</p>
+<ul>
+<li>type: llm_rubric</li>
+</ul>
+<p>rubric: prompts/support_quality.md
+    assertions:</p>
+<ul>
+<li>&quot;Agent showed empathy for customer&#x27;s frustration&quot;</li>
+<li>&quot;Resolution was clearly explained&quot;</li>
+<li>&quot;Agent&#x27;s response grounded in fetch_policy tool results&quot;</li>
+<li>type: state_check</li>
+</ul>
+<p>expect:
+      tickets: {status: resolved}
+      refunds: {status: processed}</p>
+<ul>
+<li>type: tool_calls</li>
+</ul>
+<p>required:</p>
+<ul>
+<li>{tool: verify_identity}</li>
+<li>{tool: process_refund, params: {amount: &quot;&lt;=100&quot;}}</li>
+<li>{tool: send_confirmation}</li>
+<li>type: transcript</li>
+</ul>
+<p>max_turns: 10
+tracked_metrics:</p>
+<ul>
+<li>type: transcript</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>n_turns</li>
+<li>n_toolcalls</li>
+<li>n_total_tokens</li>
+<li>type: latency</li>
+</ul>
+<p>metrics:</p>
+<ul>
+<li>time_to_first_token</li>
+<li>output_tokens_per_sec</li>
+<li>time_to_last_token</li>
+</ul>
+<p>As in our coding agent example, this task showcases multiple grader types for illustration. In practice, conversational agent evaluations typically use model-based graders to assess both communication quality and goal completion, because many tasks—like answering a question—may have multiple “correct” solutions.</p>
+<h3>Evaluating research agents</h3>
+<p>Research agentsgather, synthesize, and analyze information, then produce outputs like an answer or report. Unlike coding agents where unit tests provide binary pass/fail signals, research quality can only be judged relative to the task. What counts as “comprehensive,” “well-sourced,” or even “correct” depends on context: a market scan, due diligence for an acquisition, and a scientific report each require different standards.
+Research evals face unique challenges: experts may disagree on whether a synthesis is comprehensive, ground truth shifts as reference content changes constantly, and longer, more open-ended outputs create more room for mistakes. A benchmark likeBrowseComp, for example, tests whether AI agents can find needles in haystacks across the open web—questions designed to be easy to verify but hard to solve.
+One strategy to build research agent evals is to combine grader types. Groundedness checks verify that claims are supported by retrieved sources, coverage checks define key facts a good answer must include, and source quality checks confirm the consulted sources are authoritative, rather than simply the first retrieved. For tasks with objectively correct answers (“What was Company X’s Q3 revenue?”), exact match works. An LLM can flag unsupported claims and gaps in coverage but also verify the open-ended synthesis for coherence and completeness.
+Given the subjective nature of research quality, LLM-based rubrics should be frequently calibrated against expert human judgment to grade these agents effectively.</p>
+<h3>Computer use agents</h3>
+<p>Computer use agentsinteract with software through the same interface as humans—screenshots, mouse clicks, keyboard inputs, and scrolling—rather than through APIs or code execution. They can use any application with a graphical user interface (GUI), from design tools to legacy enterprise software. Evaluation requires running the agent in a real or sandboxed environment where it can use software applications and checking whether it achieved the intended outcome. For instance,WebArenatests browser-based tasks, using URL and page state checks to verify the agent navigated correctly, along with backend state verification for tasks that modify data (confirming an order was actually placed, not just that the confirmation page appeared).OSWorldextends this to full operating system control, with evaluation scripts that inspect diverse artifacts after task completion: file system state, application configs, database contents, and UI element properties.
+Browser use agents require a balance between token efficiency and latency. DOM-based interactions execute quickly but consume many tokens, while screenshot-based interactions are slower but more token-efficient. For example, when asking Claude to summarize Wikipedia, it is more efficient to extract the text from the DOM. When finding a new laptop case on Amazon, it is more efficient to take screenshots (as extracting the entire DOM is token-intensive). In our Claude for Chrome product, we developed evals to check that the agent was selecting the right tool for each context. This enabled us to complete browser-based tasks faster and more accurately.</p>
+<h3>How to think about non-determinism in evaluations for agents</h3>
+<p>Regardless of agent type, agent behavior varies between runs, which makes evaluation results harder to interpret than they first appear. Each task has its own success rate—maybe 90% on one task, 50% on another—and a task that passed on one eval run might fail on the next. Sometimes, what we want to measure is howoften(what proportion of the trials) an agent succeeds for a task.
+Two metrics help capture this nuance:
+pass@kmeasures the likelihood that an agent gets at least one correct solution inkattempts. Askincreases, pass@k score rises: more “shots on goal” means higher odds of at least 1 success. A score of 50% pass@1 means that a model succeeds at half the tasks in the eval on its first try. In coding, we’re often most interested in the agent finding the solution on the first try—pass@1. In other cases, proposing many solutions is valid as long as one works.
+pass^kmeasures the probability thatall ktrials succeed. Askincreases, pass^k falls since demanding consistency across more trials is a harder bar to clear. If your agent has a 75% per-trial success rate and you run 3 trials, the probability of passing all three is (0.75)³ ≈ 42%. This metric especially matters for customer-facing agents where users expect reliable behavior every time.
+Both metrics are useful, and which to use depends on product requirements: pass@k for tools where one success matters, pass^k for agents where consistency is essential.</p>
+<h2>Going from zero to one: a roadmap to great evals for agents</h2>
+<p>This section lays out our practical, field-tested advice for going from no evals to evals you can trust. Think of this as a roadmap for eval-driven agent development: define success early, measure it clearly, and iterate continuously.</p>
+<h3>Collect tasks for the initial eval dataset</h3>
+<p>Step 0. Start early
+We see teams delay building evals because they think they need hundreds of tasks. In reality, 20-50 simple tasks drawn from real failures is a great start. After all, in early agent development, each change to the system often has a clear, noticeable impact, and this large effect size means small sample sizes suffice. More mature agents may need larger, more difficult evals to detect smaller effects, but it’s best to take the 80/20 approach in the beginning. Evals get harder to build the longer you wait. Early on, product requirements naturally translate into test cases. Wait too long and you&#x27;re reverse-engineering success criteria from a live system.
+Step 1. Start with what you already test manually
+Begin with the manual checks you run during development—the behaviors you verify before each release and common tasks end users try. If you&#x27;re already in production, look at your bug tracker and support queue. Converting user-reported failures into test cases ensures your suite reflects actual usage; prioritizing by user impact helps you invest effort where it counts.
+Step 2: Write unambiguous tasks with reference solutions
+Getting task quality right is harder than it seems. A good task is one where two domain experts would independently reach the same pass/fail verdict. Could they pass the task themselves? If not, the task needs refinement. Ambiguity in task specifications becomes noise in metrics. The same applies to criteria for model-based graders: vague rubrics produce inconsistent judgments.
+Each task should be passable by an agent that follows instructions correctly. This can be subtle. For instance, auditing Terminal-Bench revealed that if a task asks the agent to write a script but doesn’t specify a filepath, and the tests assume a particular filepath for the script, the agent might fail through no fault of its own. Everything the grader checks should be clear from the task description; agents shouldn’t fail due to ambiguous specs. With frontier models, a 0% pass rate across many trials (i.e. 0% pass@100) is most often a signal of a broken task, not an incapable agent, and a sign to double-check your task specification and graders. For each task, it’s useful to create a reference solution: a known working output that passes all graders. This proves that the task is solvable and verifies graders are correctly configured.
+Step 3: Build balanced problem sets
+Test both the cases where a behaviorshouldoccur and where itshouldn&#x27;t. One-sided evals create one-sided optimization. For instance, if you only test whether the agent searches when it should, you might end up with an agent that searches for almost everything. Try to avoidclass-imbalancedevals. We learned this firsthand when building evals for web search inClaude.ai. The challenge was preventing the model from searching when it shouldn’t, while preserving its ability to do extensive research when appropriate. The team built evals covering both directions: queries where the model should search (like finding the weather) and queries where it should answer from existing knowledge (like “who founded Apple?”). Striking the right balance between undertriggering (not searching when it should) or overtriggering (searching when it shouldn’t) was difficult, and took many rounds of refinements to both the prompts and the eval. As more example problems come up, we continue to add to evals to improve our coverage.</p>
+<h3>Design the eval harness and graders</h3>
+<p>Step 4: Build a robust eval harness with a stable environment
+It’s essential that the agent in the eval functions roughly the same as the agent used in production, and that the environment itself doesn’t introduce further noise. Each trial should be “isolated” by starting from a clean environment. Unnecessary shared state between runs (leftover files, cached data, resource exhaustion) can cause correlated failures due to infrastructure flakiness rather than agent performance. Shared state can also artificially inflate performance. For example, in some internal evals we observed Claude gaining an unfair advantage on some tasks by examining the git history from previous trials. If multiple distinct trials fail because of the same limitation in the environment (like limited CPU memory), these trials are not independent because they’re affected by the same factor, and the eval results become unreliable for measuring agent performance.
+Step 5: Design graders thoughtfully
+As discussed above, great eval design involves choosing the best graders for the agent and the tasks. We recommend choosing deterministic graders where possible, LLM graders where necessary or for additional flexibility, and using human graders judiciously for additional validation.
+There is a common instinct to check that agents followed very specific steps like a sequence of tool calls in the right order. We’ve found this approach too rigid and results in overly brittle tests, as agents regularly find valid approaches that eval designers didn’t anticipate. So as not to unnecessarily punish creativity, it’s often better to grade what the agent produced, not the path it took.
+For tasks with multiple components, build in partial credit.A support agent that correctly identifies the problem and verifies the customer but fails to process a refund is meaningfully better than one that fails immediately. It’s important to represent this continuum of success in results.
+Model grading often takes careful iteration to validate accuracy. LLM-as-judge graders should be closely calibrated with human experts to gain confidence that there is little divergence between the human grading and model grading. To avoid hallucinations, give the LLM a way out, like providing an instruction to return “Unknown” when it doesn’t have enough information. It can also help to create clear, structured rubrics to grade each dimension of a task, and then grade each dimension with an isolated LLM-as-judge rather than using one to grade all dimensions. Once the system is robust, it’s sufficient to use human review only occasionally.
+Some evaluations have subtle failure modes that result in low scores even with good agent performance, as the agent fails to solve tasks due to grading bugs, agent harness constraints, or ambiguity. Even sophisticated teams can miss these issues. For example,Opus 4.5 initially scored 42% on CORE-Bench, until an Anthropic researcher found multiple issues: rigid grading that penalized “96.12” when expecting “96.124991…”, ambiguous task specs, and stochastic tasks that were impossible to reproduce exactly. After fixing bugs and using a less constrained scaffold, Opus 4.5’s score jumped to 95%. Similarly,METR discoveredseveral misconfigured tasks in their time horizon benchmark that asked agents to optimize to a stated score threshold, but the grading required exceeding that threshold. This penalized models like Claude for following the instructions, while models that ignored the stated goal received better scores. Carefully double-checking tasks and graders can help avoid these problems.
+Make your graders resistant to bypasses or hacks. The agent shouldn’t be able to easily “cheat” the eval. Tasks and graders should be designed so that passing genuinely requires solving the problem rather than exploiting unintended loopholes.</p>
+<h3>Maintain and use the eval long-term</h3>
+<p>Step 6: Check the transcripts
+You won&#x27;t know if your graders are working well unless you read the transcripts and grades from many trials. At Anthropic, we invested in tooling for viewing eval transcripts and we regularly take the time to read them. When a task fails, the transcript tells you whether the agent made a genuine mistake or whether your graders rejected a valid solution. It also often surfaces key details about agent and eval behavior.
+Failures should seem fair: it’s clear what the agent got wrong and why. When scores don’t climb, we need confidence that it’s due to agent performance and not the eval. Reading transcripts is how you verify that your eval is measuring what actually matters, and is a critical skill for agent development.
+Step 7: Monitor for capability eval saturation
+An eval at 100% tracks regressions but provides no signal for improvement.Eval saturationoccurs when an agent passes all of the solvable tasks, leaving no room for improvement. For instance, SWE-Bench Verified scores started at 30% this year, and frontier models are now nearing saturation at &gt;80%. As evals approach saturation, progress will also slow, as only the most difficult tasks remain. This can make results deceptive, as large capability improvements appear as small increases in scores. For example, the code review startupQodowas initially unimpressed by Opus 4.5 because their one-shot coding evals didn’t capture the gains on longer, more complex tasks. In response, they developed a new agentic eval framework, providing a much clearer picture of progress.
+As a rule, we do not take eval scores at face value until someone digs into the details of the eval and reads some transcripts. If grading is unfair, tasks are ambiguous, valid solutions are penalized, or the harness constrains the model, the eval should be revised.
+Step 8: Keep evaluation suites healthy long-term through open contribution and maintenance
+An eval suite is a living artifact that needs ongoing attention and clear ownership to remain useful.
+At Anthropic, we experimented with various approaches to eval maintenance. What proved most effective was establishing dedicated evals teams to own the core infrastructure, while domain experts and product teams contribute most eval tasksand run the evaluations themselves.
+For AI product teams, owning and iterating on evaluations should be as routine as maintaining unit tests. Teams can waste weeks on AI features that “work” in early testing but fail to meet unstated expectations that a well-designed eval would have surfaced early. Defining eval tasks is one of the best ways to stress-test whether the product requirements are concrete enough to start building.
+We recommend practicing eval-driven development: build evals to define planned capabilities before agents can fulfill them, then iterate until the agent performs well. Internally, we often build features that work “well enough” today but are bets on what models can do in a few months. Capability evals that start at a low pass rate make this visible. When a new model drops, running the suite quickly reveals which bets paid off.
+The people closest to product requirements and users are best positioned to define success. With current model capabilities, product managers, customer success managers, or salespeople can use Claude Code to contribute an eval task as a PR—let them! Or, even better, actively enable them.</p>
+<h2>How evals fit with other methods for a holistic understanding of agents</h2>
+<p>Automated evaluations can be run against an agent in thousands of tasks without deploying to production or affecting real users. But this is just one of many ways to understand agent performance. A complete picture includes production monitoring, user feedback, A/B testing, manual transcript review, and systematic human evaluation.
+An overview of approaches for understanding AI agent performance</p>
+<ul>
+<li>Faster iteration</li>
+<li>Fully reproducible</li>
+<li>No user impact</li>
+<li>Can run on every commit</li>
+<li>Tests scenarios at scale without requiring a prod deployment</li>
+<li>Requires more up-front investment to build</li>
+<li>Requires ongoing maintenance as product and model evolves to avoid drift</li>
+<li>Can create false confidence if it doesn’t match real usage patterns</li>
+<li>Reveals real user behavior at scale</li>
+<li>Catches issues that synthetic evals miss</li>
+<li>Provides ground truth on how agents actually perform</li>
+<li>Reactive; problems reach users before you know about them</li>
+<li>Signals can be noisy</li>
+<li>Requires investment in instrumentation</li>
+<li>Lacks ground truth for grading</li>
+<li>Measures actual user outcomes (retention, task completion)</li>
+<li>Controls for confounds</li>
+<li>Scalable and systematic</li>
+<li>Slow; days or weeks to reach significance and requires sufficient traffic</li>
+<li>Only tests changes you deploy</li>
+<li>Less signal on the underlying “why” for changes in metrics without being able to thoroughly review the transcripts</li>
+<li>Surfaces problems you didn&#x27;t anticipate</li>
+<li>Comes with real examples from actual human users</li>
+<li>The feedback often correlates with product goals</li>
+<li>Sparse and self-selected</li>
+<li>Skews toward severe issues</li>
+<li>Users rarely explainwhysomething failed</li>
+<li>Not automated</li>
+<li>Relying primarily on users to catch issues can have negative user impact</li>
+<li>Builds intuition for failure modes</li>
+<li>Catches subtle quality issues automated checks miss</li>
+<li>Helps calibrate what &quot;good&quot; looks like and grasp details</li>
+<li>Time-intensive</li>
+<li>Doesn&#x27;t scale</li>
+<li>Coverage is inconsistent</li>
+<li>Reviewer fatigue or different reviewers can affect the signal quality</li>
+<li>Typically only gives qualitative signal rather than clear quantitative grading</li>
+<li>Gold-standard quality judgements from multiple human raters</li>
+<li>Handles subjective or ambiguous tasks</li>
+<li>Provides signal for improving model-based graders</li>
+<li>Relatively expensive and slow turnaround</li>
+<li>Hard to run frequently</li>
+<li>Inter-rater disagreement requires reconciliation</li>
+<li>Complex domains (legal, finance, healthcare) require human experts to conduct studies</li>
+</ul>
+<p>These methods map to different stages of agent development. Automated evals are especially useful pre-launch and in CI/CD, running on each agent change and model upgrade as the first line of defense against quality problems. Production monitoring kicks in post-launch to detect distribution drift and unanticipated real-world failures. A/B testing validates significant changes once you have sufficient traffic. User feedback and transcript review are ongoing practices to fill the gaps: triage feedback constantly, sample transcripts to read weekly, and dig deeper as needed. Reserve systematic human studies for calibrating LLM graders or evaluating subjective outputs where human consensus serves as the reference standard.
+The most effective teams combine these methods: automated evals for fast iteration, production monitoring for ground truth, and periodic human review for calibration.</p>
+<h2>Conclusion</h2>
+<p>Teams without evals get bogged down in reactive loops—fixing one failure, creating another, unable to distinguish real regressions from noise. Teams that invest early find the opposite: development accelerates as failures become test cases, test cases prevent regressions, and metrics replace guesswork. Evals give the whole team a clear hill to climb, turning “the agent feels worse” into something actionable. The value compounds, but only if you treat evals as a core component, not an afterthought.
+The patterns vary by agent type, but the fundamentals described here are constant. Start early and don’t wait for the perfect suite. Source realistic tasks from the failures you see. Define unambiguous, robust success criteria. Design graders thoughtfully and combine multiple types. Make sure the problems are hard enough for the model. Iterate on the evaluations to improve their signal-to-noise ratio. Read the transcripts!
+AI agent evaluation is still a nascent, fast-evolving field. As agents take on longer tasks, collaborate in multi-agent systems, and handle increasingly subjective work, we will need to adapt our techniques. We’ll keep sharing best practices as we learn more.</p>
+<h3>Acknowledgements</h3>
+<p>Written by Mikaela Grace, Jeremy Hadfield, Rodrigo Olivares, and Jiri De Jonghe. We&#x27;re also grateful to David Hershey, Gian Segato, Mike Merrill, Alex Shaw, Nicholas Carlini, Ethan Dixon, Pedram Navid, Jake Eaton, Alyssa Baum, Lina Tawfik, Karen Zhou, Alexander Bricken, Sam Kennedy, Robert Ying, and others for their contributions. Special thanks to the customers and partners we have learned from through collaborating on evals, including iGent, Cognition, Bolt, Sierra, Vals.ai, Macroscope, PromptLayer, Stripe, Shopify, the Terminal Bench team, and more. This work reflects the collective efforts of several teams who helped develop the practice of evaluations at Anthropic.</p>
+<h2>Appendix: Eval frameworks</h2>
+<p>Several open-source and commercial frameworks can help teams implement agent evaluations without building infrastructure from scratch. The right choice depends on your agent type, existing stack, and whether you need offline evaluation, production observability, or both.Harboris designed for running agents in containerized environments, with infrastructure for running trials at scale across cloud providers and a standardized format for defining tasks and graders. Popular benchmarks like Terminal-Bench 2.0 ship through the Harbor registry, making it easy to run established benchmarks along with custom eval suites.Braintrustis a platform that combines offline evaluation with production observability and experiment tracking—useful for teams that need to both iterate during development and monitor quality in production. Its <code class="inline">autoevals</code> library includes pre-built scorers for factuality, relevance, and other common dimensions.LangSmithoffers tracing, offline and online evaluations, and dataset management with tight integration into the LangChain ecosystem.Langfuseprovides similar capabilities as a self-hosted open-source alternative for teams with data residency requirements.
+Arizeoffers Phoenix, an open-source platform for LLM tracing, debugging, and offline or online evaluations, and AX, a SaaS offering that extends Phoenix for scale, optimization and monitoring.Many teams combine multiple tools, roll their own eval framework, or just use simple evaluation scripts as a starting point. We find that while frameworks can be a valuable way to accelerate progress and standardize, they’re only as good as the eval tasks you run through them. It’s often best to quickly pick a framework that fits your workflow, then invest your energy in the evals themselves by iterating on high-quality test cases and graders.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

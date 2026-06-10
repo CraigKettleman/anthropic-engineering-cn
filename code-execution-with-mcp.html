@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>通过 MCP 执行代码：构建更高效的智能体 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">工具消耗过多 token 会降低智能体效率</a>
+<a class="toc-h3" href="#heading-2">1. 工具定义过载上下文窗口</a>
+<a class="toc-h3" href="#heading-3">2. 中间工具结果消耗额外的 token</a>
+<a class="toc-h2" href="#heading-4">通过 MCP 执行代码提高上下文效率</a>
+<a class="toc-h2" href="#heading-5">通过 MCP 执行代码的优势</a>
+<a class="toc-h3" href="#heading-6">渐进式披露</a>
+<a class="toc-h3" href="#heading-7">上下文高效的工具结果</a>
+<a class="toc-h3" href="#heading-8">隐私保护操作</a>
+<a class="toc-h3" href="#heading-9">状态持久化与技能（Skills）</a>
+<a class="toc-h2" href="#heading-10">总结</a>
+<a class="toc-h3" href="#heading-11">致谢</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">Excessive token consumption from tools makes agents less efficient</a>
+<a class="toc-h3" href="#heading-2">1. Tool definitions overload the context window</a>
+<a class="toc-h3" href="#heading-3">2. Intermediate tool results consume additional tokens</a>
+<a class="toc-h2" href="#heading-4">Code execution with MCP improves context efficiency</a>
+<a class="toc-h2" href="#heading-5">Benefits of code execution with MCP</a>
+<a class="toc-h3" href="#heading-6">Progressive disclosure</a>
+<a class="toc-h3" href="#heading-7">Context efficient tool results</a>
+<a class="toc-h3" href="#heading-8">Privacy-preserving operations</a>
+<a class="toc-h3" href="#heading-9">State persistence and skills</a>
+<a class="toc-h2" href="#heading-10">Summary</a>
+<a class="toc-h3" href="#heading-11">Acknowledgments</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2025-11-04</div>
+            <div class="title-block">
+                <h1 class="cn">通过 MCP 执行代码：构建更高效的智能体</h1>
+                <h1 class="en">Code execution with MCP: Building more efficient agents</h1>
+                <div class="en-title">Code execution with MCP: Building more efficient agents</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>The Model Context Protocol (MCP)is an open standard for connecting AI agents to external systems. Connecting agents to tools and data traditionally requires a custom integration for each pairing, creating fragmentation and duplicated effort that makes it difficult to scale truly connected systems. MCP provides a universal protocol—developers implement MCP once in their agent and it unlocks an entire ecosystem of integrations.
+Since launching MCP in November 2024, adoption has been rapid: the community has built thousands ofMCP servers,SDKsare available for all major programming languages, and the industry has adopted MCP as the de-facto standard for connecting agents to tools and data.
+Today developers routinely build agents with access to hundreds or thousands of tools across dozens of MCP servers. However, as the number of connected tools grows, loading all tool definitions upfront and passing intermediate results through the context window slows down agents and increases costs.
+In this blog we&#x27;ll explore how code execution can enable agents to interact with MCP servers more efficiently, handling more tools while using fewer tokens.</p></div><div class="lang-cn-block"><p>模型上下文协议（Model Context Protocol，MCP）是一个将 AI 智能体（Agent）连接到外部系统的开放标准。传统上，将智能体与工具和数据连接需要为每一对组合进行自定义集成，这导致了碎片化和重复工作，使得真正互联的系统难以扩展。MCP 提供了一种通用协议——开发者只需在智能体中实现一次 MCP，即可解锁整个集成生态系统。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Excessive token consumption from tools makes agents less efficient</h2></div><div class="lang-cn-block"><p>自 2024 年 11 月推出 MCP 以来，其采用速度非常快：社区已构建了数千个 MCP 服务器，所有主流编程语言都有可用的 SDK，业界已将 MCP 作为连接智能体与工具和数据的事实标准。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>As MCP usage scales, there are two common patterns that can increase agent cost and latency:</p></div><div class="lang-cn-block"><p>如今，开发者日常构建的智能体可以通过数十个 MCP 服务器访问数百甚至数千个工具。然而，随着连接工具数量的增加，预先加载所有工具定义并通过上下文窗口传递中间结果会减慢智能体的速度并增加成本。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>Tool definitions overload the context window;</li><li>Intermediate tool results consume additional tokens.</li></ul></div><div class="lang-cn-block"><p>在本文中，我们将探讨代码执行如何使智能体更高效地与 MCP 服务器交互，在使用更少 token 的同时处理更多工具。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>1. Tool definitions overload the context window</h3></div><div class="lang-cn-block"><h2 id="heading-1">工具消耗过多 token 会降低智能体效率</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Most MCP clients load all tool definitions upfront directly into context, exposing them to the model using a direct tool-calling syntax. These tool definitions might look like:</p></div><div class="lang-cn-block"><p>随着 MCP 使用规模的扩大，有两种常见模式会增加智能体的成本和延迟：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</p></div><div class="lang-cn-block"><h3 id="heading-2">1. 工具定义过载上下文窗口</h3></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation
+Tool descriptions occupy more context window space, increasing response time and costs. In cases where agents are connected to thousands of tools, they’ll need to process hundreds of thousands of tokens before reading a request.</p></div><div class="lang-cn-block"><pre><code class="language-">gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>2. Intermediate tool results consume additional tokens</h3></div><div class="lang-cn-block"><p>gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Most MCP clients allow models to directly call MCP tools. For example, you might ask your agent: &quot;Download my meeting transcript from Google Drive and attach it to the Salesforce lead.&quot;
+The model will make calls like:</p></div><div class="lang-cn-block"><pre><code class="language-">salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation</code></pre></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)
+
+TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)</p></div><div class="lang-cn-block"><p>工具描述占用更多的上下文窗口空间，增加响应时间和成本。在智能体连接到数千个工具的情况下，它们在读取请求之前就需要处理数十万个 token。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)
+Every intermediate result must pass through the model. In this example, the full call transcript flows through twice. For a 2-hour sales meeting, that could mean processing an additional 50,000 tokens. Even larger documents may exceed context window limits, breaking the workflow.
+With large documents or complex data structures, models may be more likely to make mistakes when copying data between tool calls.</p></div><div class="lang-cn-block"><h3 id="heading-3">2. 中间工具结果消耗额外的 token</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Code execution with MCP improves context efficiency</h2></div><div class="lang-cn-block"><p>大多数 MCP 客户端允许模型直接调用 MCP 工具。例如，你可以问你的智能体：&quot;从 Google Drive 下载我的会议记录，并将其附加到 Salesforce 线索上。&quot;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>With code execution environments becoming more common for agents, a solution is to present MCP servers as code APIs rather than direct tool calls. The agent can then write code to interact with MCP servers. This approach addresses both challenges: agents can load only the tools they need and process data in the execution environment before passing results back to the model.
+There are a number of ways to do this. One approach is to generate a file tree of all available tools from connected MCP servers. Here&#x27;s an implementation using TypeScript:</p></div><div class="lang-cn-block"><p>模型将进行如下调用：</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)
+Then each tool corresponds to a file, something like:</p></div><div class="lang-cn-block"><p>TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;
+
+interface GetDocumentInput {
+  documentId: string;
+}
+
+interface GetDocumentResponse {
+  content: string;
+}
+
+/* Read a document from Google Drive */
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;</p></div><div class="lang-cn-block"><p>每个中间结果都必须经过模型。在这个示例中，完整的通话记录流经了两次。对于一场 2 小时的销售会议，这可能意味着要额外处理 50,000 个 token。更大的文档甚至可能超出上下文窗口的限制，导致工作流程中断。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>interface GetDocumentInput {
+  documentId: string;
+}</p></div><div class="lang-cn-block"><p>对于大型文档或复杂数据结构，模型在工具调用之间复制数据时更容易出错。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>interface GetDocumentResponse {
+  content: string;
+}</p></div><div class="lang-cn-block"><h2 id="heading-4">通过 MCP 执行代码提高上下文效率</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>/<em> Read a document from Google Drive </em>/
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}
+Our Google Drive to Salesforce example above becomes the code:</p></div><div class="lang-cn-block"><p>随着代码执行环境在智能体中越来越普遍，一种解决方案是将 MCP 服务器呈现为代码 API 而非直接的工具调用。智能体随后可以编写代码与 MCP 服务器交互。这种方法解决了两个挑战：智能体可以仅加载所需的工具，并在执行环境中处理数据后再将结果返回给模型。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;
+
+const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;</p></div><div class="lang-cn-block"><pre><code class="language-">servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});
+The agent discovers tools by exploring the filesystem: listing the./servers/directory to find available servers (likegoogle-driveandsalesforce), then reading the specific tool files it needs (likegetDocument.tsandupdateRecord.ts) to understand each tool&#x27;s interface. This lets the agent load only the definitions it needs for the current task. This reduces the token usage from 150,000 tokens to 2,000 tokens—a time and cost saving of 98.7%.
+./servers/
+google-drive
+salesforce
+getDocument.ts
+updateRecord.ts
+Cloudflarepublished similar findings, referring to code execution with MCP as “Code Mode.&quot; The core insight is the same: LLMs are adept at writing code and developers should take advantage of this strength to build agents that interact with MCP servers more efficiently.</p></div><div class="lang-cn-block"><p>servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Benefits of code execution with MCP</h2></div><div class="lang-cn-block"><p>然后每个工具对应一个文件，类似这样：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Code execution with MCP enables agents to use context more efficiently by loading tools on demand, filtering data before it reaches the model, and executing complex logic in a single step. There are also security and state management benefits to using this approach.</p></div><div class="lang-cn-block"><pre><code class="language-">// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;
+
+interface GetDocumentInput {
+  documentId: string;
+}
+
+interface GetDocumentResponse {
+  content: string;
+}
+
+/* Read a document from Google Drive */
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Progressive disclosure</h3></div><div class="lang-cn-block"><p>// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Models are great at navigating filesystems. Presenting tools as code on a filesystem allows models to read tool definitions on-demand, rather than reading them all up-front.
+Alternatively, asearch_toolstool can be added to the server to find relevant definitions. For example, when working with the hypothetical Salesforce server used above, the agent searches for &quot;salesforce&quot; and loads only those tools that it needs for the current task. Including a detail level parameter in thesearch_toolstool that allows the agent to select the level of detail required (such as name only, name and description, or the full definition with schemas) also helps the agent conserve context and find tools efficiently.
+search_tools
+search_tools</p></div><div class="lang-cn-block"><p>interface GetDocumentInput {
+  documentId: string;
+}</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Context efficient tool results</h3></div><div class="lang-cn-block"><p>interface GetDocumentResponse {
+  content: string;
+}</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When working with large datasets, agents can filter and transform results in code before returning them. Consider fetching a 10,000-row spreadsheet:</p></div><div class="lang-cn-block"><p>/<em> Read a document from Google Drive </em>/
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually
+
+// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(`Found ${pendingOrders.length} pending orders`);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually</p></div><div class="lang-cn-block"><pre><code class="language-">// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;
+
+const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(<code class="inline">Found ${pendingOrders.length} pending orders</code>);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review
+The agent sees five rows instead of 10,000. Similar patterns work for aggregations, joins across multiple data sources, or extracting specific fields—all without bloating the context window.</p></div><div class="lang-cn-block"><p>// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h4>More powerful and context-efficient control flow</h4></div><div class="lang-cn-block"><p>const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Loops, conditionals, and error handling can be done with familiar code patterns rather than chaining individual tool calls. For example, if you need a deployment notification in Slack, the agent can write:</p></div><div class="lang-cn-block"><p>智能体通过探索文件系统来发现工具：列出 <code class="inline">./servers/</code> 目录以找到可用的服务器（如 <code class="inline">google-drive</code> 和 <code class="inline">salesforce</code>），然后读取所需的特定工具文件（如 <code class="inline">getDocument.ts</code> 和 <code class="inline">updateRecord.ts</code>）来了解每个工具的接口。这使智能体可以仅加载当前任务所需的定义。这将 token 使用量从 150,000 个减少到 2,000 个——时间和成本节省了 98.7%。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);
+This approach is more efficient than alternating between MCP tool calls and sleep commands through the agent loop.
+Additionally, being able to write out a conditional tree that gets executed also saves on “time to first token” latency: rather than having to wait for a model to evaluate an if-statement, the agent can let the code execution environment do this.</p></div><div class="lang-cn-block"><h2 id="heading-5">通过 MCP 执行代码的优势</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Privacy-preserving operations</h3></div><div class="lang-cn-block"><p>通过 MCP 执行代码使智能体能够更高效地使用上下文，包括按需加载工具、在数据到达模型之前进行过滤，以及在单个步骤中执行复杂逻辑。使用这种方法还有安全性和状态管理方面的优势。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When agents use code execution with MCP, intermediate results stay in the execution environment by default. This way, the agent only sees what you explicitly log or return, meaning data you don’t wish to share with the model can flow through your workflow without ever entering the model&#x27;s context.
+For even more sensitive workloads, the agent harness can tokenize sensitive data automatically. For example, imagine you need to import customer contact details from a spreadsheet into Salesforce. The agent writes:</p></div><div class="lang-cn-block"><h3 id="heading-6">渐进式披露</h3></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(`Updated ${sheet.rows.length} leads`);</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(<code class="inline">Updated ${sheet.rows.length} leads</code>);
+The MCP client intercepts the data and tokenizes PII before it reaches the model:</p></div><div class="lang-cn-block"><p>或者，可以在服务器上添加 <code class="inline">search_tools</code> 工具来查找相关定义。例如，当使用上面假设的 Salesforce 服务器时，智能体搜索 &quot;salesforce&quot; 并仅加载当前任务所需的那些工具。在 <code class="inline">search_tools</code> 工具中包含一个详细级别参数，允许智能体选择所需的详细程度（如仅名称、名称和描述，或包含 schema 的完整定义），这也有助于智能体节省上下文并高效地查找工具。</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]
+Then, when the data is shared in another MCP tool call, it is untokenized via a lookup in the MCP client. The real email addresses, phone numbers, and names flow from Google Sheets to Salesforce, but never through the model. This prevents the agent from accidentally logging or processing sensitive data. You can also use this to define deterministic security rules, choosing where data can flow to and from.</p></div><div class="lang-cn-block"><p>在处理大型数据集时，智能体可以在代码中过滤和转换结果后再返回。以获取一个包含 10,000 行的电子表格为例：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>State persistence and skills</h3></div><div class="lang-cn-block"><pre><code class="language-">// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually
+
+// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(`Found ${pendingOrders.length} pending orders`);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Code execution with filesystem access allows agents to maintain state across operations. Agents can write intermediate results to files, enabling them to resume work and track progress:</p></div><div class="lang-cn-block"><p>// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually</p></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; `${l.Id},${l.Email}`).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);
+
+// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; <code class="inline">${l.Id},${l.Email}</code>).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);</p></div><div class="lang-cn-block"><p>智能体看到的是五行而不是 10,000 行。类似的模式适用于聚合、跨多个数据源的联接或提取特定字段——所有这些都不会使上下文窗口膨胀。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);
+Agents can also persist their own code as reusable functions. Once an agent develops working code for a task, it can save that implementation for future use:</p></div><div class="lang-cn-block"><h4>更强大且上下文高效的控制流</h4></div></div>
+<div class="bilingual-pair bilingual-code"><pre><code class="language-">// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(`./workspace/sheet-${sheetId}.csv`, csv);
+  return `./workspace/sheet-${sheetId}.csv`;
+}
+
+// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</code></pre></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(<code class="inline">./workspace/sheet-${sheetId}.csv</code>, csv);
+  return <code class="inline">./workspace/sheet-${sheetId}.csv</code>;
+}</p></div><div class="lang-cn-block"><pre><code class="language-">let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</code></pre></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);
+This ties in closely to the concept ofSkills, folders of reusable instructions, scripts, and resources for models to improve performance on specialized tasks. Adding a SKILL.md file to these saved functions creates a structured skill that models can reference and use. Over time, this allows your agent to build a toolbox of higher-level capabilities, evolving the scaffolding that it needs to work most effectively.
+Note that code execution introduces its own complexity. Running agent-generated code requires a secure execution environment with appropriatesandboxing, resource limits, and monitoring. These infrastructure requirements add operational overhead and security considerations that direct tool calls avoid. The benefits of code execution—reduced token costs, lower latency, and improved tool composition—should be weighed against these implementation costs.</p></div><div class="lang-cn-block"><p>let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>Summary</h2></div><div class="lang-cn-block"><p>这种方法比通过智能体循环交替执行 MCP 工具调用和 sleep 命令更高效。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>MCP provides a foundational protocol for agents to connect to many tools and systems. However, once too many servers are connected, tool definitions and results can consume excessive tokens, reducing agent efficiency.
+Although many of the problems here feel novel—context management, tool composition, state persistence—they have known solutions from software engineering. Code execution applies these established patterns to agents, letting them use familiar programming constructs to interact with MCP servers more efficiently. If you implement this approach, we encourage you to share your findings with theMCP community.</p></div><div class="lang-cn-block"><p>此外，能够编写被执行的条件树还节省了&quot;首个 token 响应时间&quot;的延迟：智能体可以让代码执行环境来评估 if 语句，而不必等待模型来评估。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h3>Acknowledgments</h3></div><div class="lang-cn-block"><h3 id="heading-8">隐私保护操作</h3></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>This article was written by Adam Jones and Conor Kelly. Thanks to Jeremy Fox, Jerome Swannack, Stuart Ritchie, Molly Vorwerck, Matt Samuels, and Maggie Vo for feedback on drafts of this post.</p></div><div class="lang-cn-block"><p>当智能体使用 MCP 执行代码时，中间结果默认保留在执行环境中。这样，智能体只能看到你明确记录或返回的内容，这意味着你不想与模型共享的数据可以在工作流中流动而不会进入模型的上下文。</p></div></div>
+<div class="lang-cn-block"><p>对于更敏感的工作负载，智能体框架可以自动对敏感数据进行标记化（tokenize）处理。例如，假设你需要将电子表格中的客户联系方式导入 Salesforce。智能体编写：</p></div>
+<div class="lang-cn-block"><pre><code class="language-">const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(`Updated ${sheet.rows.length} leads`);</code></pre></div>
+<div class="lang-cn-block"><p>const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(<code class="inline">Updated ${sheet.rows.length} leads</code>);</p></div>
+<div class="lang-cn-block"><p>MCP 客户端在数据到达模型之前拦截数据并对 PII（个人身份信息）进行标记化处理：</p></div>
+<div class="lang-cn-block"><pre><code class="language-">// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</code></pre></div>
+<div class="lang-cn-block"><p>// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</p></div>
+<div class="lang-cn-block"><p>然后，当数据在另一个 MCP 工具调用中共享时，通过 MCP 客户端的查找表进行反标记化（untokenize）处理。真实的电子邮件地址、电话号码和姓名从 Google Sheets 流向 Salesforce，但永远不会经过模型。这可以防止智能体意外记录或处理敏感数据。你还可以使用此方法定义确定性安全规则，选择数据可以流向何处以及从何处获取。</p></div>
+<div class="lang-cn-block"><h3 id="heading-9">状态持久化与技能（Skills）</h3></div>
+<div class="lang-cn-block"><p>具有文件系统访问权限的代码执行允许智能体在操作之间维持状态。智能体可以将中间结果写入文件，使其能够恢复工作并跟踪进度：</p></div>
+<div class="lang-cn-block"><pre><code class="language-">const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; `${l.Id},${l.Email}`).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);
+
+// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</code></pre></div>
+<div class="lang-cn-block"><p>const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; <code class="inline">${l.Id},${l.Email}</code>).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);</p></div>
+<div class="lang-cn-block"><p>// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</p></div>
+<div class="lang-cn-block"><p>智能体还可以将自己的代码持久化为可复用的函数。一旦智能体为某个任务开发了可运行的代码，它就可以保存该实现以供将来使用：</p></div>
+<div class="lang-cn-block"><pre><code class="language-">// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(`./workspace/sheet-${sheetId}.csv`, csv);
+  return `./workspace/sheet-${sheetId}.csv`;
+}
+
+// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</code></pre></div>
+<div class="lang-cn-block"><p>// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(<code class="inline">./workspace/sheet-${sheetId}.csv</code>, csv);
+  return <code class="inline">./workspace/sheet-${sheetId}.csv</code>;
+}</p></div>
+<div class="lang-cn-block"><p>// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</p></div>
+<div class="lang-cn-block"><p>这与技能（Skills）的概念密切相关——技能是可复用的指令、脚本和资源的文件夹，用于提高模型在专门任务上的表现。在这些保存的函数中添加 SKILL.md 文件可以创建模型可以引用和使用的结构化技能。随着时间的推移，这允许你的智能体构建一个更高级别的能力工具箱，使其所需的脚手架不断演进，以最高效地工作。</p></div>
+<div class="lang-cn-block"><p>请注意，代码执行本身也会引入复杂性。运行智能体生成的代码需要一个具有适当沙箱隔离、资源限制和监控的安全执行环境。这些基础设施需求带来了直接工具调用所没有的运营开销和安全考量。代码执行的优势——降低 token 成本、减少延迟和改进工具组合——应该与这些实现成本进行权衡。</p></div>
+<div class="lang-cn-block"><h2 id="heading-10">总结</h2></div>
+<div class="lang-cn-block"><p>MCP 为智能体连接众多工具和系统提供了一个基础协议。然而，一旦连接了太多服务器，工具定义和结果可能会消耗过多的 token，降低智能体效率。</p></div>
+<div class="lang-cn-block"><p>尽管这里涉及的许多问题看起来很新颖——上下文管理、工具组合、状态持久化——但软件工程中已有已知的解决方案。代码执行将这些成熟的模式应用于智能体，让它们使用熟悉的编程构造来更高效地与 MCP 服务器交互。如果你实现了这种方法，我们鼓励你与 MCP 社区分享你的发现。</p></div>
+<div class="lang-cn-block"><h3 id="heading-11">致谢</h3></div>
+<div class="lang-cn-block"><p>本文由 Adam Jones 和 Conor Kelly 撰写。感谢 Jeremy Fox、Jerome Swannack、Stuart Ritchie、Molly Vorwerck、Matt Samuels 和 Maggie Vo 对本文草稿提供的反馈。</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>模型上下文协议（Model Context Protocol，MCP）是一个将 AI 智能体（Agent）连接到外部系统的开放标准。传统上，将智能体与工具和数据连接需要为每一对组合进行自定义集成，这导致了碎片化和重复工作，使得真正互联的系统难以扩展。MCP 提供了一种通用协议——开发者只需在智能体中实现一次 MCP，即可解锁整个集成生态系统。</p>
+<p>自 2024 年 11 月推出 MCP 以来，其采用速度非常快：社区已构建了数千个 MCP 服务器，所有主流编程语言都有可用的 SDK，业界已将 MCP 作为连接智能体与工具和数据的事实标准。</p>
+<p>如今，开发者日常构建的智能体可以通过数十个 MCP 服务器访问数百甚至数千个工具。然而，随着连接工具数量的增加，预先加载所有工具定义并通过上下文窗口传递中间结果会减慢智能体的速度并增加成本。</p>
+<p>在本文中，我们将探讨代码执行如何使智能体更高效地与 MCP 服务器交互，在使用更少 token 的同时处理更多工具。</p>
+<h2>工具消耗过多 token 会降低智能体效率</h2>
+<p>随着 MCP 使用规模的扩大，有两种常见模式会增加智能体的成本和延迟：</p>
+<ul>
+<li>工具定义过载上下文窗口；</li>
+<li>中间工具结果消耗额外的 token。</li>
+</ul>
+<h3>1. 工具定义过载上下文窗口</h3>
+<p>大多数 MCP 客户端会将所有工具定义预先直接加载到上下文中，使用直接的工具调用语法将其暴露给模型。这些工具定义可能如下所示：</p>
+<pre><code class="language-">gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</code></pre>
+<p>gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</p>
+<pre><code class="language-">salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation</code></pre>
+<p>salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation</p>
+<p>工具描述占用更多的上下文窗口空间，增加响应时间和成本。在智能体连接到数千个工具的情况下，它们在读取请求之前就需要处理数十万个 token。</p>
+<h3>2. 中间工具结果消耗额外的 token</h3>
+<p>大多数 MCP 客户端允许模型直接调用 MCP 工具。例如，你可以问你的智能体：&quot;从 Google Drive 下载我的会议记录，并将其附加到 Salesforce 线索上。&quot;</p>
+<p>模型将进行如下调用：</p>
+<pre><code class="language-">TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)
+
+TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)</code></pre>
+<p>TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)</p>
+<p>TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)</p>
+<p>每个中间结果都必须经过模型。在这个示例中，完整的通话记录流经了两次。对于一场 2 小时的销售会议，这可能意味着要额外处理 50,000 个 token。更大的文档甚至可能超出上下文窗口的限制，导致工作流程中断。</p>
+<p>对于大型文档或复杂数据结构，模型在工具调用之间复制数据时更容易出错。</p>
+<h2>通过 MCP 执行代码提高上下文效率</h2>
+<p>随着代码执行环境在智能体中越来越普遍，一种解决方案是将 MCP 服务器呈现为代码 API 而非直接的工具调用。智能体随后可以编写代码与 MCP 服务器交互。这种方法解决了两个挑战：智能体可以仅加载所需的工具，并在执行环境中处理数据后再将结果返回给模型。</p>
+<p>有多种方法可以实现这一点。一种方法是从连接的 MCP 服务器生成所有可用工具的文件树。以下是使用 TypeScript 的实现：</p>
+<pre><code class="language-">servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</code></pre>
+<p>servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</p>
+<p>然后每个工具对应一个文件，类似这样：</p>
+<pre><code class="language-">// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;
+
+interface GetDocumentInput {
+  documentId: string;
+}
+
+interface GetDocumentResponse {
+  content: string;
+}
+
+/* Read a document from Google Drive */
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</code></pre>
+<p>// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;</p>
+<p>interface GetDocumentInput {
+  documentId: string;
+}</p>
+<p>interface GetDocumentResponse {
+  content: string;
+}</p>
+<p>/<em> Read a document from Google Drive </em>/
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</p>
+<p>上面从 Google Drive 到 Salesforce 的示例变成了以下代码：</p>
+<pre><code class="language-">// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;
+
+const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</code></pre>
+<p>// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;</p>
+<p>const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</p>
+<p>智能体通过探索文件系统来发现工具：列出 <code class="inline">./servers/</code> 目录以找到可用的服务器（如 <code class="inline">google-drive</code> 和 <code class="inline">salesforce</code>），然后读取所需的特定工具文件（如 <code class="inline">getDocument.ts</code> 和 <code class="inline">updateRecord.ts</code>）来了解每个工具的接口。这使智能体可以仅加载当前任务所需的定义。这将 token 使用量从 150,000 个减少到 2,000 个——时间和成本节省了 98.7%。</p>
+<p>Cloudflare 发布了类似的发现，将通过 MCP 执行代码称为&quot;代码模式（Code Mode）&quot;。核心洞察是一样的：LLM 擅长编写代码，开发者应该利用这一优势来构建更高效地与 MCP 服务器交互的智能体。</p>
+<h2>通过 MCP 执行代码的优势</h2>
+<p>通过 MCP 执行代码使智能体能够更高效地使用上下文，包括按需加载工具、在数据到达模型之前进行过滤，以及在单个步骤中执行复杂逻辑。使用这种方法还有安全性和状态管理方面的优势。</p>
+<h3>渐进式披露</h3>
+<p>模型擅长浏览文件系统。将工具以代码形式呈现在文件系统上，允许模型按需读取工具定义，而不是预先全部读取。</p>
+<p>或者，可以在服务器上添加 <code class="inline">search_tools</code> 工具来查找相关定义。例如，当使用上面假设的 Salesforce 服务器时，智能体搜索 &quot;salesforce&quot; 并仅加载当前任务所需的那些工具。在 <code class="inline">search_tools</code> 工具中包含一个详细级别参数，允许智能体选择所需的详细程度（如仅名称、名称和描述，或包含 schema 的完整定义），这也有助于智能体节省上下文并高效地查找工具。</p>
+<h3>上下文高效的工具结果</h3>
+<p>在处理大型数据集时，智能体可以在代码中过滤和转换结果后再返回。以获取一个包含 10,000 行的电子表格为例：</p>
+<pre><code class="language-">// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually
+
+// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(`Found ${pendingOrders.length} pending orders`);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review</code></pre>
+<p>// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually</p>
+<p>// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(<code class="inline">Found ${pendingOrders.length} pending orders</code>);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review</p>
+<p>智能体看到的是五行而不是 10,000 行。类似的模式适用于聚合、跨多个数据源的联接或提取特定字段——所有这些都不会使上下文窗口膨胀。</p>
+<h4>更强大且上下文高效的控制流</h4>
+<p>循环、条件判断和错误处理可以用熟悉的代码模式完成，而不是链接单独的工具调用。例如，如果你需要在 Slack 中收到部署通知，智能体可以编写：</p>
+<pre><code class="language-">let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</code></pre>
+<p>let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</p>
+<p>这种方法比通过智能体循环交替执行 MCP 工具调用和 sleep 命令更高效。</p>
+<p>此外，能够编写被执行的条件树还节省了&quot;首个 token 响应时间&quot;的延迟：智能体可以让代码执行环境来评估 if 语句，而不必等待模型来评估。</p>
+<h3>隐私保护操作</h3>
+<p>当智能体使用 MCP 执行代码时，中间结果默认保留在执行环境中。这样，智能体只能看到你明确记录或返回的内容，这意味着你不想与模型共享的数据可以在工作流中流动而不会进入模型的上下文。</p>
+<p>对于更敏感的工作负载，智能体框架可以自动对敏感数据进行标记化（tokenize）处理。例如，假设你需要将电子表格中的客户联系方式导入 Salesforce。智能体编写：</p>
+<pre><code class="language-">const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(`Updated ${sheet.rows.length} leads`);</code></pre>
+<p>const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(<code class="inline">Updated ${sheet.rows.length} leads</code>);</p>
+<p>MCP 客户端在数据到达模型之前拦截数据并对 PII（个人身份信息）进行标记化处理：</p>
+<pre><code class="language-">// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</code></pre>
+<p>// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</p>
+<p>然后，当数据在另一个 MCP 工具调用中共享时，通过 MCP 客户端的查找表进行反标记化（untokenize）处理。真实的电子邮件地址、电话号码和姓名从 Google Sheets 流向 Salesforce，但永远不会经过模型。这可以防止智能体意外记录或处理敏感数据。你还可以使用此方法定义确定性安全规则，选择数据可以流向何处以及从何处获取。</p>
+<h3>状态持久化与技能（Skills）</h3>
+<p>具有文件系统访问权限的代码执行允许智能体在操作之间维持状态。智能体可以将中间结果写入文件，使其能够恢复工作并跟踪进度：</p>
+<pre><code class="language-">const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; `${l.Id},${l.Email}`).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);
+
+// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</code></pre>
+<p>const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; <code class="inline">${l.Id},${l.Email}</code>).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);</p>
+<p>// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</p>
+<p>智能体还可以将自己的代码持久化为可复用的函数。一旦智能体为某个任务开发了可运行的代码，它就可以保存该实现以供将来使用：</p>
+<pre><code class="language-">// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(`./workspace/sheet-${sheetId}.csv`, csv);
+  return `./workspace/sheet-${sheetId}.csv`;
+}
+
+// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</code></pre>
+<p>// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(<code class="inline">./workspace/sheet-${sheetId}.csv</code>, csv);
+  return <code class="inline">./workspace/sheet-${sheetId}.csv</code>;
+}</p>
+<p>// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</p>
+<p>这与技能（Skills）的概念密切相关——技能是可复用的指令、脚本和资源的文件夹，用于提高模型在专门任务上的表现。在这些保存的函数中添加 SKILL.md 文件可以创建模型可以引用和使用的结构化技能。随着时间的推移，这允许你的智能体构建一个更高级别的能力工具箱，使其所需的脚手架不断演进，以最高效地工作。</p>
+<p>请注意，代码执行本身也会引入复杂性。运行智能体生成的代码需要一个具有适当沙箱隔离、资源限制和监控的安全执行环境。这些基础设施需求带来了直接工具调用所没有的运营开销和安全考量。代码执行的优势——降低 token 成本、减少延迟和改进工具组合——应该与这些实现成本进行权衡。</p>
+<h2>总结</h2>
+<p>MCP 为智能体连接众多工具和系统提供了一个基础协议。然而，一旦连接了太多服务器，工具定义和结果可能会消耗过多的 token，降低智能体效率。</p>
+<p>尽管这里涉及的许多问题看起来很新颖——上下文管理、工具组合、状态持久化——但软件工程中已有已知的解决方案。代码执行将这些成熟的模式应用于智能体，让它们使用熟悉的编程构造来更高效地与 MCP 服务器交互。如果你实现了这种方法，我们鼓励你与 MCP 社区分享你的发现。</p>
+<h3>致谢</h3>
+<p>本文由 Adam Jones 和 Conor Kelly 撰写。感谢 Jeremy Fox、Jerome Swannack、Stuart Ritchie、Molly Vorwerck、Matt Samuels 和 Maggie Vo 对本文草稿提供的反馈。</p></div>
+                <div class="lang-en"><p>The Model Context Protocol (MCP)is an open standard for connecting AI agents to external systems. Connecting agents to tools and data traditionally requires a custom integration for each pairing, creating fragmentation and duplicated effort that makes it difficult to scale truly connected systems. MCP provides a universal protocol—developers implement MCP once in their agent and it unlocks an entire ecosystem of integrations.
+Since launching MCP in November 2024, adoption has been rapid: the community has built thousands ofMCP servers,SDKsare available for all major programming languages, and the industry has adopted MCP as the de-facto standard for connecting agents to tools and data.
+Today developers routinely build agents with access to hundreds or thousands of tools across dozens of MCP servers. However, as the number of connected tools grows, loading all tool definitions upfront and passing intermediate results through the context window slows down agents and increases costs.
+In this blog we&#x27;ll explore how code execution can enable agents to interact with MCP servers more efficiently, handling more tools while using fewer tokens.</p>
+<h2>Excessive token consumption from tools makes agents less efficient</h2>
+<p>As MCP usage scales, there are two common patterns that can increase agent cost and latency:</p>
+<ul>
+<li>Tool definitions overload the context window;</li>
+<li>Intermediate tool results consume additional tokens.</li>
+</ul>
+<h3>1. Tool definitions overload the context window</h3>
+<p>Most MCP clients load all tool definitions upfront directly into context, exposing them to the model using a direct tool-calling syntax. These tool definitions might look like:</p>
+<pre><code class="language-">gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</code></pre>
+<p>gdrive.getDocument
+     Description: Retrieves a document from Google Drive
+     Parameters:
+                documentId (required, string): The ID of the document to retrieve
+                fields (optional, string): Specific fields to return
+     Returns: Document object with title, body content, metadata, permissions, etc.</p>
+<pre><code class="language-">salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation</code></pre>
+<p>salesforce.updateRecord
+    Description: Updates a record in Salesforce
+    Parameters:
+               objectType (required, string): Type of Salesforce object (Lead, Contact,      Account, etc.)
+               recordId (required, string): The ID of the record to update
+               data (required, object): Fields to update with their new values
+     Returns: Updated record object with confirmation
+Tool descriptions occupy more context window space, increasing response time and costs. In cases where agents are connected to thousands of tools, they’ll need to process hundreds of thousands of tokens before reading a request.</p>
+<h3>2. Intermediate tool results consume additional tokens</h3>
+<p>Most MCP clients allow models to directly call MCP tools. For example, you might ask your agent: &quot;Download my meeting transcript from Google Drive and attach it to the Salesforce lead.&quot;
+The model will make calls like:</p>
+<pre><code class="language-">TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)
+
+TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)</code></pre>
+<p>TOOL CALL: gdrive.getDocument(documentId: &quot;abc123&quot;)
+        → returns &quot;Discussed Q4 goals...\n[full transcript text]&quot;
+           (loaded into model context)</p>
+<p>TOOL CALL: salesforce.updateRecord(
+			objectType: &quot;SalesMeeting&quot;,
+			recordId: &quot;00Q5f000001abcXYZ&quot;,
+  			data: { &quot;Notes&quot;: &quot;Discussed Q4 goals...\n[full transcript text written out]&quot; }
+		)
+		(model needs to write entire transcript into context again)
+Every intermediate result must pass through the model. In this example, the full call transcript flows through twice. For a 2-hour sales meeting, that could mean processing an additional 50,000 tokens. Even larger documents may exceed context window limits, breaking the workflow.
+With large documents or complex data structures, models may be more likely to make mistakes when copying data between tool calls.</p>
+<h2>Code execution with MCP improves context efficiency</h2>
+<p>With code execution environments becoming more common for agents, a solution is to present MCP servers as code APIs rather than direct tool calls. The agent can then write code to interact with MCP servers. This approach addresses both challenges: agents can load only the tools they need and process data in the execution environment before passing results back to the model.
+There are a number of ways to do this. One approach is to generate a file tree of all available tools from connected MCP servers. Here&#x27;s an implementation using TypeScript:</p>
+<pre><code class="language-">servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)</code></pre>
+<p>servers
+├── google-drive
+│   ├── getDocument.ts
+│   ├── ... (other tools)
+│   └── index.ts
+├── salesforce
+│   ├── updateRecord.ts
+│   ├── ... (other tools)
+│   └── index.ts
+└── ... (other servers)
+Then each tool corresponds to a file, something like:</p>
+<pre><code class="language-">// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;
+
+interface GetDocumentInput {
+  documentId: string;
+}
+
+interface GetDocumentResponse {
+  content: string;
+}
+
+/* Read a document from Google Drive */
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}</code></pre>
+<p>// ./servers/google-drive/getDocument.ts
+import { callMCPTool } from &quot;../../../client.js&quot;;</p>
+<p>interface GetDocumentInput {
+  documentId: string;
+}</p>
+<p>interface GetDocumentResponse {
+  content: string;
+}</p>
+<p>/<em> Read a document from Google Drive </em>/
+export async function getDocument(input: GetDocumentInput): Promise&lt;GetDocumentResponse&gt; {
+  return callMCPTool&lt;GetDocumentResponse&gt;(&#x27;google_drive__get_document&#x27;, input);
+}
+Our Google Drive to Salesforce example above becomes the code:</p>
+<pre><code class="language-">// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;
+
+const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});</code></pre>
+<p>// Read transcript from Google Docs and add to Salesforce prospect
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+import * as salesforce from &#x27;./servers/salesforce&#x27;;</p>
+<p>const transcript = (await gdrive.getDocument({ documentId: &#x27;abc123&#x27; })).content;
+await salesforce.updateRecord({
+  objectType: &#x27;SalesMeeting&#x27;,
+  recordId: &#x27;00Q5f000001abcXYZ&#x27;,
+  data: { Notes: transcript }
+});
+The agent discovers tools by exploring the filesystem: listing the./servers/directory to find available servers (likegoogle-driveandsalesforce), then reading the specific tool files it needs (likegetDocument.tsandupdateRecord.ts) to understand each tool&#x27;s interface. This lets the agent load only the definitions it needs for the current task. This reduces the token usage from 150,000 tokens to 2,000 tokens—a time and cost saving of 98.7%.
+./servers/
+google-drive
+salesforce
+getDocument.ts
+updateRecord.ts
+Cloudflarepublished similar findings, referring to code execution with MCP as “Code Mode.&quot; The core insight is the same: LLMs are adept at writing code and developers should take advantage of this strength to build agents that interact with MCP servers more efficiently.</p>
+<h2>Benefits of code execution with MCP</h2>
+<p>Code execution with MCP enables agents to use context more efficiently by loading tools on demand, filtering data before it reaches the model, and executing complex logic in a single step. There are also security and state management benefits to using this approach.</p>
+<h3>Progressive disclosure</h3>
+<p>Models are great at navigating filesystems. Presenting tools as code on a filesystem allows models to read tool definitions on-demand, rather than reading them all up-front.
+Alternatively, asearch_toolstool can be added to the server to find relevant definitions. For example, when working with the hypothetical Salesforce server used above, the agent searches for &quot;salesforce&quot; and loads only those tools that it needs for the current task. Including a detail level parameter in thesearch_toolstool that allows the agent to select the level of detail required (such as name only, name and description, or the full definition with schemas) also helps the agent conserve context and find tools efficiently.
+search_tools
+search_tools</p>
+<h3>Context efficient tool results</h3>
+<p>When working with large datasets, agents can filter and transform results in code before returning them. Consider fetching a 10,000-row spreadsheet:</p>
+<pre><code class="language-">// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually
+
+// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(`Found ${pendingOrders.length} pending orders`);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review</code></pre>
+<p>// Without code execution - all rows flow through context
+TOOL CALL: gdrive.getSheet(sheetId: &#x27;abc123&#x27;)
+        → returns 10,000 rows in context to filter manually</p>
+<p>// With code execution - filter in the execution environment
+const allRows = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+const pendingOrders = allRows.filter(row =&gt; 
+  row[&quot;Status&quot;] === &#x27;pending&#x27;
+);
+console.log(<code class="inline">Found ${pendingOrders.length} pending orders</code>);
+console.log(pendingOrders.slice(0, 5)); // Only log first 5 for review
+The agent sees five rows instead of 10,000. Similar patterns work for aggregations, joins across multiple data sources, or extracting specific fields—all without bloating the context window.</p>
+<h4>More powerful and context-efficient control flow</h4>
+<p>Loops, conditionals, and error handling can be done with familiar code patterns rather than chaining individual tool calls. For example, if you need a deployment notification in Slack, the agent can write:</p>
+<pre><code class="language-">let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);</code></pre>
+<p>let found = false;
+while (!found) {
+  const messages = await slack.getChannelHistory({ channel: &#x27;C123456&#x27; });
+  found = messages.some(m =&gt; m.text.includes(&#x27;deployment complete&#x27;));
+  if (!found) await new Promise(r =&gt; setTimeout(r, 5000));
+}
+console.log(&#x27;Deployment notification received&#x27;);
+This approach is more efficient than alternating between MCP tool calls and sleep commands through the agent loop.
+Additionally, being able to write out a conditional tree that gets executed also saves on “time to first token” latency: rather than having to wait for a model to evaluate an if-statement, the agent can let the code execution environment do this.</p>
+<h3>Privacy-preserving operations</h3>
+<p>When agents use code execution with MCP, intermediate results stay in the execution environment by default. This way, the agent only sees what you explicitly log or return, meaning data you don’t wish to share with the model can flow through your workflow without ever entering the model&#x27;s context.
+For even more sensitive workloads, the agent harness can tokenize sensitive data automatically. For example, imagine you need to import customer contact details from a spreadsheet into Salesforce. The agent writes:</p>
+<pre><code class="language-">const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(`Updated ${sheet.rows.length} leads`);</code></pre>
+<p>const sheet = await gdrive.getSheet({ sheetId: &#x27;abc123&#x27; });
+for (const row of sheet.rows) {
+  await salesforce.updateRecord({
+    objectType: &#x27;Lead&#x27;,
+    recordId: row.salesforceId,
+    data: { 
+      Email: row.email,
+      Phone: row.phone,
+      Name: row.name
+    }
+  });
+}
+console.log(<code class="inline">Updated ${sheet.rows.length} leads</code>);
+The MCP client intercepts the data and tokenizes PII before it reaches the model:</p>
+<pre><code class="language-">// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]</code></pre>
+<p>// What the agent would see, if it logged the sheet.rows:
+[
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_1]&#x27;, phone: &#x27;[PHONE_1]&#x27;, name: &#x27;[NAME_1]&#x27; },
+  { salesforceId: &#x27;00Q...&#x27;, email: &#x27;[EMAIL_2]&#x27;, phone: &#x27;[PHONE_2]&#x27;, name: &#x27;[NAME_2]&#x27; },
+  ...
+]
+Then, when the data is shared in another MCP tool call, it is untokenized via a lookup in the MCP client. The real email addresses, phone numbers, and names flow from Google Sheets to Salesforce, but never through the model. This prevents the agent from accidentally logging or processing sensitive data. You can also use this to define deterministic security rules, choosing where data can flow to and from.</p>
+<h3>State persistence and skills</h3>
+<p>Code execution with filesystem access allows agents to maintain state across operations. Agents can write intermediate results to files, enabling them to resume work and track progress:</p>
+<pre><code class="language-">const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; `${l.Id},${l.Email}`).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);
+
+// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);</code></pre>
+<p>const leads = await salesforce.query({ 
+  query: &#x27;SELECT Id, Email FROM Lead LIMIT 1000&#x27; 
+});
+const csvData = leads.map(l =&gt; <code class="inline">${l.Id},${l.Email}</code>).join(&#x27;\n&#x27;);
+await fs.writeFile(&#x27;./workspace/leads.csv&#x27;, csvData);</p>
+<p>// Later execution picks up where it left off
+const saved = await fs.readFile(&#x27;./workspace/leads.csv&#x27;, &#x27;utf-8&#x27;);
+Agents can also persist their own code as reusable functions. Once an agent develops working code for a task, it can save that implementation for future use:</p>
+<pre><code class="language-">// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(`./workspace/sheet-${sheetId}.csv`, csv);
+  return `./workspace/sheet-${sheetId}.csv`;
+}
+
+// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);</code></pre>
+<p>// In ./skills/save-sheet-as-csv.ts
+import * as gdrive from &#x27;./servers/google-drive&#x27;;
+export async function saveSheetAsCsv(sheetId: string) {
+  const data = await gdrive.getSheet({ sheetId });
+  const csv = data.map(row =&gt; row.join(&#x27;,&#x27;)).join(&#x27;\n&#x27;);
+  await fs.writeFile(<code class="inline">./workspace/sheet-${sheetId}.csv</code>, csv);
+  return <code class="inline">./workspace/sheet-${sheetId}.csv</code>;
+}</p>
+<p>// Later, in any agent execution:
+import { saveSheetAsCsv } from &#x27;./skills/save-sheet-as-csv&#x27;;
+const csvPath = await saveSheetAsCsv(&#x27;abc123&#x27;);
+This ties in closely to the concept ofSkills, folders of reusable instructions, scripts, and resources for models to improve performance on specialized tasks. Adding a SKILL.md file to these saved functions creates a structured skill that models can reference and use. Over time, this allows your agent to build a toolbox of higher-level capabilities, evolving the scaffolding that it needs to work most effectively.
+Note that code execution introduces its own complexity. Running agent-generated code requires a secure execution environment with appropriatesandboxing, resource limits, and monitoring. These infrastructure requirements add operational overhead and security considerations that direct tool calls avoid. The benefits of code execution—reduced token costs, lower latency, and improved tool composition—should be weighed against these implementation costs.</p>
+<h2>Summary</h2>
+<p>MCP provides a foundational protocol for agents to connect to many tools and systems. However, once too many servers are connected, tool definitions and results can consume excessive tokens, reducing agent efficiency.
+Although many of the problems here feel novel—context management, tool composition, state persistence—they have known solutions from software engineering. Code execution applies these established patterns to agents, letting them use familiar programming constructs to interact with MCP servers more efficiently. If you implement this approach, we encourage you to share your findings with theMCP community.</p>
+<h3>Acknowledgments</h3>
+<p>This article was written by Adam Jones and Conor Kelly. Thanks to Jeremy Fox, Jerome Swannack, Stuart Ritchie, Molly Vorwerck, Matt Samuels, and Maggie Vo for feedback on drafts of this post.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/code-execution-with-mcp" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>

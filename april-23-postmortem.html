@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关于近期 Claude Code 质量问题的说明 - Anthropic 工程博客 中英双语</title>
+    <style>
+
+        :root {
+            --bg: #faf9f7;
+            --text: #1a1a1a;
+            --text-secondary: #6b6560;
+            --border: #e5e2dd;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --input-bg: #f5f3ef;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Georgia', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.9;
+            -webkit-font-smoothing: antialiased;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        /* ── Dark mode ──────────────────────────────────────── */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #e5e2dd;
+            --text-secondary: #a09890;
+            --border: #333;
+            --accent: #f59e0b;
+            --accent-hover: #d97706;
+            --input-bg: #252525;
+        }
+        [data-theme="dark"] .site-header {
+            background: rgba(26, 26, 26, 0.85);
+        }
+        [data-theme="dark"] .content pre {
+            background: #111;
+            color: #e5e2dd;
+        }
+        [data-theme="dark"] .mode-btn.active {
+            background: var(--accent);
+            color: #1a1a1a;
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .controls button:hover {
+            border-color: var(--accent);
+        }
+        [data-theme="dark"] .theme-toggle {
+            color: var(--text-secondary);
+            background: #333;
+        }
+        [data-theme="dark"] .theme-toggle:hover {
+            color: var(--accent);
+            background: #444;
+        }
+    
+        /* ── Header ─────────────────────────────────────────── */
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: rgba(250, 249, 247, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .site-header .logo {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.15rem;
+            letter-spacing: 2px;
+        }
+        .controls {
+            margin-left: auto;
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.15s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .controls button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .theme-toggle {
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.15s;
+            line-height: 1;
+        }
+        .theme-toggle:hover { color: var(--accent); background: var(--input-bg); }
+
+        /* ── Layout with sidebar ────────────────────────────── */
+        .page-layout {
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2.5rem 5rem;
+            gap: 3.5rem;
+        }
+
+        /* ── TOC sidebar ────────────────────────────────────── */
+        .toc-sidebar {
+            width: 240px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 90px;
+            align-self: flex-start;
+            max-height: calc(100vh - 110px);
+            overflow-y: auto;
+            padding-right: 1.2rem;
+        }
+        .toc-sidebar .toc-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .toc-sidebar a {
+            display: block;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            padding: 0.3rem 0;
+            transition: color 0.15s;
+            border-left: 2px solid transparent;
+            padding-left: 0.9rem;
+        }
+        .toc-sidebar a:hover { color: var(--accent); }
+        .toc-sidebar a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+        }
+        .toc-sidebar .toc-h3 {
+            padding-left: 1.8rem;
+            font-size: 0.82rem;
+        }
+
+        /* ── Main content ───────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--accent);
+            text-decoration: none;
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+        }
+        .back-link:hover { color: var(--accent-hover); }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            margin-bottom: 0.4rem;
+        }
+        .title-block {
+            margin-bottom: 2.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .title-block h1 {
+            font-size: 2.3rem;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: 2px;
+        }
+        .title-block .en-title {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        /* ── Bilingual pair (EN above, CN below) ───────────── */
+        .bilingual-pair {
+            margin: 2rem 0;
+        }
+        .lang-en-block {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            line-height: 1.8;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px dashed var(--border);
+            margin-bottom: 0.6rem;
+        }
+        .lang-cn-block {
+            color: var(--text);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+        .bilingual-pair.bilingual-code {
+            border-bottom: none;
+        }
+        .bilingual-pair.bilingual-code .lang-en-block {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* ── Single language mode ───────────────────────────── */
+        .single-view { display: none; }
+        .single-view .lang-zh,
+        .single-view .lang-en { display: none; }
+        body.mode-zh .single-view { display: block; }
+        body.mode-zh .single-view .lang-zh { display: block; }
+        body.mode-en .single-view { display: block; }
+        body.mode-en .single-view .lang-en { display: block; }
+        body.mode-zh .bilingual-view,
+        body.mode-en .bilingual-view { display: none; }
+        body.mode-zh .title-block .en-title { display: none; }
+        body.mode-en .title-block h1.cn { display: none; }
+        body.mode-en .title-block h1.en { display: block; }
+        .title-block h1.en { display: none; }
+
+        /* ── TOC visibility per mode ────────────────────────── */
+        .toc-cn, .toc-en { display: none; }
+        body.mode-zh .toc-cn { display: block; }
+        body.mode-en .toc-en { display: block; }
+        body.mode-bi .toc-cn { display: block; }
+
+        /* ── Content typography ─────────────────────────────── */
+        .content h2 {
+            font-size: 1.55rem;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 2px solid var(--accent);
+            letter-spacing: 2px;
+            font-weight: 400;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h3 {
+            font-size: 1.28rem;
+            margin: 2rem 0 0.8rem;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: var(--accent);
+            scroll-margin-top: 80px;
+        }
+        .content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.6rem;
+            font-weight: 400;
+        }
+        .content p {
+            margin: 0.9rem 0;
+        }
+        .content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .content a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        .content pre {
+            background: #1a1a1a;
+            color: #e5e2dd;
+            border-radius: 0;
+            padding: 1.2rem 1.4rem;
+            overflow-x: auto;
+            margin: 1.2rem 0;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            border-left: 3px solid var(--accent);
+        }
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.88em;
+        }
+        .content code.inline {
+            background: var(--input-bg);
+            padding: 0.15em 0.4em;
+            border-radius: 0;
+        }
+        .content blockquote {
+            border-left: 3px solid var(--accent);
+            padding: 0.5rem 1.2rem;
+            margin: 1.2rem 0;
+            color: var(--text-secondary);
+        }
+        .content blockquote p { margin: 0; }
+        .content ul, .content ol {
+            margin: 0.8rem 0;
+            padding-left: 2rem;
+        }
+        .content li { margin: 0.35rem 0; }
+        .content strong { font-weight: 600; }
+
+        /* ── Footer ─────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 2.5rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
+        }
+        .site-footer a { color: var(--accent); }
+        kbd {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 0.1em 0.5em;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 960px) {
+            .toc-sidebar { display: none; }
+            .page-layout { padding: 2rem 1.5rem 4rem; }
+        }
+        @media (max-width: 768px) {
+            .site-header { padding: 1rem 1.2rem; }
+            .page-layout { padding: 1.2rem; }
+            .title-block h1 { font-size: 1.7rem; }
+            .content h2 { font-size: 1.3rem; }
+            .controls button { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body class="mode-bi">
+    <nav class="site-header">
+        <a class="logo" href="index.html">Anthropic 工程博客</a>
+        <div class="controls">
+            <button onclick="setMode('zh')" id="btn-zh">中文</button>
+            <button onclick="setMode('en')" id="btn-en">English</button>
+            <button onclick="setMode('bi')" id="btn-bi" class="active">对照</button>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn" title="切换暗色模式">☀</button>
+        </div>
+    </nav>
+
+    <div class="page-layout">
+        <aside class="toc-sidebar">
+            <div class="toc-label">目录</div>
+            <div class="toc-cn"><a class="toc-h2" href="#heading-1">Claude Code 默认推理强度的变更</a>
+<a class="toc-h2" href="#heading-2">一个导致历史推理记录丢失的缓存优化</a>
+<a class="toc-h2" href="#heading-3">一项减少冗余输出的系统提示词变更</a>
+<a class="toc-h2" href="#heading-4">后续改进</a></div>
+            <div class="toc-en"><a class="toc-h2" href="#heading-1">A change to Claude Code&#x27;s default reasoning effort</a>
+<a class="toc-h2" href="#heading-2">A caching optimization that dropped prior reasoning</a>
+<a class="toc-h2" href="#heading-3">A system prompt change to reduce verbosity</a>
+<a class="toc-h2" href="#heading-4">Going forward</a></div>
+        </aside>
+
+        <div class="main-content">
+            <a href="index.html" class="back-link">← 返回文章列表</a>
+            <div class="meta">2026-04-23</div>
+            <div class="title-block">
+                <h1 class="cn">关于近期 Claude Code 质量问题的说明</h1>
+                <h1 class="en">An update on recent Claude Code quality reports</h1>
+                <div class="en-title">An update on recent Claude Code quality reports</div>
+            </div>
+
+            <div class="bilingual-view content">
+                <div class="bilingual-pair"><div class="lang-en-block"><p>Over the past month, we’ve been looking into reports that Claude’s responses have worsened for some users. We’ve traced these reports to three separate changes that affected Claude Code, the Claude Agent SDK, and Claude Cowork. The API was not impacted.
+All three issues have now been resolved as of April 20 (v2.1.116).
+In this post, we explain what we found, what we fixed, and what we’ll do differently to ensure similar issues are much less likely to happen again.
+We take reports about degradation very seriously. We never intentionally degrade our models, and we were able to immediately confirm that our API and inference layer were unaffected.
+After investigation, we identified three different issues:</p></div><div class="lang-cn-block"><p>在过去一个月中，我们一直在调查部分用户反映的 Claude 回答质量下降问题。经过排查，我们发现这些问题源于三个独立的变更，分别影响了 Claude Code、Claude Agent SDK 和 Claude Cowork。API 未受影响。
+截至 4 月 20 日（v2.1.116），以上三个问题均已修复。
+在这篇文章中，我们将说明我们发现了什么、修复了什么，以及我们将采取哪些不同的措施来防止类似问题再次发生。
+我们高度重视质量退化的报告。我们从未故意降低模型质量，并且在第一时间确认了我们的 API 和推理层未受影响。
+经过调查，我们发现了三个不同的问题：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>On March 4, we changed Claude Code&#x27;s default reasoning effort fromhightomediumto reduce the very long latency—enough to make the UI appear frozen—some users were seeing inhighmode. This was the wrong tradeoff. We reverted this change on April 7 after users told us they&#x27;d prefer to default to higher intelligence and opt into lower effort for simple tasks. This impacted Sonnet 4.6 and Opus 4.6.</li></ul></div><div class="lang-cn-block"><ul><li>3 月 4 日，我们将 Claude Code 的默认推理强度（Reasoning Effort）从 <code class="inline">high</code> 调整为 <code class="inline">medium</code>，以降低部分用户在 <code class="inline">high</code> 模式下遇到的超长延迟——长到足以让界面看起来像卡住了一样。这是一个错误的取舍。在用户反馈表示更倾向于默认使用更高智能水平、并自行选择降低强度来处理简单任务后，我们于 4 月 7 日撤回了此变更。该变更影响了 Sonnet 4.6 和 Opus 4.6。</li><li>3 月 26 日，我们上线了一项变更：在会话闲置超过一小时后清除 Claude 的历史思维记录，以减少用户恢复会话时的延迟。一个 bug 导致此操作在会话的后续每一轮都会重复执行，而不是仅执行一次，这使 Claude 表现出健忘和重复的行为。我们于 4 月 10 日修复了该问题。此变更影响了 Sonnet 4.6 和 Opus 4.6。</li><li>4 月 16 日，我们在系统提示词（System Prompt）中添加了一条减少冗余输出的指令。该指令与其他提示词变更叠加后，损害了代码生成质量，于 4 月 20 日被撤回。此变更影响了 Sonnet 4.6、Opus 4.6 和 Opus 4.7。</li></ul></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>high
+medium
+high</p></div><div class="lang-cn-block"><p>由于每个变更影响的流量范围和生效时间各不相同，整体效果看起来像是广泛且不一致的质量退化。虽然我们从 3 月初就开始调查这些反馈，但起初很难将其与用户反馈中的正常波动区分开来，而且我们的内部使用和评测最初也未能复现已确认的问题。
+这不是用户对 Claude Code 应有的体验。截至 4 月 23 日，我们已为所有订阅用户重置了使用额度上限。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><ul><li>On March 26, we shipped a change to clear Claude&#x27;s older thinking from sessions that had been idle for over an hour, to reduce latency when users resumed those sessions. A bug caused this to keep happening every turn for the rest of the session instead of just once, which made Claude seem forgetful and repetitive. We fixed it on April 10. This affected Sonnet 4.6 and Opus 4.6.</li><li>On April 16, we added a system prompt instruction to reduce verbosity. In combination with other prompt changes, it hurt coding quality and was reverted on April 20. This impacted Sonnet 4.6, Opus 4.6, and Opus 4.7.</li></ul></div><div class="lang-cn-block"><h2 id="heading-1">Claude Code 默认推理强度的变更</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Because each change affected a different slice of traffic on a different schedule, the aggregate effect looked like broad, inconsistent degradation. While we began investigating reports in early March, they were challenging to distinguish from normal variation in user feedback at first, and neither our internal usage nor evals initially reproduced the issues identified.
+This isn’t the experience users should expect from Claude Code. As of April 23, we’re resetting usage limits for all subscribers.</p></div><div class="lang-cn-block"><p>当我们于 2 月在 Claude Code 中发布 Opus 4.6 时，我们将默认推理强度设为 <code class="inline">high</code>。
+不久后，我们收到用户反馈，称 Claude Opus 4.6 在 <code class="inline">high</code> 强度模式下偶尔会思考过久，导致界面看起来卡住，并为这些用户带来不成比例的延迟和 Token 消耗。
+通常情况下，模型思考时间越长，输出质量越好。推理强度是 Claude Code 让用户在&quot;更多思考&quot;与&quot;更低延迟、更少触发使用额度上限&quot;之间做出权衡的方式。在为模型校准强度等级时，我们会考虑这一权衡，以便在测试时计算（Test-time Compute）曲线上选取能为用户提供最佳选择范围的点。在产品层面，我们选择将曲线上的哪个点设为默认值，并将其作为 <code class="inline">effort</code> 参数发送给 Messages API；其他选项则通过 <code class="inline">/effort</code> 命令供用户选择。
+在我们的内部评测和测试中，<code class="inline">medium</code> 强度在大多数任务中以略低的智能水平换来了显著降低的延迟。它也不存在偶尔出现超长尾延迟的问题，并且有助于最大化用户的使用额度。因此，我们推出了一项变更，将 <code class="inline">medium</code> 设为默认强度，并通过产品内对话框解释了原因。
+推出后不久，用户开始反馈 Claude Code 感觉变&quot;笨&quot;了。我们发布了多次设计迭代，试图让当前强度设置更加醒目，以提醒用户可以更改默认值（启动时的提示、内联强度选择器，以及重新引入 ultrathink），但大多数用户仍然使用 <code class="inline">medium</code> 作为默认强度。
+在听取更多客户的反馈后，我们于 4 月 7 日撤回了这一决定。所有用户现在默认使用 <code class="inline">xhigh</code> 强度运行 Opus 4.7，其他所有模型默认使用 <code class="inline">high</code> 强度。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>A change to Claude Code&#x27;s default reasoning effort</h2></div><div class="lang-cn-block"><h2 id="heading-2">一个导致历史推理记录丢失的缓存优化</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When we released Opus 4.6 in Claude Code in February, we set the default reasoning effort tohigh.
+high
+Soon after, we received user feedback that Claude Opus 4.6 in high effort mode would occasionally think for too long, causing the UI to appear frozen and leading to disproportionate latency and token usage for those users.
+In general, the longer the model thinks, the better the output. Effort levels are how Claude Code lets users set that tradeoff—more thinking versus lower latency and fewer usage limit hits. As we calibrate effort levels for our models, we take this tradeoff into account in order to pick points along the test-time-compute curve that give people the best range of options. In the product layer, we then choose which point along this curve we set as our default, and that is the value we send to the Messages API as the effort parameter; we then make the other options available via/effort.
+/effort
+In our internal evals and testing, medium effort achieved slightly lower intelligence with significantly less latency for the majority of tasks. It also didn’t suffer from the same issues with occasional very long tail latencies for thinking, and it helped maximize users’ usage limits. As a result, we rolled out a change making medium the default effort, and explained the rationale via in-product dialog.
+Soon after rolling out, users began reporting that Claude Code felt less intelligent. We shipped a number of design iterations to make the current effort setting clearer in order to alert people they could change the default (notices on startup, an inline effort selector, and bringing back ultrathink), but most users retained the medium effort default.
+After hearing feedback from more customers, we reversed this decision on April 7. All users now default toxhigheffort for Opus 4.7, andhigheffort for all other models.
+xhigh
+high</p></div><div class="lang-cn-block"><p>当 Claude 通过推理完成一项任务时，其推理过程通常会保存在对话历史中，以便在后续每一轮对话中，Claude 都能看到自己之前做出修改和工具调用的原因。
+3 月 26 日，我们上线了一项本意是提升效率的优化。我们使用提示词缓存（Prompt Caching）来使连续的 API 调用对用户来说更便宜、更快。Claude 在发起 API 请求时会将输入 Token 写入缓存，在一段时间不活动后，提示词会从缓存中被逐出，为其他提示词腾出空间。缓存利用率是我们精心管理的指标（了解更多关于我们的方法）。
+设计本应很简单：如果一个会话闲置超过一小时，我们可以通过清除旧的思维记录来降低用户恢复该会话的成本。由于该请求无论如何都会产生缓存未命中（Cache Miss），我们可以从请求中裁剪不必要的消息，以减少发送给 API 的未缓存 Token 数量。之后我们会恢复发送完整的推理历史。为此，我们使用了 <code class="inline">clear_thinking_20251015</code> API 请求头，并配合 <code class="inline">keep:1</code> 参数。
+实现中存在一个 bug。它不是只清除一次思维历史，而是在会话剩余的每一轮中都持续清除。一旦会话跨过闲置阈值，该会话进程中的后续每个请求都会指示 API 仅保留最近一个推理块，丢弃之前的所有内容。这形成了累积效应：如果你在 Claude 执行工具调用的过程中发送了一条后续消息，这会在有问题的标志下启动新一轮对话，因此即使是当前轮次的推理记录也会被丢弃。Claude 会继续执行，但逐渐失去了对自己为何做出这些选择的记忆。这表现为用户反馈的健忘、重复和奇怪的工具调用选择。
+由于此 bug 会持续从后续请求中丢弃思维块，这些请求也会导致缓存未命中。我们认为这正是导致部分用户反馈使用额度消耗速度异常加快的原因。
+两个不相关的实验使我们最初难以复现该问题：一个是与消息队列相关的仅限内部的服务端实验；另一个是我们对思维展示方式的独立变更在大多数 CLI 会话中掩盖了这个 bug，因此即使在测试外部构建版本时也未能发现。
+这个 bug 处于 Claude Code 的上下文管理、Anthropic API 和扩展思维（Extended Thinking）的交叉点。它引入的变更通过了多轮人工和自动化代码审查，以及单元测试、端到端测试、自动化验证和内部试用。再加上这只在一个边缘场景（过期会话）中出现，且复现困难，我们花了超过一周才发现并确认根本原因。
+在调查过程中，我们使用 Opus 4.7 对导致问题的 Pull Request 进行了 Code Review 回测。在提供了必要的代码仓库以获取完整上下文后，Opus 4.7 发现了该 bug，而 Opus 4.6 未能发现。为防止此类问题再次发生，我们正在落地支持将额外的代码仓库作为 Code Review 的上下文。
+我们于 4 月 10 日在 v2.1.101 中修复了此 bug。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>A caching optimization that dropped prior reasoning</h2></div><div class="lang-cn-block"><h2 id="heading-3">一项减少冗余输出的系统提示词变更</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>When Claude reasons through a task, that reasoning is normally kept in the conversation history so that on every subsequent turn, Claude can see why it made the edits and tool calls it did.
+On March 26, we shipped what was meant to be an efficiency improvement to this feature. We use prompt caching to make back-to-back API calls cheaper and faster for users. Claude writes the input tokens to the cache when it makes an API request, then after a period of inactivity the prompt is evicted from cache, making room for other prompts. Cache utilization is something we manage carefully (more on ourapproach).
+The design should have been simple: if a session has been idle for more than an hour, we could reduce users’ cost of resuming that session by clearing old thinking sections. Since the request would be a cache miss anyway, we could prune unnecessary messages from the request to reduce the number of uncached tokens sent to the API. We’d then resume sending full reasoning history. To do this we used theclear_thinking_20251015API header along withkeep:1.
+clear_thinking_20251015
+keep:1
+The implementation had a bug. Instead of clearing thinking history once, it cleared it on every turn for the rest of the session. After a session crossed the idle threshold once, each request for the rest of that process told the API to keep only the most recent block of reasoning and discard everything before it. This compounded: if you sent a follow-up message while Claude was in the middle of a tool use, that started a new turn under the broken flag, so even the reasoning from the current turn was dropped. Claude would continue executing, but increasingly without memory of why it had chosen to do what it was doing. This surfaced as the forgetfulness, repetition, and odd tool choices people reported.
+Because this would continuously drop thinking blocks from subsequent requests, those requests also resulted in cache misses. We believe this is what drove the separate reports of usage limits draining faster than expected.
+Two unrelated experiments made it challenging for us to reproduce the issue at first: an internal-only server-side experiment related to message queuing; and an orthogonal change in how we display thinking suppressed this bug in most CLI sessions, so we didn’t catch it even when testing external builds.
+This bug was at the intersection of Claude Code’s context management, the Anthropic API, and extended thinking. The changes it introduced made it past multiple human and automated code reviews, as well as unit tests, end-to-end tests, automated verification, and dogfooding. Combined with this only happening in a corner case (stale sessions) and the difficulty of reproducing the issue, it took us over a week to discover and confirm the root cause.
+As part of the investigation, we back-testedCode Reviewagainst the offending pull requests using Opus 4.7. When provided the code repositories necessary to gather complete context, Opus 4.7 found the bug, while Opus 4.6 didn&#x27;t. To prevent this from happening again, we are now landing support for additional repositories as context for code reviews.
+We fixed this bug on April 10 in v2.1.101.</p></div><div class="lang-cn-block"><p>我们的最新模型 Claude Opus 4.7 相较于其前身有一个显著的行为特点：正如我们在发布时所介绍的，它倾向于输出较长的内容。这使其在处理困难问题时更加智能，但也产生了更多的输出 Token。
+在发布 Opus 4.7 的几周前，我们开始为此调整 Claude Code。每个模型的行为都有细微差异，我们在每次发布前都会花时间为模型优化工具链和产品。
+我们有多种工具来减少冗余输出：模型训练、提示词工程以及改进产品中的思维用户体验。最终我们全部用上了，但其中一条新增的系统提示词对 Claude Code 的智能水平产生了过大的影响：</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><h2>A system prompt change to reduce verbosity</h2></div><div class="lang-cn-block"><blockquote><p>&quot;Length limits: keep text between tool calls to ≤25 words. Keep final responses to ≤100 words unless the task requires more detail.&quot;</p></blockquote></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>Our latest model, Claude Opus 4.7, has a notable behavioral quirk relative to its predecessor: as wewrote aboutat launch, it tends to be quite verbose. This makes it smarter on hard problems, but it also produces more output tokens.
+A few weeks before we released Opus 4.7, we started tuning Claude Code in preparation. Each model behaves slightly differently, and we spend time before each release optimizing the harness and product for it.
+We have a number of tools to reduce verbosity: model training, prompting, and improving thinking UX in the product. Ultimately we used all of these, but one addition to the system prompt caused an outsized effect on intelligence in Claude Code:</p></div><div class="lang-cn-block"><p>经过数周的内部测试，且在我们运行的一系列评测中未发现退化后，我们对这一变更充满信心，并于 4 月 16 日随 Opus 4.7 一同发布。
+作为调查的一部分，我们使用更广泛的评测集进行了更多的消融实验（Ablation，即逐行移除系统提示词以了解每行的影响）。其中一项评测显示 Opus 4.6 和 4.7 均出现了 3% 的性能下降。我们立即在 4 月 20 日的发布中撤回了该提示词。</p></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><blockquote><p>“Length limits: keep text between tool calls to ≤25 words. Keep final responses to ≤100 words unless the task requires more detail.”</p></blockquote></div><div class="lang-cn-block"><h2 id="heading-4">后续改进</h2></div></div>
+<div class="bilingual-pair"><div class="lang-en-block"><p>After multiple weeks of internal testing and no regressions in the set of evaluations we ran, we felt confident about the change and shipped it alongside Opus 4.7 on April 16.
+As part of this investigation, we ran more ablations (removing lines from the system prompt to understand the impact of each line) using a broader set of evaluations. One of these evaluations showed a 3% drop for both Opus 4.6 and 4.7. We immediately reverted the prompt as part of the April 20 release.</p></div><div class="lang-cn-block"><p>我们将采取以下几项不同的措施来避免类似问题：确保更大比例的内部员工使用与公众完全相同的 Claude Code 构建版本（而非用于测试新功能的版本）；改进我们内部使用的 Code Review 工具，并将改进后的版本提供给客户。
+我们还将对系统提示词变更施加更严格的控制。每次对 Claude Code 的系统提示词进行变更时，我们都将运行一套针对每个模型的广泛评测，持续进行消融实验以了解每行的影响，并且我们已构建了新的工具来使提示词变更更易于审查和审计。此外，我们已在 CLAUDE.md 中添加了指导说明，确保针对特定模型的变更仅限于该模型。对于任何可能影响智能水平的变更，我们将加入浸泡期（Soak Period）、更广泛的评测套件和灰度发布，以便更早发现问题。
+我们最近在 X 上创建了 @ClaudeDevs 账号，以便有空间深入解释产品决策及其背后的推理。我们将在 GitHub 上以集中的主题帖分享相同的更新。
+最后，我们要感谢我们的用户：那些使用 <code class="inline">/feedback</code> 命令与我们分享问题的人（或在网上发布具体、可复现示例的人），正是他们最终帮助我们识别并修复了这些问题。今天，我们已为所有订阅用户重置了使用额度上限。
+我们衷心感谢您的反馈和耐心。</p></div></div>
+<div class="lang-en-block"><h2>Going forward</h2></div>
+<div class="lang-en-block"><p>We are going to do several things differently to avoid these issues: we’ll ensure that a larger share of internal staff use the exact public build of Claude Code (as opposed to the version we use to test new features); and we&#x27;ll make improvements to ourCode Reviewtool that we use internally, and ship this improved version to customers.
+We’re also adding tighter controls on system prompt changes. We will run a broad suite of per-model evals for every system prompt change to Claude Code, continuing ablations to understand the impact of each line, and we have built new tooling to make prompt changes easier to review and audit. We&#x27;ve additionally added guidance to our CLAUDE.md to ensure model-specific changes are gated to the specific model they&#x27;re targeting. For any change that could trade off against intelligence, we&#x27;ll add soak periods, a broader eval suite, and gradual rollouts so we catch issues earlier.
+We recently created @ClaudeDevs on X to give us the room to explain product decisions and the reasoning behind them in depth. We&#x27;ll share the same updates in centralized threads on GitHub.
+Finally, we’d like to thank our users: the people who used the/feedbackcommand to share their issues with us (or who posted specific, reproducible examples online) are the ones who ultimately allowed us to identify and fix these problems. Today we are resetting usage limits for all subscribers.
+/feedback
+We’re immensely grateful for your feedback and for your patience.</p></div>
+            </div>
+            <div class="single-view content">
+                <div class="lang-zh"><p>在过去一个月中，我们一直在调查部分用户反映的 Claude 回答质量下降问题。经过排查，我们发现这些问题源于三个独立的变更，分别影响了 Claude Code、Claude Agent SDK 和 Claude Cowork。API 未受影响。
+截至 4 月 20 日（v2.1.116），以上三个问题均已修复。
+在这篇文章中，我们将说明我们发现了什么、修复了什么，以及我们将采取哪些不同的措施来防止类似问题再次发生。
+我们高度重视质量退化的报告。我们从未故意降低模型质量，并且在第一时间确认了我们的 API 和推理层未受影响。
+经过调查，我们发现了三个不同的问题：</p>
+<ul>
+<li>3 月 4 日，我们将 Claude Code 的默认推理强度（Reasoning Effort）从 <code class="inline">high</code> 调整为 <code class="inline">medium</code>，以降低部分用户在 <code class="inline">high</code> 模式下遇到的超长延迟——长到足以让界面看起来像卡住了一样。这是一个错误的取舍。在用户反馈表示更倾向于默认使用更高智能水平、并自行选择降低强度来处理简单任务后，我们于 4 月 7 日撤回了此变更。该变更影响了 Sonnet 4.6 和 Opus 4.6。</li>
+<li>3 月 26 日，我们上线了一项变更：在会话闲置超过一小时后清除 Claude 的历史思维记录，以减少用户恢复会话时的延迟。一个 bug 导致此操作在会话的后续每一轮都会重复执行，而不是仅执行一次，这使 Claude 表现出健忘和重复的行为。我们于 4 月 10 日修复了该问题。此变更影响了 Sonnet 4.6 和 Opus 4.6。</li>
+<li>4 月 16 日，我们在系统提示词（System Prompt）中添加了一条减少冗余输出的指令。该指令与其他提示词变更叠加后，损害了代码生成质量，于 4 月 20 日被撤回。此变更影响了 Sonnet 4.6、Opus 4.6 和 Opus 4.7。</li>
+</ul>
+<p>由于每个变更影响的流量范围和生效时间各不相同，整体效果看起来像是广泛且不一致的质量退化。虽然我们从 3 月初就开始调查这些反馈，但起初很难将其与用户反馈中的正常波动区分开来，而且我们的内部使用和评测最初也未能复现已确认的问题。
+这不是用户对 Claude Code 应有的体验。截至 4 月 23 日，我们已为所有订阅用户重置了使用额度上限。</p>
+<h2>Claude Code 默认推理强度的变更</h2>
+<p>当我们于 2 月在 Claude Code 中发布 Opus 4.6 时，我们将默认推理强度设为 <code class="inline">high</code>。
+不久后，我们收到用户反馈，称 Claude Opus 4.6 在 <code class="inline">high</code> 强度模式下偶尔会思考过久，导致界面看起来卡住，并为这些用户带来不成比例的延迟和 Token 消耗。
+通常情况下，模型思考时间越长，输出质量越好。推理强度是 Claude Code 让用户在&quot;更多思考&quot;与&quot;更低延迟、更少触发使用额度上限&quot;之间做出权衡的方式。在为模型校准强度等级时，我们会考虑这一权衡，以便在测试时计算（Test-time Compute）曲线上选取能为用户提供最佳选择范围的点。在产品层面，我们选择将曲线上的哪个点设为默认值，并将其作为 <code class="inline">effort</code> 参数发送给 Messages API；其他选项则通过 <code class="inline">/effort</code> 命令供用户选择。
+在我们的内部评测和测试中，<code class="inline">medium</code> 强度在大多数任务中以略低的智能水平换来了显著降低的延迟。它也不存在偶尔出现超长尾延迟的问题，并且有助于最大化用户的使用额度。因此，我们推出了一项变更，将 <code class="inline">medium</code> 设为默认强度，并通过产品内对话框解释了原因。
+推出后不久，用户开始反馈 Claude Code 感觉变&quot;笨&quot;了。我们发布了多次设计迭代，试图让当前强度设置更加醒目，以提醒用户可以更改默认值（启动时的提示、内联强度选择器，以及重新引入 ultrathink），但大多数用户仍然使用 <code class="inline">medium</code> 作为默认强度。
+在听取更多客户的反馈后，我们于 4 月 7 日撤回了这一决定。所有用户现在默认使用 <code class="inline">xhigh</code> 强度运行 Opus 4.7，其他所有模型默认使用 <code class="inline">high</code> 强度。</p>
+<h2>一个导致历史推理记录丢失的缓存优化</h2>
+<p>当 Claude 通过推理完成一项任务时，其推理过程通常会保存在对话历史中，以便在后续每一轮对话中，Claude 都能看到自己之前做出修改和工具调用的原因。
+3 月 26 日，我们上线了一项本意是提升效率的优化。我们使用提示词缓存（Prompt Caching）来使连续的 API 调用对用户来说更便宜、更快。Claude 在发起 API 请求时会将输入 Token 写入缓存，在一段时间不活动后，提示词会从缓存中被逐出，为其他提示词腾出空间。缓存利用率是我们精心管理的指标（了解更多关于我们的方法）。
+设计本应很简单：如果一个会话闲置超过一小时，我们可以通过清除旧的思维记录来降低用户恢复该会话的成本。由于该请求无论如何都会产生缓存未命中（Cache Miss），我们可以从请求中裁剪不必要的消息，以减少发送给 API 的未缓存 Token 数量。之后我们会恢复发送完整的推理历史。为此，我们使用了 <code class="inline">clear_thinking_20251015</code> API 请求头，并配合 <code class="inline">keep:1</code> 参数。
+实现中存在一个 bug。它不是只清除一次思维历史，而是在会话剩余的每一轮中都持续清除。一旦会话跨过闲置阈值，该会话进程中的后续每个请求都会指示 API 仅保留最近一个推理块，丢弃之前的所有内容。这形成了累积效应：如果你在 Claude 执行工具调用的过程中发送了一条后续消息，这会在有问题的标志下启动新一轮对话，因此即使是当前轮次的推理记录也会被丢弃。Claude 会继续执行，但逐渐失去了对自己为何做出这些选择的记忆。这表现为用户反馈的健忘、重复和奇怪的工具调用选择。
+由于此 bug 会持续从后续请求中丢弃思维块，这些请求也会导致缓存未命中。我们认为这正是导致部分用户反馈使用额度消耗速度异常加快的原因。
+两个不相关的实验使我们最初难以复现该问题：一个是与消息队列相关的仅限内部的服务端实验；另一个是我们对思维展示方式的独立变更在大多数 CLI 会话中掩盖了这个 bug，因此即使在测试外部构建版本时也未能发现。
+这个 bug 处于 Claude Code 的上下文管理、Anthropic API 和扩展思维（Extended Thinking）的交叉点。它引入的变更通过了多轮人工和自动化代码审查，以及单元测试、端到端测试、自动化验证和内部试用。再加上这只在一个边缘场景（过期会话）中出现，且复现困难，我们花了超过一周才发现并确认根本原因。
+在调查过程中，我们使用 Opus 4.7 对导致问题的 Pull Request 进行了 Code Review 回测。在提供了必要的代码仓库以获取完整上下文后，Opus 4.7 发现了该 bug，而 Opus 4.6 未能发现。为防止此类问题再次发生，我们正在落地支持将额外的代码仓库作为 Code Review 的上下文。
+我们于 4 月 10 日在 v2.1.101 中修复了此 bug。</p>
+<h2>一项减少冗余输出的系统提示词变更</h2>
+<p>我们的最新模型 Claude Opus 4.7 相较于其前身有一个显著的行为特点：正如我们在发布时所介绍的，它倾向于输出较长的内容。这使其在处理困难问题时更加智能，但也产生了更多的输出 Token。
+在发布 Opus 4.7 的几周前，我们开始为此调整 Claude Code。每个模型的行为都有细微差异，我们在每次发布前都会花时间为模型优化工具链和产品。
+我们有多种工具来减少冗余输出：模型训练、提示词工程以及改进产品中的思维用户体验。最终我们全部用上了，但其中一条新增的系统提示词对 Claude Code 的智能水平产生了过大的影响：</p>
+<blockquote><p>&quot;Length limits: keep text between tool calls to ≤25 words. Keep final responses to ≤100 words unless the task requires more detail.&quot;</p></blockquote>
+<p>经过数周的内部测试，且在我们运行的一系列评测中未发现退化后，我们对这一变更充满信心，并于 4 月 16 日随 Opus 4.7 一同发布。
+作为调查的一部分，我们使用更广泛的评测集进行了更多的消融实验（Ablation，即逐行移除系统提示词以了解每行的影响）。其中一项评测显示 Opus 4.6 和 4.7 均出现了 3% 的性能下降。我们立即在 4 月 20 日的发布中撤回了该提示词。</p>
+<h2>后续改进</h2>
+<p>我们将采取以下几项不同的措施来避免类似问题：确保更大比例的内部员工使用与公众完全相同的 Claude Code 构建版本（而非用于测试新功能的版本）；改进我们内部使用的 Code Review 工具，并将改进后的版本提供给客户。
+我们还将对系统提示词变更施加更严格的控制。每次对 Claude Code 的系统提示词进行变更时，我们都将运行一套针对每个模型的广泛评测，持续进行消融实验以了解每行的影响，并且我们已构建了新的工具来使提示词变更更易于审查和审计。此外，我们已在 CLAUDE.md 中添加了指导说明，确保针对特定模型的变更仅限于该模型。对于任何可能影响智能水平的变更，我们将加入浸泡期（Soak Period）、更广泛的评测套件和灰度发布，以便更早发现问题。
+我们最近在 X 上创建了 @ClaudeDevs 账号，以便有空间深入解释产品决策及其背后的推理。我们将在 GitHub 上以集中的主题帖分享相同的更新。
+最后，我们要感谢我们的用户：那些使用 <code class="inline">/feedback</code> 命令与我们分享问题的人（或在网上发布具体、可复现示例的人），正是他们最终帮助我们识别并修复了这些问题。今天，我们已为所有订阅用户重置了使用额度上限。
+我们衷心感谢您的反馈和耐心。</p></div>
+                <div class="lang-en"><p>Over the past month, we’ve been looking into reports that Claude’s responses have worsened for some users. We’ve traced these reports to three separate changes that affected Claude Code, the Claude Agent SDK, and Claude Cowork. The API was not impacted.
+All three issues have now been resolved as of April 20 (v2.1.116).
+In this post, we explain what we found, what we fixed, and what we’ll do differently to ensure similar issues are much less likely to happen again.
+We take reports about degradation very seriously. We never intentionally degrade our models, and we were able to immediately confirm that our API and inference layer were unaffected.
+After investigation, we identified three different issues:</p>
+<ul>
+<li>On March 4, we changed Claude Code&#x27;s default reasoning effort fromhightomediumto reduce the very long latency—enough to make the UI appear frozen—some users were seeing inhighmode. This was the wrong tradeoff. We reverted this change on April 7 after users told us they&#x27;d prefer to default to higher intelligence and opt into lower effort for simple tasks. This impacted Sonnet 4.6 and Opus 4.6.</li>
+</ul>
+<p>high
+medium
+high</p>
+<ul>
+<li>On March 26, we shipped a change to clear Claude&#x27;s older thinking from sessions that had been idle for over an hour, to reduce latency when users resumed those sessions. A bug caused this to keep happening every turn for the rest of the session instead of just once, which made Claude seem forgetful and repetitive. We fixed it on April 10. This affected Sonnet 4.6 and Opus 4.6.</li>
+<li>On April 16, we added a system prompt instruction to reduce verbosity. In combination with other prompt changes, it hurt coding quality and was reverted on April 20. This impacted Sonnet 4.6, Opus 4.6, and Opus 4.7.</li>
+</ul>
+<p>Because each change affected a different slice of traffic on a different schedule, the aggregate effect looked like broad, inconsistent degradation. While we began investigating reports in early March, they were challenging to distinguish from normal variation in user feedback at first, and neither our internal usage nor evals initially reproduced the issues identified.
+This isn’t the experience users should expect from Claude Code. As of April 23, we’re resetting usage limits for all subscribers.</p>
+<h2>A change to Claude Code&#x27;s default reasoning effort</h2>
+<p>When we released Opus 4.6 in Claude Code in February, we set the default reasoning effort tohigh.
+high
+Soon after, we received user feedback that Claude Opus 4.6 in high effort mode would occasionally think for too long, causing the UI to appear frozen and leading to disproportionate latency and token usage for those users.
+In general, the longer the model thinks, the better the output. Effort levels are how Claude Code lets users set that tradeoff—more thinking versus lower latency and fewer usage limit hits. As we calibrate effort levels for our models, we take this tradeoff into account in order to pick points along the test-time-compute curve that give people the best range of options. In the product layer, we then choose which point along this curve we set as our default, and that is the value we send to the Messages API as the effort parameter; we then make the other options available via/effort.
+/effort
+In our internal evals and testing, medium effort achieved slightly lower intelligence with significantly less latency for the majority of tasks. It also didn’t suffer from the same issues with occasional very long tail latencies for thinking, and it helped maximize users’ usage limits. As a result, we rolled out a change making medium the default effort, and explained the rationale via in-product dialog.
+Soon after rolling out, users began reporting that Claude Code felt less intelligent. We shipped a number of design iterations to make the current effort setting clearer in order to alert people they could change the default (notices on startup, an inline effort selector, and bringing back ultrathink), but most users retained the medium effort default.
+After hearing feedback from more customers, we reversed this decision on April 7. All users now default toxhigheffort for Opus 4.7, andhigheffort for all other models.
+xhigh
+high</p>
+<h2>A caching optimization that dropped prior reasoning</h2>
+<p>When Claude reasons through a task, that reasoning is normally kept in the conversation history so that on every subsequent turn, Claude can see why it made the edits and tool calls it did.
+On March 26, we shipped what was meant to be an efficiency improvement to this feature. We use prompt caching to make back-to-back API calls cheaper and faster for users. Claude writes the input tokens to the cache when it makes an API request, then after a period of inactivity the prompt is evicted from cache, making room for other prompts. Cache utilization is something we manage carefully (more on ourapproach).
+The design should have been simple: if a session has been idle for more than an hour, we could reduce users’ cost of resuming that session by clearing old thinking sections. Since the request would be a cache miss anyway, we could prune unnecessary messages from the request to reduce the number of uncached tokens sent to the API. We’d then resume sending full reasoning history. To do this we used theclear_thinking_20251015API header along withkeep:1.
+clear_thinking_20251015
+keep:1
+The implementation had a bug. Instead of clearing thinking history once, it cleared it on every turn for the rest of the session. After a session crossed the idle threshold once, each request for the rest of that process told the API to keep only the most recent block of reasoning and discard everything before it. This compounded: if you sent a follow-up message while Claude was in the middle of a tool use, that started a new turn under the broken flag, so even the reasoning from the current turn was dropped. Claude would continue executing, but increasingly without memory of why it had chosen to do what it was doing. This surfaced as the forgetfulness, repetition, and odd tool choices people reported.
+Because this would continuously drop thinking blocks from subsequent requests, those requests also resulted in cache misses. We believe this is what drove the separate reports of usage limits draining faster than expected.
+Two unrelated experiments made it challenging for us to reproduce the issue at first: an internal-only server-side experiment related to message queuing; and an orthogonal change in how we display thinking suppressed this bug in most CLI sessions, so we didn’t catch it even when testing external builds.
+This bug was at the intersection of Claude Code’s context management, the Anthropic API, and extended thinking. The changes it introduced made it past multiple human and automated code reviews, as well as unit tests, end-to-end tests, automated verification, and dogfooding. Combined with this only happening in a corner case (stale sessions) and the difficulty of reproducing the issue, it took us over a week to discover and confirm the root cause.
+As part of the investigation, we back-testedCode Reviewagainst the offending pull requests using Opus 4.7. When provided the code repositories necessary to gather complete context, Opus 4.7 found the bug, while Opus 4.6 didn&#x27;t. To prevent this from happening again, we are now landing support for additional repositories as context for code reviews.
+We fixed this bug on April 10 in v2.1.101.</p>
+<h2>A system prompt change to reduce verbosity</h2>
+<p>Our latest model, Claude Opus 4.7, has a notable behavioral quirk relative to its predecessor: as wewrote aboutat launch, it tends to be quite verbose. This makes it smarter on hard problems, but it also produces more output tokens.
+A few weeks before we released Opus 4.7, we started tuning Claude Code in preparation. Each model behaves slightly differently, and we spend time before each release optimizing the harness and product for it.
+We have a number of tools to reduce verbosity: model training, prompting, and improving thinking UX in the product. Ultimately we used all of these, but one addition to the system prompt caused an outsized effect on intelligence in Claude Code:</p>
+<blockquote><p>“Length limits: keep text between tool calls to ≤25 words. Keep final responses to ≤100 words unless the task requires more detail.”</p></blockquote>
+<p>After multiple weeks of internal testing and no regressions in the set of evaluations we ran, we felt confident about the change and shipped it alongside Opus 4.7 on April 16.
+As part of this investigation, we ran more ablations (removing lines from the system prompt to understand the impact of each line) using a broader set of evaluations. One of these evaluations showed a 3% drop for both Opus 4.6 and 4.7. We immediately reverted the prompt as part of the April 20 release.</p>
+<h2>Going forward</h2>
+<p>We are going to do several things differently to avoid these issues: we’ll ensure that a larger share of internal staff use the exact public build of Claude Code (as opposed to the version we use to test new features); and we&#x27;ll make improvements to ourCode Reviewtool that we use internally, and ship this improved version to customers.
+We’re also adding tighter controls on system prompt changes. We will run a broad suite of per-model evals for every system prompt change to Claude Code, continuing ablations to understand the impact of each line, and we have built new tooling to make prompt changes easier to review and audit. We&#x27;ve additionally added guidance to our CLAUDE.md to ensure model-specific changes are gated to the specific model they&#x27;re targeting. For any change that could trade off against intelligence, we&#x27;ll add soak periods, a broader eval suite, and gradual rollouts so we catch issues earlier.
+We recently created @ClaudeDevs on X to give us the room to explain product decisions and the reasoning behind them in depth. We&#x27;ll share the same updates in centralized threads on GitHub.
+Finally, we’d like to thank our users: the people who used the/feedbackcommand to share their issues with us (or who posted specific, reproducible examples online) are the ones who ultimately allowed us to identify and fix these problems. Today we are resetting usage limits for all subscribers.
+/feedback
+We’re immensely grateful for your feedback and for your patience.</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="site-footer">
+        原文来自 <a href="https://www.anthropic.com/engineering/april-23-postmortem" target="_blank">Anthropic Engineering</a>
+        · 由 mimo-v2.5-pro 翻译
+        · 快捷键: <kbd>Z</kbd> 中文 <kbd>E</kbd> English <kbd>B</kbd> 对照
+    </div>
+
+    <script>
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.querySelectorAll('.controls button:not(.theme-toggle)').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + m).classList.add('active');
+        localStorage.setItem('lang-mode', m);
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            document.getElementById('theme-btn').textContent = '☀';
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('theme-btn').textContent = '☾';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    // Restore theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.getElementById('theme-btn').textContent = '☾';
+    }
+    // Restore lang mode
+    const saved = localStorage.getItem('lang-mode');
+    if (saved) setMode(saved);
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'z' || e.key === 'Z') setMode('zh');
+        if (e.key === 'e' || e.key === 'E') setMode('en');
+        if (e.key === 'b' || e.key === 'B') setMode('bi');
+    });
+
+    // TOC click: scroll to heading in the active view
+    document.querySelectorAll('.toc-sidebar a[href^="#"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const headingText = this.textContent.trim();
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') {
+                container = document.querySelector('.single-view .lang-zh');
+            } else if (mode === 'mode-en') {
+                container = document.querySelector('.single-view .lang-en');
+            } else {
+                container = document.querySelector('.bilingual-view');
+            }
+            if (!container) return;
+            const headings = container.querySelectorAll('h2, h3');
+            for (const h of headings) {
+                if (h.textContent.trim() === headingText) {
+                    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    break;
+                }
+            }
+        });
+    });
+
+    // TOC scroll spy
+    (function() {
+        const tocLinks = document.querySelectorAll('.toc-sidebar a');
+        if (!tocLinks.length) return;
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const text = entry.target.textContent.trim();
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    for (const l of tocLinks) {
+                        if (l.textContent.trim() === text) {
+                            l.classList.add('active');
+                            break;
+                        }
+                    }
+                }
+            });
+        }, { rootMargin: '-90px 0px -70% 0px' });
+        // Observe all visible headings
+        function observeHeadings() {
+            const mode = document.body.className;
+            let container;
+            if (mode === 'mode-zh') container = document.querySelector('.single-view .lang-zh');
+            else if (mode === 'mode-en') container = document.querySelector('.single-view .lang-en');
+            else container = document.querySelector('.bilingual-view');
+            if (!container) return;
+            container.querySelectorAll('h2, h3').forEach(h => observer.observe(h));
+        }
+        observeHeadings();
+        // Re-observe when mode changes
+        const origSetMode = window.setMode;
+        window.setMode = function(m) {
+            observer.disconnect();
+            origSetMode(m);
+            observeHeadings();
+        };
+    })();
+    </script>
+</body>
+</html>
